@@ -2,7 +2,7 @@ UV ?= uv
 UVX ?= uvx
 
 .DEFAULT_GOAL := help
-.PHONY: help install install-dev update lock test test-verbose lint fmt fmt-check typecheck check \
+.PHONY: help install install-dev install-notebook update lock test test-verbose lint fmt fmt-check typecheck check \
         notebook shell build env clean
 
 help: ## Show this help
@@ -12,8 +12,11 @@ help: ## Show this help
 install: ## Install project dependencies and the project itself (editable)
 	$(UV) sync
 
-install-dev: ## Install dependencies including the test extra
-	$(UV) sync --extra test
+install-dev: ## Install dependencies including the dev toolchain
+	$(UV) sync --group dev
+
+install-notebook: ## Install dependencies including the notebook toolchain
+	$(UV) sync --group notebook
 
 update: ## Update dependencies to the latest allowed versions
 	$(UV) sync --upgrade
@@ -22,27 +25,27 @@ lock: ## Regenerate uv.lock
 	$(UV) lock
 
 test: ## Run the test suite
-	$(UV) run pytest
+	$(UV) run --group dev pytest
 
 test-verbose: ## Run the test suite with verbose output
-	$(UV) run pytest -v
+	$(UV) run --group dev pytest -v
 
-lint: ## Lint the code (ruff via uvx, not a project dependency)
-	$(UVX) ruff check src
+lint: ## Lint the code (ruff from the dev dependency group)
+	$(UV) run --group dev ruff check .
 
-fmt: ## Format the code (ruff via uvx, not a project dependency)
-	$(UVX) ruff format src
+fmt: ## Format the code (ruff from the dev dependency group)
+	$(UV) run --group dev ruff format .
 
 fmt-check: ## Check formatting without writing changes
-	$(UVX) ruff format --check src
+	$(UV) run --group dev ruff format --check .
 
-typecheck: ## Type-check the code (mypy via uvx, not a project dependency)
-	$(UVX) mypy src
+typecheck: ## Type-check the code (mypy from the dev dependency group)
+	$(UV) run --group dev mypy
 
 check: fmt-check lint test ## Run formatting check, lint and tests
 
 notebook: ## Start JupyterLab
-	$(UV) run jupyter lab
+	$(UV) run --group notebook jupyter lab
 
 shell: ## Start an interactive Python shell with the project installed
 	$(UV) run python
