@@ -58,3 +58,7 @@ scratch/
 *.db
 *.sqlite3
 
+# daily word record
+docs/learning/daily/*.md
+!docs/learning/daily/README.md
+
