@@ -88,6 +88,17 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 
 Agent Runtime 为应用层提供可复用的 Agent 执行能力。
 
+#### Model Abstraction
+
+模型调用通过 `LLMClient` Protocol 抽象，厂商差异由适配器隔离：
+
+- 协议定义：`src/agent_learning_coach/core/llm/protocol.py`
+- 厂商无关模型：`src/agent_learning_coach/core/llm/models.py`、`types.py`
+- 提供商适配器：`src/agent_learning_coach/core/llm/litellm_client.py`
+- 测试替身：`src/agent_learning_coach/core/llm/mock.py`
+
+决策依据：[ADR-0002](decisions/0002-llm-client-protocol.md)。
+
 ### 3.5 基础设施层（Infrastructure Layer）
 
 负责外部依赖和底层技术基础设施的接入。
