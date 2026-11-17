@@ -54,7 +54,7 @@ VoltAgent 的 `minimax-cn/<model>`、llm-gateway 的 `zai` / `zai_cn`）。
 | `anthropic` | Anthropic | LiteLLM | `claude-sonnet-4-5` | — |
 | `gemini` | Google Gemini | LiteLLM | `gemini-2.5-flash` | — |
 | `minimax` | MiniMax 国际 | OpenAI 兼容 | `MiniMax-M3.1-Flash` | `api.minimax.io/v1` |
-| `minimax-cn` | MiniMax 国内 | OpenAI 兼容 | `MiniMax-M3.1-Flash` | `api.minimaxi.com/v1` |
+| `minimax-cn` | MiniMax 国内 | OpenAI 兼容 | `MiniMax-M3.1-Flash` | `api.minimax.cn/v1` |
 | `zhipu` | 智谱 Z.AI 国际 | OpenAI 兼容 | `glm-4.6` | `api.z.ai/api/paas/v4` |
 | `zhipu-cn` | 智谱 BigModel 国内 | OpenAI 兼容 | `glm-4.6` | `open.bigmodel.cn/api/paas/v4` |
 | `moonshot` | Moonshot Kimi 国际 | OpenAI 兼容 | `kimi-k3` | `api.moonshot.ai/v1` |
@@ -67,7 +67,8 @@ VoltAgent 的 `minimax-cn/<model>`、llm-gateway 的 `zai` / `zai_cn`）。
 | `openai-compatible` | 通用 OpenAI 兼容端点 | OpenAI 兼容 | 无（必须显式指定） | 由 `OPENAI_BASE_URL` 决定 |
 
 > **注意**：模型 id 大小写敏感。MiniMax 的真实模型 id 是 `MiniMax-M3.1-Flash`
-> （大写 M），不是 `minimax-M3.1-Flash`。
+> （大写 M），不是 `minimax-M3.1-Flash`。国内端点取官方文档值
+> `api.minimax.cn/v1`（[官方文档](https://platform.minimax.cn/docs/api-reference/text-openai-api)）。
 
 ### 2.3 两种协议
 

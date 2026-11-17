@@ -309,11 +309,11 @@ def _register_builtin_providers() -> None:
             display_name="MiniMax (China)",
             protocol=ProtocolKind.OPENAI_COMPATIBLE,
             region=Region.CN,
-            api_base="https://api.minimaxi.com/v1",
+            api_base="https://api.minimax.cn/v1",
             api_key_env=["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"],
             api_base_env=["MINIMAX_CN_BASE_URL"],
             default_model="MiniMax-M3.1-Flash",
-            notes="国内站；Key 与国际站不通用",
+            notes="国内站；官方文档 base_url 为 api.minimax.cn/v1；Key 与国际站不通用",
         ),
         # --- 智谱 GLM：国际站（Z.AI）/ 国内站（BigModel）---
         ProviderSpec(

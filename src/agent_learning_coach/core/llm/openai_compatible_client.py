@@ -31,8 +31,8 @@ class OpenAICompatibleClient:
     用法::
 
         client = OpenAICompatibleClient(
-            model="minimax-M3.1-Flash",
-            api_base="https://api.minimaxi.com/v1",
+            model="MiniMax-M3.1-Flash",
+            api_base="https://api.minimax.cn/v1",
             api_key="...",
         )
     """

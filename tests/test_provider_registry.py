@@ -106,7 +106,7 @@ def test_minimax_cn_uses_china_endpoint_and_region() -> None:
     spec = get_provider("minimax-cn")
 
     assert spec.region is Region.CN
-    assert spec.api_base == "https://api.minimaxi.com/v1"
+    assert spec.api_base == "https://api.minimax.cn/v1"
     assert spec.default_model == "MiniMax-M3.1-Flash"
     assert spec.api_key_env == ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
 
@@ -172,15 +172,15 @@ def test_api_base_falls_back_to_registered_endpoint(monkeypatch: pytest.MonkeyPa
     monkeypatch.delenv("MINIMAX_CN_BASE_URL", raising=False)
     spec = get_provider("minimax-cn")
 
-    assert spec.resolved_api_base() == "https://api.minimaxi.com/v1"
+    assert spec.resolved_api_base() == "https://api.minimax.cn/v1"
 
 
 def test_openai_compatible_namespace_reads_openai_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.minimaxi.com/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.minimax.cn/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "legacy-key")
     spec = get_provider("openai-compatible")
 
-    assert spec.resolved_api_base() == "https://api.minimaxi.com/v1"
+    assert spec.resolved_api_base() == "https://api.minimax.cn/v1"
     assert spec.resolved_api_key() == "legacy-key"
 
 
@@ -197,7 +197,7 @@ def test_openai_compatible_namespace_falls_back_to_api_base_env(
 def test_openai_compatible_namespace_requires_explicit_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.minimaxi.com/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.minimax.cn/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "legacy-key")
     spec = get_provider("openai-compatible")
 
@@ -207,12 +207,25 @@ def test_openai_compatible_namespace_requires_explicit_model(
 
 def test_create_client_for_cn_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MINIMAX_CN_API_KEY", "cn-key")
+    # 端点覆盖变量可能存在于外部环境，隔离后再断言注册表默认值
+    monkeypatch.delenv("MINIMAX_CN_BASE_URL", raising=False)
 
     client = create_client("minimax-cn")
 
     assert isinstance(client, OpenAICompatibleClient)
-    assert client.api_base == "https://api.minimaxi.com/v1"
+    assert client.api_base == "https://api.minimax.cn/v1"
     assert client.model == "MiniMax-M3.1-Flash"
+
+
+def test_create_client_honors_ambient_base_url_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "cn-key")
+    monkeypatch.setenv("MINIMAX_CN_BASE_URL", "https://gateway.internal/v1")
+
+    client = create_client("minimax-cn")
+
+    assert client.api_base == "https://gateway.internal/v1"
 
 
 def test_describe_providers_reports_region() -> None:
@@ -220,7 +233,7 @@ def test_describe_providers_reports_region() -> None:
 
     assert described["minimax"]["region"] == "global"
     assert described["minimax-cn"]["region"] == "cn"
-    assert described["minimax-cn"]["api_base"] == "https://api.minimaxi.com/v1"
+    assert described["minimax-cn"]["api_base"] == "https://api.minimax.cn/v1"
 
 
 def test_list_providers_returns_specs() -> None:
@@ -404,7 +417,7 @@ def test_create_client_converts_config_error_to_llm_error() -> None:
 def test_openai_compatible_payload_uses_native_model_name() -> None:
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
 
@@ -417,7 +430,7 @@ def test_openai_compatible_payload_uses_native_model_name() -> None:
 def test_openai_compatible_request_level_model_switch() -> None:
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
 
@@ -429,7 +442,7 @@ def test_openai_compatible_request_level_model_switch() -> None:
 def test_openai_compatible_timeout_priority() -> None:
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
         timeout=30.0,
     )
@@ -444,7 +457,7 @@ def test_openai_compatible_generate_parses_response(
     captured: dict[str, Any] = {}
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
     client._client = _FakeOpenAI(captured, _FakeMessage("hello"))
@@ -470,7 +483,7 @@ def test_openai_compatible_generate_parses_tool_calls(
 
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
     client._client = _FakeOpenAI({}, _FakeMessage(None, [_Tc()]))
@@ -494,7 +507,7 @@ def test_openai_compatible_maps_timeout(monkeypatch: pytest.MonkeyPatch) -> None
 
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
     client._client = _Failing()
@@ -513,7 +526,7 @@ def test_openai_compatible_maps_generic_error(monkeypatch: pytest.MonkeyPatch) -
 
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
     client._client = _Failing()
@@ -532,7 +545,7 @@ def test_openai_compatible_maps_builtin_timeout(monkeypatch: pytest.MonkeyPatch)
 
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
     client._client = _Failing()
@@ -545,7 +558,7 @@ def test_openai_compatible_generate_structured(monkeypatch: pytest.MonkeyPatch) 
     captured: dict[str, Any] = {}
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
     client._client = _FakeOpenAI(captured, _FakeMessage('{"title": "T", "steps": ["s1"]}'))
@@ -559,7 +572,7 @@ def test_openai_compatible_generate_structured(monkeypatch: pytest.MonkeyPatch) 
 def test_openai_compatible_message_conversion() -> None:
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
 
@@ -571,7 +584,7 @@ def test_openai_compatible_message_conversion() -> None:
 def test_openai_compatible_payload_includes_optional_fields() -> None:
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
     )
 
@@ -601,7 +614,7 @@ def test_openai_compatible_payload_includes_optional_fields() -> None:
 def test_openai_compatible_builds_sdk_client_lazily() -> None:
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
-        api_base="https://api.minimaxi.com/v1",
+        api_base="https://api.minimax.cn/v1",
         api_key="k",
         timeout=25.0,
         extra_headers={"X-Trace": "abc"},
@@ -610,6 +623,6 @@ def test_openai_compatible_builds_sdk_client_lazily() -> None:
     sdk_client = client._get_client()
 
     assert sdk_client is not None
-    assert str(sdk_client.base_url).rstrip("/") == "https://api.minimaxi.com/v1"
+    assert str(sdk_client.base_url).rstrip("/") == "https://api.minimax.cn/v1"
     # 惰性创建：重复调用复用同一实例
     assert client._get_client() is sdk_client

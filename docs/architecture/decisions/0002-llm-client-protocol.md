@@ -46,7 +46,7 @@
 
    新增厂商通过 `register_provider` 注册，不修改抽象层。
 
-9. **区域做进命名空间，而不是运行时参数**：多数国产厂商对国内与国际市场签发不同的 Key、部署不同的端点（MiniMax：`api.minimaxi.com/v1` vs `api.minimax.io/v1`；智谱：`open.bigmodel.cn` vs `api.z.ai`；Moonshot：`api.moonshot.cn` vs `api.moonshot.ai`；百炼：`dashscope.aliyuncs.com` vs `dashscope-intl.aliyuncs.com`）。用错端点表现为 401/403 而非清晰的路由错误，因此区域必须显式：
+9. **区域做进命名空间，而不是运行时参数**：多数国产厂商对国内与国际市场签发不同的 Key、部署不同的端点（MiniMax：`api.minimax.cn/v1` vs `api.minimax.io/v1`；智谱：`open.bigmodel.cn` vs `api.z.ai`；Moonshot：`api.moonshot.cn` vs `api.moonshot.ai`；百炼：`dashscope.aliyuncs.com` vs `dashscope-intl.aliyuncs.com`）。用错端点表现为 401/403 而非清晰的路由错误，因此区域必须显式：
 
    - `<vendor>`：国际 / 全球站点
    - `<vendor>-cn`：中国大陆站点
@@ -76,7 +76,8 @@
 实测校正（以 MiniMax 国内站 Key 为准）：
 
 - 真实模型 id 是 `MiniMax-M3.1-Flash`（大写 M），不是 `minimax-M3.1-Flash`——模型 id 大小写敏感。
-- 国内端点为 `api.minimaxi.com/v1` 与 `api.minimax.cn/v1`；`api.minimax.io/v1` 为国际站，用国内 Key 返回 401。
-- `api.minimaxi.cn` 主机不存在（DNS 解析失败），属常见误写。
+- 国内端点取官方文档值 `https://api.minimax.cn/v1`（见 [OpenAI SDK 接入文档](https://platform.minimax.cn/docs/api-reference/text-openai-api)）；`https://api.minimax.io/v1` 为国际站，用国内 Key 返回 401。
+- `api.minimaxi.cn` 主机不存在（DNS 解析失败）；`api.minimaxi.com` 虽可用但非官方文档值，均不作为注册表默认值。
+- 端点默认值可被 `MINIMAX_CN_BASE_URL` 等环境变量覆盖，便于自建网关与历史配置兼容——因此测试必须隔离该变量，不能假设环境干净。
 
 接入方操作手册见 [`docs/engineering/llm.md`](../../engineering/llm.md)。
