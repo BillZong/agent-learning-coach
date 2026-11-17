@@ -70,7 +70,9 @@ def create_client(
         api_key: 手动指定凭证；为 None 时从命名空间声明的环境变量读取。
         api_base: 手动指定端点；为 None 时用命名空间声明的环境变量或注册表默认值。
         timeout: 默认超时秒数，请求级 ``LLMRequest.timeout`` 优先。
-        **kwargs: 其他透传给适配器的配置。
+        **kwargs: 其他透传给适配器的配置。其中 ``sdk_client``（OpenAI 兼容协议）
+            与 ``completion``（LiteLLM 协议）是**公开注入点**：传入后适配器不再
+            自建底层客户端，用于测试打桩或复用已配置好的客户端实例。
 
     Returns:
         满足 ``LLMClient`` Protocol 的客户端实例。

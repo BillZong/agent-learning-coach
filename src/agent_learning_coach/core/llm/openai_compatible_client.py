@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel
@@ -46,16 +47,25 @@ class OpenAICompatibleClient:
         *,
         timeout: float | None = None,
         extra_headers: dict[str, str] | None = None,
+        sdk_client: Any | None = None,
+        sdk_client_factory: Callable[..., Any] | None = None,
         **config: Any,
     ) -> None:
         """初始化客户端。
 
         Args:
-            model: 厂商原生模型名，如 ``minimax-M3.1-Flash``。
+            model: 厂商原生模型名，如 ``MiniMax-M3.1-Flash``。
             api_base: 厂商端点 base url，需含版本前缀（通常以 ``/v1`` 结尾）。
             api_key: 访问凭证。
             timeout: 默认超时秒数。请求级 ``LLMRequest.timeout`` 优先。
             extra_headers: 附加请求头。
+            sdk_client: 注入的 OpenAI SDK 客户端实例。传入后本类不再自建
+                客户端，直接使用注入对象。用于测试打桩，或复用调用方已配置好
+                的客户端实例。注入对象的生命周期由注入方负责。
+            sdk_client_factory: 构造 SDK 客户端的工厂函数，接收与
+                ``openai.AsyncOpenAI`` 相同的关键字参数。用于测试打桩时观察
+                构造时机与参数（如确认惰性创建、确认跨 event loop 重建）。
+                与 ``sdk_client`` 同时给出时，``sdk_client`` 优先。
             **config: 透传给 OpenAI SDK 的其他参数。
         """
         self.model = model
@@ -64,27 +74,43 @@ class OpenAICompatibleClient:
         self.timeout = timeout
         self.extra_headers = dict(extra_headers or {})
         self.config = config
-        self._client: Any | None = None
-        """外部注入的 SDK 客户端（如测试替身）。非 None 时优先使用。"""
+        self.sdk_client = sdk_client
+        """外部注入的 SDK 客户端实例。非 None 时优先使用。"""
+        self.sdk_client_factory = sdk_client_factory
+        """SDK 客户端工厂；为 None 时直接构造 ``openai.AsyncOpenAI``。"""
         self._sdk_client: Any | None = None
         """自建的 SDK 客户端，按 event loop 缓存。"""
         self._sdk_client_loop: asyncio.AbstractEventLoop | None = None
         """``_sdk_client`` 创建时所在的 event loop。"""
 
-    def _get_client(self) -> Any:
-        """惰性创建 OpenAI 异步客户端。
+    def build_sdk_client_kwargs(self) -> dict[str, Any]:
+        """构造 SDK 客户端的初始化参数。
+
+        公开以便测试断言配置是否正确传递，无需访问私有字段。
+        """
+        kwargs: dict[str, Any] = {
+            "base_url": self.api_base,
+            "api_key": self.api_key,
+            "timeout": self.timeout,
+            "default_headers": self.extra_headers or None,
+        }
+        kwargs.update(self.config)
+        return kwargs
+
+    def get_sdk_client(self) -> Any:
+        """返回底层 SDK 客户端，必要时惰性创建。
 
         OpenAI SDK 内部的 httpx 连接池绑定在创建时的 event loop 上。若同一客户端
         被用于另一个 event loop（例如脚本里多次 ``asyncio.run()``），连接池会因
         旧 loop 已关闭而报 ``Event loop is closed``。因此这里按当前 running loop
         追踪**自建**的客户端，loop 变化时重建。
 
-        外部注入的客户端（``_client`` 由调用方赋值）不做 loop 判定：注入方
-        自行管理其生命周期。
+        外部注入的客户端（``sdk_client``）不做 loop 判定：注入方自行管理其
+        生命周期。
         """
-        if self._client is not None:
+        if self.sdk_client is not None:
             # 外部注入的客户端，直接复用
-            return self._client
+            return self.sdk_client
 
         try:
             loop = asyncio.get_running_loop()
@@ -97,20 +123,22 @@ class OpenAICompatibleClient:
             self._sdk_client_loop = None
 
         if self._sdk_client is None:
-            try:
-                from openai import AsyncOpenAI
-            except ImportError as exc:  # pragma: no cover - 依赖缺失时的显式错误
-                raise LLMError("未安装 openai，无法使用 OpenAICompatibleClient") from exc
-
-            self._sdk_client = AsyncOpenAI(
-                base_url=self.api_base,
-                api_key=self.api_key,
-                timeout=self.timeout,
-                default_headers=self.extra_headers or None,
-                **self.config,
-            )
+            self._sdk_client = self._create_sdk_client()
             self._sdk_client_loop = loop
         return self._sdk_client
+
+    def _create_sdk_client(self) -> Any:
+        """创建 SDK 客户端实例。"""
+        kwargs = self.build_sdk_client_kwargs()
+        if self.sdk_client_factory is not None:
+            return self.sdk_client_factory(**kwargs)
+
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:  # pragma: no cover - 依赖缺失时的显式错误
+            raise LLMError("未安装 openai，无法使用 OpenAICompatibleClient") from exc
+
+        return AsyncOpenAI(**kwargs)
 
     def build_payload(self, request: LLMRequest) -> dict[str, Any]:
         """构造 OpenAI SDK 调用参数。"""
@@ -141,7 +169,7 @@ class OpenAICompatibleClient:
             LLMTimeoutError: 调用超过超时时间。
             LLMError: 其他调用失败。
         """
-        client = self._get_client()
+        client = self.get_sdk_client()
         payload = self.build_payload(request)
         model = payload["model"]
 

@@ -64,18 +64,15 @@ class _FakeRaw:
 
 
 @pytest.fixture
-def captured_call(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """替换 litellm.acompletion，记录调用参数并返回伪造响应。"""
+def captured_call() -> tuple[dict[str, Any], Any]:
+    """返回 (调用参数记录, 注入用的 completion 替身)。"""
     captured: dict[str, Any] = {}
 
     async def fake_acompletion(**kwargs: Any) -> _FakeRaw:
         captured.update(kwargs)
         return _FakeRaw(_FakeMessage("hello"))
 
-    import litellm
-
-    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
-    return captured
+    return captured, fake_acompletion
 
 
 def test_resolve_provider_for_openai() -> None:
@@ -184,25 +181,23 @@ def test_build_payload_extra_overrides_defaults() -> None:
     assert payload["seed"] == 7
 
 
-def test_generate_returns_response(captured_call: dict[str, Any]) -> None:
-    client = LiteLLMClient(model="gpt-4o-mini")
+def test_generate_returns_response(captured_call: tuple[dict[str, Any], Any]) -> None:
+    captured, completion = captured_call
+    client = LiteLLMClient(model="gpt-4o-mini", completion=completion)
 
     response = asyncio.run(client.generate(LLMRequest(instructions=["hi"])))
 
     assert response.model == "fake-model"
     assert response.usage.input_tokens == 11
     assert response.usage.output_tokens == 5
-    assert captured_call["model"] == "gpt-4o-mini"
+    assert captured["model"] == "gpt-4o-mini"
 
 
-def test_generate_parses_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_parses_tool_calls() -> None:
     async def fake_acompletion(**kwargs: Any) -> _FakeRaw:
         return _FakeRaw(_FakeMessage(None, [_FakeToolCall()]))
 
-    import litellm
-
-    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
-    client = LiteLLMClient(model="gpt-4o-mini")
+    client = LiteLLMClient(model="gpt-4o-mini", completion=fake_acompletion)
 
     response = asyncio.run(client.generate(LLMRequest()))
 
@@ -212,7 +207,7 @@ def test_generate_parses_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     assert tool_calls[0].arguments == {"q": "闭包"}
 
 
-def test_generate_maps_litellm_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_maps_litellm_timeout() -> None:
     from litellm.exceptions import Timeout as LiteLLMTimeout
 
     async def fake_acompletion(**kwargs: Any) -> Any:
@@ -222,54 +217,40 @@ def test_generate_maps_litellm_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
             llm_provider="openai",
         )
 
-    import litellm
-
-    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
-    client = LiteLLMClient(model="gpt-4o-mini")
+    client = LiteLLMClient(model="gpt-4o-mini", completion=fake_acompletion)
 
     with pytest.raises(LLMTimeoutError):
         asyncio.run(client.generate(LLMRequest()))
 
 
-def test_generate_maps_generic_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_maps_generic_error() -> None:
     async def fake_acompletion(**kwargs: Any) -> Any:
         raise RuntimeError("boom")
 
-    import litellm
-
-    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
-    client = LiteLLMClient(model="gpt-4o-mini")
+    client = LiteLLMClient(model="gpt-4o-mini", completion=fake_acompletion)
 
     with pytest.raises(LLMError):
         asyncio.run(client.generate(LLMRequest()))
 
 
-def test_generate_maps_builtin_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_maps_builtin_timeout() -> None:
     async def fake_acompletion(**kwargs: Any) -> Any:
         raise TimeoutError("asyncio timeout")
 
-    import litellm
-
-    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
-    client = LiteLLMClient(model="gpt-4o-mini")
+    client = LiteLLMClient(model="gpt-4o-mini", completion=fake_acompletion)
 
     with pytest.raises(LLMTimeoutError):
         asyncio.run(client.generate(LLMRequest()))
 
 
-def test_generate_structured_adds_schema_instruction(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_generate_structured_adds_schema_instruction() -> None:
     captured: dict[str, Any] = {}
 
     async def fake_acompletion(**kwargs: Any) -> _FakeRaw:
         captured.update(kwargs)
         return _FakeRaw(_FakeMessage('{"title": "T", "steps": ["s1"]}'))
 
-    import litellm
-
-    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
-    client = LiteLLMClient(model="gpt-4o-mini")
+    client = LiteLLMClient(model="gpt-4o-mini", completion=fake_acompletion)
 
     result = asyncio.run(client.generate_structured(LLMRequest(instructions=["做计划"]), Plan))
 
@@ -278,3 +259,40 @@ def test_generate_structured_adds_schema_instruction(
     instruction = captured["messages"][0]["content"]
     assert "做计划" in instruction
     assert "steps" in instruction
+
+
+def test_create_client_forwards_completion_injection() -> None:
+    """公开注入点可经 create_client 透传，无需直接构造适配器。"""
+    captured: dict[str, Any] = {}
+
+    async def fake_acompletion(**kwargs: Any) -> _FakeRaw:
+        captured.update(kwargs)
+        return _FakeRaw(_FakeMessage("hello"))
+
+    client = create_client("openai", api_key="k", completion=fake_acompletion)
+
+    assert isinstance(client, LiteLLMClient)
+    assert client.completion is fake_acompletion
+
+    response = asyncio.run(client.generate(LLMRequest(instructions=["hi"])))
+
+    assert response.contents[0].content == "hello"
+    assert captured["model"] == "openai/gpt-4o-mini"
+
+
+def test_resolve_completion_prefers_injected_function() -> None:
+    async def fake_acompletion(**kwargs: Any) -> Any:
+        return None
+
+    client = LiteLLMClient(model="gpt-4o-mini", completion=fake_acompletion)
+
+    assert client.resolve_completion() is fake_acompletion
+
+
+def test_resolve_completion_falls_back_to_litellm() -> None:
+    """未注入时回落到 litellm.acompletion（只解析函数，不发请求）。"""
+    import litellm
+
+    client = LiteLLMClient(model="gpt-4o-mini")
+
+    assert client.resolve_completion() is litellm.acompletion

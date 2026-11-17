@@ -459,8 +459,8 @@ def test_openai_compatible_generate_parses_response(
         model="MiniMax-M3.1-Flash",
         api_base="https://api.minimax.cn/v1",
         api_key="k",
+        sdk_client=_FakeOpenAI(captured, _FakeMessage("hello")),
     )
-    client._client = _FakeOpenAI(captured, _FakeMessage("hello"))
 
     response = asyncio.run(client.generate(LLMRequest(instructions=["hi"])))
 
@@ -485,8 +485,8 @@ def test_openai_compatible_generate_parses_tool_calls(
         model="MiniMax-M3.1-Flash",
         api_base="https://api.minimax.cn/v1",
         api_key="k",
+        sdk_client=_FakeOpenAI({}, _FakeMessage(None, [_Tc()])),
     )
-    client._client = _FakeOpenAI({}, _FakeMessage(None, [_Tc()]))
 
     response = asyncio.run(client.generate(LLMRequest()))
 
@@ -509,8 +509,8 @@ def test_openai_compatible_maps_timeout(monkeypatch: pytest.MonkeyPatch) -> None
         model="MiniMax-M3.1-Flash",
         api_base="https://api.minimax.cn/v1",
         api_key="k",
+        sdk_client=_Failing(),
     )
-    client._client = _Failing()
 
     with pytest.raises(LLMTimeoutError):
         asyncio.run(client.generate(LLMRequest()))
@@ -528,8 +528,8 @@ def test_openai_compatible_maps_generic_error(monkeypatch: pytest.MonkeyPatch) -
         model="MiniMax-M3.1-Flash",
         api_base="https://api.minimax.cn/v1",
         api_key="k",
+        sdk_client=_Failing(),
     )
-    client._client = _Failing()
 
     with pytest.raises(LLMError):
         asyncio.run(client.generate(LLMRequest()))
@@ -547,8 +547,8 @@ def test_openai_compatible_maps_builtin_timeout(monkeypatch: pytest.MonkeyPatch)
         model="MiniMax-M3.1-Flash",
         api_base="https://api.minimax.cn/v1",
         api_key="k",
+        sdk_client=_Failing(),
     )
-    client._client = _Failing()
 
     with pytest.raises(LLMTimeoutError):
         asyncio.run(client.generate(LLMRequest()))
@@ -560,8 +560,8 @@ def test_openai_compatible_generate_structured(monkeypatch: pytest.MonkeyPatch) 
         model="MiniMax-M3.1-Flash",
         api_base="https://api.minimax.cn/v1",
         api_key="k",
+        sdk_client=_FakeOpenAI(captured, _FakeMessage('{"title": "T", "steps": ["s1"]}')),
     )
-    client._client = _FakeOpenAI(captured, _FakeMessage('{"title": "T", "steps": ["s1"]}'))
 
     result = asyncio.run(client.generate_structured(LLMRequest(instructions=["做计划"]), Plan))
 
@@ -612,17 +612,72 @@ def test_openai_compatible_payload_includes_optional_fields() -> None:
 
 
 def test_openai_compatible_builds_sdk_client_lazily() -> None:
+    created: list[dict[str, Any]] = []
+
+    def _factory(**kwargs: Any) -> Any:
+        created.append(kwargs)
+        return object()
+
     client = OpenAICompatibleClient(
         model="MiniMax-M3.1-Flash",
         api_base="https://api.minimax.cn/v1",
         api_key="k",
         timeout=25.0,
         extra_headers={"X-Trace": "abc"},
+        sdk_client_factory=_factory,
     )
 
-    sdk_client = client._get_client()
+    # 构造客户端时不应创建 SDK 客户端
+    assert created == []
+
+    sdk_client = client.get_sdk_client()
 
     assert sdk_client is not None
-    assert str(sdk_client.base_url).rstrip("/") == "https://api.minimax.cn/v1"
+    assert created == [
+        {
+            "base_url": "https://api.minimax.cn/v1",
+            "api_key": "k",
+            "timeout": 25.0,
+            "default_headers": {"X-Trace": "abc"},
+        }
+    ]
     # 惰性创建：重复调用复用同一实例
-    assert client._get_client() is sdk_client
+    assert client.get_sdk_client() is sdk_client
+    assert len(created) == 1
+
+
+def test_create_client_forwards_sdk_client_injection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """公开注入点可经 create_client 透传，无需直接构造适配器。"""
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "cn-key")
+    monkeypatch.delenv("MINIMAX_CN_BASE_URL", raising=False)
+    captured: dict[str, Any] = {}
+
+    client = create_client(
+        "minimax-cn",
+        sdk_client=_FakeOpenAI(captured, _FakeMessage("hi")),
+    )
+
+    assert isinstance(client, OpenAICompatibleClient)
+
+    response = asyncio.run(client.generate(LLMRequest(instructions=["hi"])))
+
+    assert response.contents[0].content == "hi"
+    assert captured["model"] == "MiniMax-M3.1-Flash"
+
+
+def test_create_client_forwards_sdk_client_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SDK 客户端工厂同样可经 create_client 透传。"""
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "cn-key")
+    monkeypatch.delenv("MINIMAX_CN_BASE_URL", raising=False)
+    created: list[dict[str, Any]] = []
+
+    def _factory(**kwargs: Any) -> Any:
+        created.append(kwargs)
+        return _FakeOpenAI({}, _FakeMessage("hi"))
+
+    client = create_client("minimax-cn", sdk_client_factory=_factory)
+
+    response = asyncio.run(client.generate(LLMRequest(instructions=["hi"])))
+
+    assert response.contents[0].content == "hi"
+    assert created[0]["base_url"] == "https://api.minimax.cn/v1"

@@ -257,7 +257,9 @@ request = LLMRequest(
 
 ## 6. 测试替身
 
-单元测试不需要网络、不消耗额度：
+单元测试不需要网络、不消耗额度。
+
+### 6.1 业务层：Protocol 级替身
 
 ```python
 from agent_learning_coach.core.llm import MockLLMClient, FailingLLMClient
@@ -269,6 +271,56 @@ failing = FailingLLMClient("boom")  # 覆盖失败路径
 ```
 
 两者均满足 `LLMClient` Protocol，可直接注入业务代码。
+
+### 6.2 适配器层：公开注入点
+
+测试适配器自身（断言 payload、映射错误、观察连接池生命周期）时，
+**不要**改写第三方模块或访问适配器私有字段。两个适配器都提供了公开注入点：
+
+| 适配器 | 注入参数 | 用途 |
+| ------ | -------- | ---- |
+| `OpenAICompatibleClient` | `sdk_client=` | 直接给出一个 SDK 客户端实例（替身或已配置好的真实客户端） |
+| `OpenAICompatibleClient` | `sdk_client_factory=` | 提供构造工厂，接收与 `AsyncOpenAI` 相同的关键字参数，可观察构造时机与参数 |
+| `LiteLLMClient` | `completion=` | 注入异步 completion 函数，签名与 `litellm.acompletion` 一致 |
+
+```python
+# 注入实例
+client = OpenAICompatibleClient(
+    model="MiniMax-M3.1-Flash",
+    api_base="https://api.minimax.cn/v1",
+    api_key="k",
+    sdk_client=fake_openai,
+)
+
+# 注入工厂：观察惰性创建与构造参数
+client = OpenAICompatibleClient(
+    model="MiniMax-M3.1-Flash",
+    api_base="https://api.minimax.cn/v1",
+    api_key="k",
+    sdk_client_factory=lambda **kwargs: FakeOpenAI(**kwargs),
+)
+
+# LiteLLM：注入 completion
+client = LiteLLMClient(model="gpt-4o-mini", completion=fake_acompletion)
+```
+
+注入点同样可经 `create_client` 透传：
+
+```python
+client = create_client("minimax-cn", sdk_client=fake_openai)
+client = create_client("openai", completion=fake_acompletion)
+```
+
+对应的公开只读接口：
+
+| 方法 | 说明 |
+| ---- | ---- |
+| `OpenAICompatibleClient.get_sdk_client()` | 返回底层 SDK 客户端，必要时惰性创建 |
+| `OpenAICompatibleClient.build_sdk_client_kwargs()` | 返回 SDK 客户端初始化参数 |
+| `LiteLLMClient.resolve_completion()` | 返回实际使用的 completion 函数 |
+
+**注入对象的生命周期由注入方负责**：`aclose()` 只关闭本类自建的客户端，
+不处理注入的实例。
 
 ## 7. 使用约束
 
@@ -282,6 +334,8 @@ failing = FailingLLMClient("boom")  # 覆盖失败路径
 5. **注意区域与 Key 的匹配**。国内站 Key 在国际站会返回 401，
    命名空间选错是最常见的配置错误。
 6. **单元测试一律用 Mock 替身**；真实调用留给集成测试与手工验证。
+   打桩一律走公开注入点（第 6.2 节），不要 `monkeypatch` 第三方模块，
+   也不要读写适配器的私有字段——那类测试会在重构时静默失效或误触真实网络。
 7. **短生命周期脚本要显式关闭客户端**。`OpenAICompatibleClient` 内部持有
    httpx 连接池，不关闭时会在所属 event loop 关闭后被 GC，产生
    `Event loop is closed` 噪声：
