@@ -40,7 +40,9 @@
   - `LLMClient` Protocol（`runtime_checkable`）：`generate` + `generate_structured`
   - 厂商无关模型：`LLMRequest` / `LLMResponse` / `LLMUsage` / `ToolSpec` / `Message` / `ToolCall` / `ToolResult`
   - LiteLLM Adapter：`LiteLLMClient`，含超时透传与错误映射
-  - 厂商解析：`resolve_provider(model)` + 客户端工厂 `create_client(model, timeout=...)`，模型标识写错早失败
+  - OpenAI 兼容 Adapter：`OpenAICompatibleClient`，直连国产厂商端点，模型名保持原生形式
+  - Provider 命名空间注册表：`registry.py`，命名空间 -> 协议类型/端点/凭证变量/默认模型
+  - 客户端工厂：`create_client(provider, model=..., timeout=...)`，配置错误早失败
   - Mock Client：`MockLLMClient`（记录入参）、`FailingLLMClient`（覆盖失败路径）
   - Structured Output：提示词约束 + 严格 JSON 解析，失败抛 `LLMParseError`
   - Timeout：请求级 + 客户端级两级配置，超时映射为 `LLMTimeoutError`
@@ -55,11 +57,12 @@
   - 厂商原生 schema 优先：保真度更好但牺牲跨厂商一致性。
   - 抽象层内置重试：隐藏了成本与延迟，且重试策略本应按调用场景决定。
 - 测试结果如何？
-  `pytest` 35 passed；`core/llm` 覆盖率 100%（首版适配器仅 36%）。
+  `pytest` 70 passed；`core/llm` 覆盖率 100%（首版适配器仅 36%）。
   `ruff format --check` / `ruff check` / `mypy` 全部通过。
 - 实践结果是否支持阅读材料中的观点？
   支持：把协议作为边界后，测试完全不触网，业务层代码不出现任何厂商标识。
   反面教材：首版把“厂商路由”完全交给 LiteLLM 隐式处理，把超时留到应用层，导致标识写错要等到真实调用才暴露、超时无法与其它错误区分——边界一旦定下，能力缺口应在同层补齐而不是下沉到调用方。
+  二次反面教材：直接沿用 LiteLLM 的 `<provider>/<model>` 形态，会得到 `openai/minimax-M3.1-Flash` 这种怪异命名空间——把厂商名塞进模型名，既不准确也无法表达真实归属。抽象层不能假设底层工具的命名空间体系就是自己的命名空间体系。
 
 ## 6. Reflection
 
@@ -72,8 +75,8 @@
 
 ## 7. Output
 
-- Code / PR: `src/agent_learning_coach/core/llm/`（protocol / models / types / errors / messages / structured / litellm_client / mock / providers）
-- Tests: `tests/test_llm_protocol.py`、`tests/test_litellm_client.py`
+- Code / PR: `src/agent_learning_coach/core/llm/`（protocol / models / types / errors / messages / structured / litellm_client / openai_compatible_client / mock / registry / providers）
+- Tests: `tests/test_llm_protocol.py`、`tests/test_litellm_client.py`、`tests/test_provider_registry.py`
 - ADR: `docs/architecture/decisions/0002-llm-client-protocol.md`
 - Integration Notes: `docs/engineering/llm.md`
 - Article Notes: docs/articles/agent-runtime.md

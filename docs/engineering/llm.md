@@ -19,45 +19,108 @@
 
 ## 2. 切换 Provider
 
-切换厂商 = 换模型标识字符串，业务代码零改动。
+### 2.1 命名空间（厂商）
+
+provider 用**命名空间**表示厂商，模型名保持厂商原生形式，不需要
+`openai/`、`anthropic/` 之类的前缀：
 
 ```python
 from agent_learning_coach.core.llm import create_client
 
-client = create_client("anthropic/claude-sonnet-4-5", timeout=60.0)
+client = create_client("minimax")  # 用注册表默认模型
+client = create_client("minimax", model="minimax-M2")  # 手动指定模型
+client = create_client("deepseek", timeout=30.0)  # 手动配置超时
 ```
 
-常用模型标识：
+内置命名空间：
 
-| 厂商 | 标识示例 | 解析结果 |
-| ---- | -------- | -------- |
-| OpenAI | `gpt-4o-mini` | `openai` |
-| Anthropic | `anthropic/claude-sonnet-4-5` | `anthropic` |
-| Gemini | `gemini/gemini-2.5-flash` | `gemini` |
+| 命名空间 | 厂商 | 协议 | 默认模型 |
+| -------- | ---- | ---- | -------- |
+| `openai` | OpenAI | LiteLLM | `gpt-4o-mini` |
+| `anthropic` | Anthropic | LiteLLM | `claude-sonnet-4-5` |
+| `gemini` | Google Gemini | LiteLLM | `gemini-2.5-flash` |
+| `minimax` | MiniMax | OpenAI 兼容 | `minimax-M3.1-Flash` |
+| `deepseek` | DeepSeek | OpenAI 兼容 | `deepseek-chat` |
+| `qwen` | 阿里云百炼（通义千问） | OpenAI 兼容 | `qwen-plus` |
+| `zhipu` | 智谱 GLM | OpenAI 兼容 | `glm-4-plus` |
+| `moonshot` | Moonshot Kimi | OpenAI 兼容 | `kimi-k2-turbo-preview` |
+| `siliconflow` | SiliconFlow | OpenAI 兼容 | `Qwen/Qwen2.5-72B-Instruct` |
 
-`create_client` 会先调用 `resolve_provider(model)` 解析厂商，标识写错时立即抛
-`LLMError`，而不是等到第一次真实调用才在网络层报错。
+### 2.2 两种协议
 
-也可按请求覆盖模型（同一客户端内切换模型）：
+| 协议 | 适配器 | 模型名形态 | 适用厂商 |
+| ---- | ------ | ---------- | -------- |
+| `LITELLM` | `LiteLLMClient` | 内部转成 `anthropic/claude-sonnet-4-5` | LiteLLM 有成熟支持的 OpenAI / Anthropic / Gemini |
+| `OPENAI_COMPATIBLE` | `OpenAICompatibleClient` | 保持原生 `minimax-M3.1-Flash` | 国产厂商与自建网关（DeepSeek、MiniMax、千问、智谱、Kimi、SiliconFlow 等） |
+
+国产厂商普遍提供 OpenAI 兼容的 `/chat/completions` 端点，因此不必强行塞进
+LiteLLM 的命名空间体系——那样会得到 `openai/minimax-M3.1-Flash` 这种既不准确
+（实际走的不是 OpenAI）也无法表达真实厂商归属的怪异写法。
+
+### 2.3 运行时切换模型
+
+同一客户端内按请求切换模型，`LLMRequest.model` 优先于客户端默认模型：
 
 ```python
-request = LLMRequest(model="gemini/gemini-2.5-flash")
+client = create_client("minimax")
+
+# 单次请求换模型
+await client.generate(LLMRequest(model="minimax-M2", instructions=[...]))
 ```
 
-### 凭证
+LiteLLM 协议下，裸模型名会自动补上厂商前缀：
 
-凭证通过环境变量提供，不写进代码：
+```python
+client = create_client("anthropic")
+await client.generate(
+    LLMRequest(model="claude-opus-4-5")
+)  # 实际发给 LiteLLM: anthropic/claude-opus-4-5
+```
+
+### 2.4 扩展命名空间
+
+接入新厂商时注册一个命名空间，无需修改抽象层：
+
+```python
+from agent_learning_coach.core.llm import ProtocolKind, ProviderSpec, register_provider
+
+register_provider(
+    ProviderSpec(
+        namespace="my-vendor",
+        display_name="My Vendor",
+        protocol=ProtocolKind.OPENAI_COMPATIBLE,
+        api_base="https://api.my-vendor.com/v1",
+        api_key_env="MY_VENDOR_API_KEY",
+        default_model="my-model",
+    )
+)
+```
+
+LiteLLM 协议则设 `litellm_prefix="my-vendor"`，由 LiteLLM 完成路由。
+
+### 2.5 凭证
+
+凭证通过环境变量提供，不写进代码。命名空间声明的默认变量名：
 
 ```bash
 export OPENAI_API_KEY=...
 export ANTHROPIC_API_KEY=...
+export MINIMAX_API_KEY=...
+export DEEPSEEK_API_KEY=...
+export DASHSCOPE_API_KEY=...
+export ZHIPU_API_KEY=...
+export MOONSHOT_API_KEY=...
+export SILICONFLOW_API_KEY=...
 ```
 
-自建网关或代理用 `api_base` 覆盖：
+也可显式传入 `api_key=` 覆盖。自建网关或代理用 `api_base` 覆盖：
 
 ```python
-client = create_client("gpt-4o-mini", api_base="https://my-gateway/v1")
+client = create_client("minimax", api_base="https://my-gateway/v1")
 ```
+
+命名空间不存在、凭证缺失、端点缺失都在**创建时**抛 `LLMError`，不等到首次
+真实调用才在网络层报错。
 
 ## 3. 超时
 
@@ -67,11 +130,11 @@ client = create_client("gpt-4o-mini", api_base="https://my-gateway/v1")
 优先级：请求级 > 客户端级。
 
 ```python
-client = create_client("gpt-4o-mini", timeout=60.0)  # 客户端默认
+client = create_client("minimax", timeout=60.0)  # 客户端默认
 request = LLMRequest(timeout=5.0)  # 单次请求覆盖
 ```
 
-超时单位为秒，透传给 LiteLLM 的 `timeout` 参数。
+超时单位为秒，透传给 LiteLLM / OpenAI SDK 的 `timeout` 参数。
 
 ### 错误分类
 
@@ -157,12 +220,14 @@ failing = FailingLLMClient("boom")  # 覆盖失败路径
 
 ## 7. 使用约束
 
-1. **不要在业务层 import `litellm`**。所有模型访问经由 `LLMClient`。
+1. **不要在业务层 import `litellm` 或 `openai`**。所有模型访问经由 `LLMClient`。
 2. **不要捕获异常后吞掉**。`LLMError` 及其子类必须向上传递或显式转换，
    让应用层能区分超时、解析失败与其他错误。
-3. **模型标识集中管理**。在应用层配置中维护模型标识，不要散落在业务代码里；
-   厂商切换应只改一处配置。
-4. **单元测试一律用 Mock 替身**；真实调用留给集成测试与手工验证。
+3. **provider 命名空间与模型标识集中管理**。在应用层配置中维护命名空间与模型，
+   不要散落在业务代码里；厂商切换应只改一处配置。
+4. **不要用 `openai/<厂商模型名>` 这种写法**。厂商归属由命名空间表达，
+   模型名保持厂商原生形式。
+5. **单元测试一律用 Mock 替身**；真实调用留给集成测试与手工验证。
 
 ## 8. 当前未覆盖范围
 
@@ -173,3 +238,6 @@ failing = FailingLLMClient("boom")  # 覆盖失败路径
 | 自动重试 | 未实现 | 由应用层依据 `LLMTimeoutError` / `LLMError` 决策 |
 | 厂商原生结构化输出 | 未实现 | 当前走可移植路径，见第 4 节 |
 | Token 精细计费 | 部分 | 仅统计输入/输出两项，不含缓存与推理 token |
+| 供应商特有参数 | 未实现 | 通过 `LLMRequest.extra` 透传，未经类型校验 |
+| 真实厂商联调 | 未验证 | 端点可达性已实测（401 而非 404），但未发起真实推理请求 |
+

@@ -79,28 +79,58 @@ def captured_call(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 def test_resolve_provider_for_openai() -> None:
-    assert resolve_provider("gpt-4o-mini") == "openai"
+    assert resolve_provider("openai").namespace == "openai"
 
 
 def test_resolve_provider_for_anthropic() -> None:
-    assert resolve_provider("anthropic/claude-sonnet-4-5") == "anthropic"
+    assert resolve_provider("anthropic").namespace == "anthropic"
 
 
-def test_resolve_provider_rejects_unknown_model() -> None:
+def test_resolve_provider_rejects_unknown_namespace() -> None:
     with pytest.raises(LLMError):
-        resolve_provider("definitely-not-a-real-model-xyz")
+        resolve_provider("definitely-not-a-real-provider")
 
 
 def test_create_client_returns_protocol_conforming_client() -> None:
-    client = create_client("gpt-4o-mini", timeout=15.0)
+    client = create_client("openai", timeout=15.0)
 
     assert isinstance(client, LLMClient)
     assert isinstance(client, LiteLLMClient)
 
 
-def test_create_client_rejects_unknown_model() -> None:
+def test_create_client_rejects_unknown_namespace() -> None:
     with pytest.raises(LLMError):
-        create_client("definitely-not-a-real-model-xyz")
+        create_client("definitely-not-a-real-provider")
+
+
+def test_create_client_applies_litellm_prefix() -> None:
+    client = create_client("anthropic", model="claude-sonnet-4-5")
+
+    assert isinstance(client, LiteLLMClient)
+    assert client.model == "anthropic/claude-sonnet-4-5"
+
+
+def test_create_client_uses_registry_default_model() -> None:
+    client = create_client("anthropic")
+
+    assert isinstance(client, LiteLLMClient)
+    assert client.model == "anthropic/claude-sonnet-4-5"
+
+
+def test_litellm_client_request_model_gets_prefix() -> None:
+    client = LiteLLMClient(model="anthropic/claude-sonnet-4-5", model_prefix="anthropic")
+
+    payload = client.build_payload(LLMRequest(model="claude-opus-4-5"))
+
+    assert payload["model"] == "anthropic/claude-opus-4-5"
+
+
+def test_litellm_client_keeps_explicit_prefix() -> None:
+    client = LiteLLMClient(model="anthropic/claude-sonnet-4-5", model_prefix="anthropic")
+
+    payload = client.build_payload(LLMRequest(model="openai/gpt-4o-mini"))
+
+    assert payload["model"] == "openai/gpt-4o-mini"
 
 
 def test_build_payload_includes_core_fields() -> None:

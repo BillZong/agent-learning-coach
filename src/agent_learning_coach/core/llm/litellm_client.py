@@ -52,21 +52,42 @@ class LiteLLMClient:
         response = await client.generate(LLMRequest(instructions=["..."]))
     """
 
-    def __init__(self, model: str, *, timeout: float | None = None, **config: Any) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        timeout: float | None = None,
+        model_prefix: str | None = None,
+        **config: Any,
+    ) -> None:
         """初始化客户端。
 
         Args:
             model: LiteLLM 模型标识，例如 ``gpt-4o-mini``、``anthropic/claude-sonnet-4-5``。
             timeout: 默认超时秒数。请求级 ``LLMRequest.timeout`` 优先。
+            model_prefix: 厂商前缀。设置后，请求级 ``LLMRequest.model``
+                指定的裸模型名会自动补上该前缀，实现请求级模型切换。
             **config: 透传给 LiteLLM 的默认参数，如 ``api_base``、``api_key``。
         """
         self.model = model
         self.timeout = timeout
+        self.model_prefix = model_prefix
         self.config = config
+
+    def resolve_model(self, model: str | None) -> str:
+        """确定实际发送给 LiteLLM 的模型标识。
+
+        请求级模型优先于客户端默认模型；设置了 ``model_prefix`` 时，
+        裸模型名自动补前缀，已带前缀的标识保持原样。
+        """
+        chosen = model or self.model
+        if self.model_prefix is None or "/" in chosen:
+            return chosen
+        return f"{self.model_prefix}/{chosen}"
 
     def build_payload(self, request: LLMRequest) -> dict[str, Any]:
         """构造 LiteLLM 调用参数（公开以便测试断言，不含任何厂商类型）。"""
-        model = request.model or self.model
+        model = self.resolve_model(request.model)
         payload: dict[str, Any] = {
             "model": model,
             "messages": build_messages(request),
