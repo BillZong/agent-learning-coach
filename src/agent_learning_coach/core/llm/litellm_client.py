@@ -1,7 +1,8 @@
 """基于 LiteLLM 的 ``LLMClient`` 实现。
 
 LiteLLM 统一了 OpenAI / Anthropic / Gemini 等提供商的调用差异，
-因此本项目只需维护这一份适配器即可支持多厂商切换。
+因此本项目只需维护这一份适配器即可支持多厂商切换：切换厂商只需更换
+模型标识，不需要改动业务代码。
 
 结构化输出采用“提示词约束 + 严格 JSON 解析”的可移植路径（见
 ``agent_learning_coach.core.llm.structured``），不依赖厂商专属的
@@ -14,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agent_learning_coach.core.llm.errors import LLMError
+from agent_learning_coach.core.llm.errors import LLMError, LLMTimeoutError
 from agent_learning_coach.core.llm.messages import build_messages, build_tools, parse_response
 from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
 from agent_learning_coach.core.llm.structured import (
@@ -24,32 +25,47 @@ from agent_learning_coach.core.llm.structured import (
 )
 
 
+def _translate_error(exc: Exception) -> LLMError:
+    """把 LiteLLM 异常转换为厂商无关的异常。
+
+    超时单独映射为 ``LLMTimeoutError``，因为它是可预期的、值得重试的失败。
+    """
+    if isinstance(exc, TimeoutError):
+        return LLMTimeoutError(f"LLM 调用超时: {exc}")
+
+    try:
+        from litellm.exceptions import Timeout as LiteLLMTimeout
+    except ImportError:  # pragma: no cover - 依赖缺失时的兜底
+        return LLMError(f"LLM 调用失败: {exc}")
+
+    if isinstance(exc, LiteLLMTimeout):
+        return LLMTimeoutError(f"LLM 调用超时: {exc}")
+    return LLMError(f"LLM 调用失败: {exc}")
+
+
 class LiteLLMClient:
     """LiteLLM 适配器，满足 ``LLMClient`` Protocol。
 
     用法::
 
-        client = LiteLLMClient(model="gpt-4o-mini")
+        client = LiteLLMClient(model="gpt-4o-mini", timeout=30.0)
         response = await client.generate(LLMRequest(instructions=["..."]))
     """
 
-    def __init__(self, model: str, **config: Any) -> None:
+    def __init__(self, model: str, *, timeout: float | None = None, **config: Any) -> None:
         """初始化客户端。
 
         Args:
-            model: LiteLLM 模型标识，例如 ``gpt-4o-mini``、``claude-sonnet-4-5``。
+            model: LiteLLM 模型标识，例如 ``gpt-4o-mini``、``anthropic/claude-sonnet-4-5``。
+            timeout: 默认超时秒数。请求级 ``LLMRequest.timeout`` 优先。
             **config: 透传给 LiteLLM 的默认参数，如 ``api_base``、``api_key``。
         """
         self.model = model
+        self.timeout = timeout
         self.config = config
 
-    async def generate(self, request: LLMRequest) -> LLMResponse:
-        """执行一次 LLM 调用。"""
-        try:
-            from litellm import acompletion
-        except ImportError as exc:  # pragma: no cover - 依赖缺失时的显式错误
-            raise LLMError("未安装 litellm，无法使用 LiteLLMClient") from exc
-
+    def build_payload(self, request: LLMRequest) -> dict[str, Any]:
+        """构造 LiteLLM 调用参数（公开以便测试断言，不含任何厂商类型）。"""
         model = request.model or self.model
         payload: dict[str, Any] = {
             "model": model,
@@ -64,12 +80,33 @@ class LiteLLMClient:
             payload["temperature"] = request.temperature
         if request.max_output_tokens is not None:
             payload["max_tokens"] = request.max_output_tokens
+
+        timeout = request.timeout if request.timeout is not None else self.timeout
+        if timeout is not None:
+            payload["timeout"] = timeout
+
         payload.update(request.extra)
+        return payload
+
+    async def generate(self, request: LLMRequest) -> LLMResponse:
+        """执行一次 LLM 调用。
+
+        Raises:
+            LLMTimeoutError: 调用超过超时时间。
+            LLMError: 其他调用失败。
+        """
+        try:
+            from litellm import acompletion
+        except ImportError as exc:  # pragma: no cover - 依赖缺失时的显式错误
+            raise LLMError("未安装 litellm，无法使用 LiteLLMClient") from exc
+
+        payload = self.build_payload(request)
+        model = payload["model"]
 
         try:
             raw = await acompletion(**payload)
         except Exception as exc:
-            raise LLMError(f"LLM 调用失败: {exc}") from exc
+            raise _translate_error(exc) from exc
 
         return parse_response(raw, model=model)
 

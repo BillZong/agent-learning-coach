@@ -39,21 +39,27 @@
 - 实现了什么？
   - `LLMClient` Protocol（`runtime_checkable`）：`generate` + `generate_structured`
   - 厂商无关模型：`LLMRequest` / `LLMResponse` / `LLMUsage` / `ToolSpec` / `Message` / `ToolCall` / `ToolResult`
-  - LiteLLM Adapter：`LiteLLMClient`
+  - LiteLLM Adapter：`LiteLLMClient`，含超时透传与错误映射
+  - 厂商解析：`resolve_provider(model)` + 客户端工厂 `create_client(model, timeout=...)`，模型标识写错早失败
   - Mock Client：`MockLLMClient`（记录入参）、`FailingLLMClient`（覆盖失败路径）
   - Structured Output：提示词约束 + 严格 JSON 解析，失败抛 `LLMParseError`
-  - 异常体系：`LLMError` / `LLMParseError`
+  - Timeout：请求级 + 客户端级两级配置，超时映射为 `LLMTimeoutError`
+  - 异常体系：`LLMError` / `LLMTimeoutError` / `LLMParseError`
 - 为什么这样设计？
   Protocol 而非基类：实现方零继承成本，Mock 与真实适配器可互换；入参出参全部自持 Pydantic 模型，杜绝厂商类型泄漏到业务层。
+  超时独立成异常类：超时可预期可重试，应用层需要把它与鉴权失败、配额耗尽区分开。
+  厂商解析提前到构造期：把错误从“首次真实调用的网络层”前移到“启动期”。
 - 有哪些替代方案？
   - 抽象基类（ABC）：强制继承，且无法用于非类实现。
   - 直接函数签名 + 依赖注入：无法统一表达“工具调用 + 结构化输出”的能力集合。
   - 厂商原生 schema 优先：保真度更好但牺牲跨厂商一致性。
+  - 抽象层内置重试：隐藏了成本与延迟，且重试策略本应按调用场景决定。
 - 测试结果如何？
-  `pytest` 13 passed（新增 12 条覆盖协议满足性、Mock 行为、结构化解析成功/失败、消息与工具转换、usage 解析）。
+  `pytest` 35 passed；`core/llm` 覆盖率 100%（首版适配器仅 36%）。
   `ruff format --check` / `ruff check` / `mypy` 全部通过。
 - 实践结果是否支持阅读材料中的观点？
   支持：把协议作为边界后，测试完全不触网，业务层代码不出现任何厂商标识。
+  反面教材：首版把“厂商路由”完全交给 LiteLLM 隐式处理，把超时留到应用层，导致标识写错要等到真实调用才暴露、超时无法与其它错误区分——边界一旦定下，能力缺口应在同层补齐而不是下沉到调用方。
 
 ## 6. Reflection
 
@@ -62,12 +68,13 @@
 2. 哪个观点改变或修正了原来的理解？
    结构化输出应该作为 Protocol 的一等方法，而不是每个调用点各自解析 JSON，否则一致性无从保证。
 3. 当前实现还有哪些局限？
-   仅覆盖同步非流式调用；提示词约束式 JSON 解析在复杂 schema 下可能失败；未做重试与超时策略；token 计费只统计输入输出两项。
+   仅覆盖同步非流式调用；提示词约束式 JSON 解析在复杂 schema 下可能失败；重试策略由应用层决定，抽象层不内置；token 计费只统计输入输出两项。
 
 ## 7. Output
 
-- Code / PR: `src/agent_learning_coach/core/llm/`（protocol / models / types / errors / messages / structured / litellm_client / mock）
-- Tests: `tests/test_llm_protocol.py`
+- Code / PR: `src/agent_learning_coach/core/llm/`（protocol / models / types / errors / messages / structured / litellm_client / mock / providers）
+- Tests: `tests/test_llm_protocol.py`、`tests/test_litellm_client.py`
 - ADR: `docs/architecture/decisions/0002-llm-client-protocol.md`
+- Integration Notes: `docs/engineering/llm.md`
 - Article Notes: docs/articles/agent-runtime.md
-- Unresolved Questions: 流式输出与多模态是否需要扩展 Protocol；结构化输出的重试策略归属应用层还是运行时层。
+- Unresolved Questions: 流式输出与多模态是否需要扩展 Protocol；重试与降级策略归属应用层还是运行时层。

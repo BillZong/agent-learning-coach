@@ -11,6 +11,14 @@ class LLMError(Exception):
     """
 
 
+class LLMTimeoutError(LLMError):
+    """Raised when a model call exceeds the configured timeout.
+
+    超时是可预期的、可重试的失败，因此单独成类，便于应用层区分
+    “需要重试或降级”与“请求本身有问题”。
+    """
+
+
 class LLMParseError(LLMError):
     """Raised when a model response cannot be parsed into the expected shape.
 

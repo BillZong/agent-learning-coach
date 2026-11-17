@@ -17,6 +17,7 @@ from agent_learning_coach.core.llm import (
     Message,
     MockLLMClient,
     ToolCall,
+    ToolResult,
     ToolSpec,
 )
 from agent_learning_coach.core.llm.messages import build_messages, build_tools, parse_response
@@ -143,6 +144,78 @@ def test_build_messages_maps_content_items() -> None:
     assert messages[0] == {"role": "system", "content": "system prompt"}
     assert messages[1] == {"role": "user", "content": "hi"}
     assert len(messages[2]["tool_calls"]) == 2
+
+
+def test_build_messages_maps_tool_result() -> None:
+    request = LLMRequest(
+        contents=[ToolResult(tool_call_id="call-1", name="search", content="结果")]
+    )
+
+    messages = build_messages(request)
+
+    assert messages == [{"role": "tool", "tool_call_id": "call-1", "content": "结果"}]
+
+
+def test_parse_response_keeps_non_json_tool_arguments() -> None:
+    class _BadArguments:
+        name = "search"
+        arguments = "not-json"
+
+    class _BadToolCall:
+        id = "call-1"
+        function = _BadArguments()
+
+    class _Message:
+        content = None
+        tool_calls = [_BadToolCall()]
+
+    class _Choice:
+        message = _Message()
+        finish_reason = "stop"
+
+    class _Raw:
+        choices = [_Choice()]
+        usage = None
+        model = "fake-model"
+
+    response = parse_response(_Raw())
+
+    tool_calls = [item for item in response.contents if isinstance(item, ToolCall)]
+    assert tool_calls[0].arguments == {"_raw": "not-json"}
+
+
+def test_mock_client_handler_overrides_text() -> None:
+    client = MockLLMClient(
+        text="ignored",
+        handler=lambda request: LLMResponse(
+            contents=[Message(role="assistant", content="handled")]
+        ),
+    )
+
+    response = asyncio.run(client.generate(LLMRequest()))
+
+    assert extract_text(response.contents) == "handled"
+
+
+def test_failing_client_structured_raises() -> None:
+    client = FailingLLMClient("boom")
+
+    with pytest.raises(LLMError):
+        asyncio.run(client.generate_structured(LLMRequest(), Diagnosis))
+
+
+def test_append_instructions_adds_system_prompt() -> None:
+    request = LLMRequest()
+
+    request.append_instructions("extra")
+
+    assert request.instructions == ["extra"]
+
+
+def test_extract_text_returns_empty_without_message() -> None:
+    contents = [ToolCall(tool_call_id="call-1", name="search", arguments={})]
+
+    assert extract_text(contents) == ""
 
 
 def test_build_tools_uses_openai_shape() -> None:

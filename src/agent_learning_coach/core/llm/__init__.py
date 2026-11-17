@@ -6,7 +6,8 @@
 导入约定：调用方统一从 ``agent_learning_coach.core.llm`` 导入公开符号。
 """
 
-from agent_learning_coach.core.llm.errors import LLMError, LLMParseError
+from agent_learning_coach.core.llm.errors import LLMError, LLMParseError, LLMTimeoutError
+from agent_learning_coach.core.llm.litellm_client import LiteLLMClient
 from agent_learning_coach.core.llm.mock import FailingLLMClient, MockLLMClient
 from agent_learning_coach.core.llm.models import (
     LLMRequest,
@@ -15,6 +16,7 @@ from agent_learning_coach.core.llm.models import (
     ToolSpec,
 )
 from agent_learning_coach.core.llm.protocol import LLMClient
+from agent_learning_coach.core.llm.providers import create_client, resolve_provider
 from agent_learning_coach.core.llm.types import (
     ContentItem,
     Message,
@@ -30,10 +32,14 @@ __all__ = [
     "LLMParseError",
     "LLMRequest",
     "LLMResponse",
+    "LLMTimeoutError",
     "LLMUsage",
+    "LiteLLMClient",
     "Message",
     "MockLLMClient",
     "ToolCall",
     "ToolResult",
     "ToolSpec",
+    "create_client",
+    "resolve_provider",
 ]

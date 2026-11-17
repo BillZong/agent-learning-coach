@@ -31,6 +31,7 @@ class LLMRequest(BaseModel):
     tool_choice: str | None = None
     temperature: float | None = None
     max_output_tokens: int | None = None
+    timeout: float | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
     def append_instructions(self, text: str) -> None:
