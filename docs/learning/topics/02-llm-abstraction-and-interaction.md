@@ -41,7 +41,8 @@
   - 厂商无关模型：`LLMRequest` / `LLMResponse` / `LLMUsage` / `ToolSpec` / `Message` / `ToolCall` / `ToolResult`
   - LiteLLM Adapter：`LiteLLMClient`，含超时透传与错误映射
   - OpenAI 兼容 Adapter：`OpenAICompatibleClient`，直连国产厂商端点，模型名保持原生形式
-  - Provider 命名空间注册表：`registry.py`，命名空间 -> 协议类型/端点/凭证变量/默认模型
+  - Provider 命名空间注册表：`registry.py`，命名空间 -> 协议类型/区域/端点/凭证变量/默认模型
+  - 区域化命名空间：`<vendor>`（国际）/ `<vendor>-cn`（国内），凭证与端点按区域分离
   - 客户端工厂：`create_client(provider, model=..., timeout=...)`，配置错误早失败
   - Mock Client：`MockLLMClient`（记录入参）、`FailingLLMClient`（覆盖失败路径）
   - Structured Output：提示词约束 + 严格 JSON 解析，失败抛 `LLMParseError`
@@ -57,12 +58,14 @@
   - 厂商原生 schema 优先：保真度更好但牺牲跨厂商一致性。
   - 抽象层内置重试：隐藏了成本与延迟，且重试策略本应按调用场景决定。
 - 测试结果如何？
-  `pytest` 70 passed；`core/llm` 覆盖率 100%（首版适配器仅 36%）。
+  `pytest` 85 passed；`core/llm` 覆盖率 100%（首版适配器仅 36%）。
   `ruff format --check` / `ruff check` / `mypy` 全部通过。
+  真实厂商联调：MiniMax 国内站用实际 Key 跑通真实推理（`MiniMax-M3.1-Flash`）。
 - 实践结果是否支持阅读材料中的观点？
   支持：把协议作为边界后，测试完全不触网，业务层代码不出现任何厂商标识。
   反面教材：首版把“厂商路由”完全交给 LiteLLM 隐式处理，把超时留到应用层，导致标识写错要等到真实调用才暴露、超时无法与其它错误区分——边界一旦定下，能力缺口应在同层补齐而不是下沉到调用方。
   二次反面教材：直接沿用 LiteLLM 的 `<provider>/<model>` 形态，会得到 `openai/minimax-M3.1-Flash` 这种怪异命名空间——把厂商名塞进模型名，既不准确也无法表达真实归属。抽象层不能假设底层工具的命名空间体系就是自己的命名空间体系。
+  三次反面教材：把区域当运行时参数或忽略区域。国产厂商国内/国际站签发不同 Key、部署不同端点，用错端点只表现为 401/403 而非清晰报错——区域必须显式进命名空间。同理，模型 id 大小写敏感（`MiniMax-M3.1-Flash` 而非 `minimax-M3.1-Flash`），端点主机名也易误写（`api.minimaxi.cn` 不存在）。这些都只能靠真实调用发现，纸面设计看不出来。
 
 ## 6. Reflection
 
@@ -71,7 +74,7 @@
 2. 哪个观点改变或修正了原来的理解？
    结构化输出应该作为 Protocol 的一等方法，而不是每个调用点各自解析 JSON，否则一致性无从保证。
 3. 当前实现还有哪些局限？
-   仅覆盖同步非流式调用；提示词约束式 JSON 解析在复杂 schema 下可能失败；重试策略由应用层决定，抽象层不内置；token 计费只统计输入输出两项。
+   仅覆盖同步非流式调用；提示词约束式 JSON 解析在复杂 schema 下可能失败；重试策略由应用层决定，抽象层不内置；token 计费只统计输入输出两项；推理内容（reasoning_content）未纳入内容模型。
 
 ## 7. Output
 

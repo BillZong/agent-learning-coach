@@ -5,17 +5,21 @@
 强行套用会退化成 ``openai/minimax-M3.1-Flash`` 这种怪异命名空间——
 既不准确（实际走的不是 OpenAI），也无法表达真实的厂商归属。
 
-本模块提供本项目自己的 provider 命名空间：
+区域问题：多数国产厂商对**国内**与**国际**市场签发不同的 Key、部署不同的端点。
+用错端点通常表现为 401/403，而不是清晰的路由错误。因此本项目把区域做进
+命名空间，而不是做成运行时参数：
 
-- 命名空间（如 ``minimax``、``deepseek``）表示**厂商**，与用户心智一致。
-- 每个命名空间显式声明协议类型与端点：
-  - ``OPENAI_COMPATIBLE``：直接用 OpenAI 兼容协议访问厂商自有端点，
-    模型名就是厂商的原生模型名，不加任何前缀。
-  - ``LITELLM``：交给 LiteLLM 路由（OpenAI / Anthropic / Gemini 等）。
-- 凭证从环境变量读取，模型可手动覆盖。
+- ``<vendor>``：国际 / 全球站点
+- ``<vendor>-cn``：中国大陆站点
 
-这样调用方写 ``provider="minimax", model="minimax-M3.1-Flash"``，
-拿到的是干净的厂商原生模型名，不需要 ``openai/`` 之类的前缀。
+这与社区主流 agent 工具的惯例一致（hermes-agent 的 ``minimax`` /
+``minimax-cn``、VoltAgent 的 ``minimax-cn/<model>``、llm-gateway 的 ``zai`` /
+``zai_cn``）。
+
+每个命名空间显式声明协议类型与端点：
+- ``OPENAI_COMPATIBLE``：直接用 OpenAI 兼容协议访问厂商自有端点，
+  模型名就是厂商的原生模型名，不加任何前缀。
+- ``LITELLM``：交给 LiteLLM 路由（OpenAI / Anthropic / Gemini 等）。
 """
 
 from __future__ import annotations
@@ -40,14 +44,33 @@ class ProtocolKind(StrEnum):
     """由 LiteLLM 负责路由与协议适配，model 标识需带厂商前缀。"""
 
 
+class Region(StrEnum):
+    """厂商站点区域。"""
+
+    GLOBAL = "global"
+    """国际 / 全球站点。"""
+
+    CN = "cn"
+    """中国大陆站点。"""
+
+
 class ProviderSpec(BaseModel):
     """一个 provider 命名空间的注册信息。"""
 
     namespace: str
     display_name: str
     protocol: ProtocolKind
+    region: Region = Region.GLOBAL
     api_base: str | None = None
-    api_key_env: str | None = None
+    api_key_env: list[str] = Field(default_factory=list)
+    """凭证环境变量名列表，按顺序取第一个非空值。为空表示必须显式传入 api_key。"""
+    api_base_env: list[str] = Field(default_factory=list)
+    """端点覆盖用的环境变量名列表，按顺序取第一个非空值。为空时使用 ``api_base``。
+
+    用于同一厂商在不同部署（自建网关、代理）下的端点切换，
+    也用于兼容既有的 ``OPENAI_BASE_URL`` / ``OPENAI_API_BASE`` 风格配置。
+    """
+
     default_model: str | None = None
     litellm_prefix: str | None = None
     """``protocol=LITELLM`` 时使用的 LiteLLM 厂商前缀。"""
@@ -81,6 +104,44 @@ class ProviderSpec(BaseModel):
                 f"provider {self.namespace!r} 未指定模型，且没有默认模型可用；请显式传入 model 参数"
             )
         return chosen
+
+    def resolved_api_base(self, api_base: str | None = None) -> str | None:
+        """确定实际使用的端点。
+
+        优先级：显式传入 > ``api_base_env`` 环境变量 > 注册表默认值。
+
+        Args:
+            api_base: 调用方显式指定的端点。
+
+        Returns:
+            端点 base url；无端点要求时返回 None。
+        """
+        if api_base:
+            return api_base
+        for env_name in self.api_base_env:
+            from_env = os.environ.get(env_name)
+            if from_env:
+                return from_env
+        return self.api_base
+
+    def resolved_api_key(self, api_key: str | None = None) -> str | None:
+        """确定实际使用的凭证。
+
+        优先级：显式传入 > ``api_key_env`` 环境变量列表（按顺序取第一个非空值）。
+
+        Args:
+            api_key: 调用方显式指定的凭证。
+
+        Returns:
+            凭证；未找到时返回 None。
+        """
+        if api_key:
+            return api_key
+        for env_name in self.api_key_env:
+            from_env = os.environ.get(env_name)
+            if from_env:
+                return from_env
+        return None
 
 
 _REGISTRY: dict[str, ProviderSpec] = {}
@@ -155,7 +216,8 @@ def build_client_config(
         spec: provider 注册信息。
         model: 手动指定的模型；为 None 时用默认模型。
         api_key: 手动指定的凭证；为 None 时从 ``spec.api_key_env`` 读取环境变量。
-        api_base: 手动指定的端点；为 None 时用 ``spec.api_base``。
+        api_base: 手动指定的端点；为 None 时用 ``spec.api_base_env`` 或
+            ``spec.api_base``。
         timeout: 默认超时秒数。
         extra_headers: 附加请求头；与注册信息中的合并。
         **kwargs: 其他透传给适配器的配置。
@@ -167,18 +229,17 @@ def build_client_config(
         ValueError: 缺少凭证或端点时抛出。
     """
     resolved_model = spec.resolved_model(model)
-    resolved_key = api_key
-    if resolved_key is None and spec.api_key_env:
-        resolved_key = os.environ.get(spec.api_key_env)
+    resolved_key = spec.resolved_api_key(api_key)
 
     if spec.protocol is ProtocolKind.OPENAI_COMPATIBLE:
-        resolved_base = api_base or spec.api_base
+        resolved_base = spec.resolved_api_base(api_base)
         if not resolved_base:
             raise ValueError(f"provider {spec.namespace!r} 缺少 api_base")
         if not resolved_key:
+            expected = " 或 ".join(spec.api_key_env) if spec.api_key_env else "<API_KEY>"
             raise ValueError(
                 f"provider {spec.namespace!r} 缺少凭证；"
-                f"请设置环境变量 {spec.api_key_env or '<API_KEY>'} 或显式传入 api_key"
+                f"请设置环境变量 {expected} 或显式传入 api_key"
             )
         headers = {**spec.extra_headers, **(extra_headers or {})}
         return {
@@ -194,20 +255,25 @@ def build_client_config(
     config: dict[str, Any] = {"model": spec.litellm_model(resolved_model), "timeout": timeout}
     if resolved_key:
         config["api_key"] = resolved_key
-    if api_base or spec.api_base:
-        config["api_base"] = api_base or spec.api_base
+    resolved_base = spec.resolved_api_base(api_base)
+    if resolved_base:
+        config["api_base"] = resolved_base
     config.update(kwargs)
     return config
 
 
 def _register_builtin_providers() -> None:
-    """注册内置的 provider 命名空间。"""
+    """注册内置的 provider 命名空间。
+
+    区域约定：``<vendor>`` 为国际站，``<vendor>-cn`` 为中国大陆站。
+    国内/国际站点通常签发不同的 Key，因此凭证环境变量也分开。
+    """
     builtin = [
         ProviderSpec(
             namespace="openai",
             display_name="OpenAI",
             protocol=ProtocolKind.LITELLM,
-            api_key_env="OPENAI_API_KEY",
+            api_key_env=["OPENAI_API_KEY"],
             default_model="gpt-4o-mini",
             litellm_prefix="openai",
         ),
@@ -215,7 +281,7 @@ def _register_builtin_providers() -> None:
             namespace="anthropic",
             display_name="Anthropic",
             protocol=ProtocolKind.LITELLM,
-            api_key_env="ANTHROPIC_API_KEY",
+            api_key_env=["ANTHROPIC_API_KEY"],
             default_model="claude-sonnet-4-5",
             litellm_prefix="anthropic",
         ),
@@ -223,58 +289,140 @@ def _register_builtin_providers() -> None:
             namespace="gemini",
             display_name="Google Gemini",
             protocol=ProtocolKind.LITELLM,
-            api_key_env="GEMINI_API_KEY",
+            api_key_env=["GEMINI_API_KEY"],
             default_model="gemini-2.5-flash",
             litellm_prefix="gemini",
         ),
+        # --- MiniMax：国际站 / 国内站 ---
         ProviderSpec(
             namespace="minimax",
-            display_name="MiniMax",
+            display_name="MiniMax (International)",
             protocol=ProtocolKind.OPENAI_COMPATIBLE,
-            api_base="https://api.minimaxi.com/v1",
-            api_key_env="MINIMAX_API_KEY",
-            default_model="minimax-M3.1-Flash",
-            notes="模型名使用 MiniMax 原生命名，不加 openai/ 前缀",
+            region=Region.GLOBAL,
+            api_base="https://api.minimax.io/v1",
+            api_key_env=["MINIMAX_API_KEY"],
+            default_model="MiniMax-M3.1-Flash",
+            notes="国际站；国内站请用 minimax-cn",
         ),
+        ProviderSpec(
+            namespace="minimax-cn",
+            display_name="MiniMax (China)",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.CN,
+            api_base="https://api.minimaxi.com/v1",
+            api_key_env=["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"],
+            api_base_env=["MINIMAX_CN_BASE_URL"],
+            default_model="MiniMax-M3.1-Flash",
+            notes="国内站；Key 与国际站不通用",
+        ),
+        # --- 智谱 GLM：国际站（Z.AI）/ 国内站（BigModel）---
+        ProviderSpec(
+            namespace="zhipu",
+            display_name="Z.AI / 智谱 (International)",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.GLOBAL,
+            api_base="https://api.z.ai/api/paas/v4",
+            api_key_env=["ZAI_API_KEY"],
+            default_model="glm-4.6",
+            notes="国际站 Z.AI；国内站请用 zhipu-cn",
+        ),
+        ProviderSpec(
+            namespace="zhipu-cn",
+            display_name="智谱 BigModel (China)",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.CN,
+            api_base="https://open.bigmodel.cn/api/paas/v4",
+            api_key_env=["ZHIPU_CN_API_KEY", "ZAI_API_KEY"],
+            api_base_env=["ZHIPU_CN_BASE_URL"],
+            default_model="glm-4.6",
+            notes="国内站 BigModel；Key 与国际站不通用",
+        ),
+        # --- Moonshot Kimi：国际站 / 国内站 ---
+        ProviderSpec(
+            namespace="moonshot",
+            display_name="Moonshot Kimi (International)",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.GLOBAL,
+            api_base="https://api.moonshot.ai/v1",
+            api_key_env=["MOONSHOT_API_KEY"],
+            default_model="kimi-k3",
+            notes="国际站；国内站请用 moonshot-cn",
+        ),
+        ProviderSpec(
+            namespace="moonshot-cn",
+            display_name="Moonshot Kimi (China)",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.CN,
+            api_base="https://api.moonshot.cn/v1",
+            api_key_env=["MOONSHOT_CN_API_KEY", "MOONSHOT_API_KEY"],
+            api_base_env=["MOONSHOT_CN_BASE_URL"],
+            default_model="kimi-k3",
+            notes="国内站；Key 与国际站不通用",
+        ),
+        # --- 阿里云百炼：国际站 / 国内站 ---
+        ProviderSpec(
+            namespace="qwen",
+            display_name="阿里云百炼 (International)",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.GLOBAL,
+            api_base="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+            api_key_env=["DASHSCOPE_API_KEY"],
+            default_model="qwen-plus",
+            notes="国际站；国内站请用 qwen-cn",
+        ),
+        ProviderSpec(
+            namespace="qwen-cn",
+            display_name="阿里云百炼 (China)",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.CN,
+            api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            api_key_env=["DASHSCOPE_CN_API_KEY", "DASHSCOPE_API_KEY"],
+            api_base_env=["DASHSCOPE_CN_BASE_URL"],
+            default_model="qwen-plus",
+            notes="国内站；Key 与国际站不通用",
+        ),
+        # --- DeepSeek：全球单端点，无需区分区域 ---
         ProviderSpec(
             namespace="deepseek",
             display_name="DeepSeek",
             protocol=ProtocolKind.OPENAI_COMPATIBLE,
             api_base="https://api.deepseek.com/v1",
-            api_key_env="DEEPSEEK_API_KEY",
+            api_key_env=["DEEPSEEK_API_KEY"],
             default_model="deepseek-chat",
+            notes="全球单端点，不区分区域",
         ),
-        ProviderSpec(
-            namespace="qwen",
-            display_name="阿里云百炼（通义千问）",
-            protocol=ProtocolKind.OPENAI_COMPATIBLE,
-            api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            api_key_env="DASHSCOPE_API_KEY",
-            default_model="qwen-plus",
-        ),
-        ProviderSpec(
-            namespace="zhipu",
-            display_name="智谱 GLM",
-            protocol=ProtocolKind.OPENAI_COMPATIBLE,
-            api_base="https://open.bigmodel.cn/api/paas/v4",
-            api_key_env="ZHIPU_API_KEY",
-            default_model="glm-4-plus",
-        ),
-        ProviderSpec(
-            namespace="moonshot",
-            display_name="Moonshot Kimi",
-            protocol=ProtocolKind.OPENAI_COMPATIBLE,
-            api_base="https://api.moonshot.cn/v1",
-            api_key_env="MOONSHOT_API_KEY",
-            default_model="kimi-k2-turbo-preview",
-        ),
+        # --- SiliconFlow：国际站 / 国内站 ---
         ProviderSpec(
             namespace="siliconflow",
-            display_name="SiliconFlow",
+            display_name="SiliconFlow (International)",
             protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.GLOBAL,
+            api_base="https://api.siliconflow.com/v1",
+            api_key_env=["SILICONFLOW_API_KEY"],
+            default_model="deepseek-ai/DeepSeek-V4",
+            notes="国际站；国内站请用 siliconflow-cn",
+        ),
+        ProviderSpec(
+            namespace="siliconflow-cn",
+            display_name="SiliconFlow (China)",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            region=Region.CN,
             api_base="https://api.siliconflow.cn/v1",
-            api_key_env="SILICONFLOW_API_KEY",
-            default_model="Qwen/Qwen2.5-72B-Instruct",
+            api_key_env=["SILICONFLOW_CN_API_KEY", "SILICONFLOW_API_KEY"],
+            api_base_env=["SILICONFLOW_CN_BASE_URL"],
+            default_model="deepseek-ai/DeepSeek-V4",
+            notes="国内站；Key 与国际站不通用",
+        ),
+        # --- 通用 OpenAI 兼容端点：兼容既有 OPENAI_BASE_URL / OPENAI_API_KEY 配置 ---
+        ProviderSpec(
+            namespace="openai-compatible",
+            display_name="通用 OpenAI 兼容端点",
+            protocol=ProtocolKind.OPENAI_COMPATIBLE,
+            api_base_env=["OPENAI_BASE_URL", "OPENAI_API_BASE"],
+            api_key_env=["OPENAI_API_KEY"],
+            default_model=None,
+            notes="端点与凭证完全由 OPENAI_BASE_URL / OPENAI_API_KEY 决定，"
+            "必须显式指定 model；适用于自建网关与临时接入",
         ),
     ]
     for spec in builtin:

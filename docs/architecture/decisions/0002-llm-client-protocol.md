@@ -42,20 +42,41 @@
    因此建立本项目自己的命名空间注册表（`registry.py`），每个命名空间显式声明协议类型、端点、凭证变量与默认模型：
 
    - `ProtocolKind.LITELLM`：交给 LiteLLM 路由（OpenAI / Anthropic / Gemini），模型名在内部转成 `anthropic/claude-sonnet-4-5` 形式。
-   - `ProtocolKind.OPENAI_COMPATIBLE`：用 OpenAI SDK 直连厂商端点，模型名保持原生形式（`minimax-M3.1-Flash`），不附加任何前缀。
+   - `ProtocolKind.OPENAI_COMPATIBLE`：用 OpenAI SDK 直连厂商端点，模型名保持原生形式（`MiniMax-M3.1-Flash`），不附加任何前缀。
 
    新增厂商通过 `register_provider` 注册，不修改抽象层。
 
-9. **测试替身内置**：`MockLLMClient`（返回预设结果并记录入参）与 `FailingLLMClient`（始终抛错）用于覆盖正常路径与失败路径。
+9. **区域做进命名空间，而不是运行时参数**：多数国产厂商对国内与国际市场签发不同的 Key、部署不同的端点（MiniMax：`api.minimaxi.com/v1` vs `api.minimax.io/v1`；智谱：`open.bigmodel.cn` vs `api.z.ai`；Moonshot：`api.moonshot.cn` vs `api.moonshot.ai`；百炼：`dashscope.aliyuncs.com` vs `dashscope-intl.aliyuncs.com`）。用错端点表现为 401/403 而非清晰的路由错误，因此区域必须显式：
+
+   - `<vendor>`：国际 / 全球站点
+   - `<vendor>-cn`：中国大陆站点
+
+   这与社区 agent 工具的惯例一致（hermes-agent 的 `minimax` / `minimax-cn`、VoltAgent 的 `minimax-cn/<model>`、llm-gateway 的 `zai` / `zai_cn`）。凭证环境变量同样按区域分开（`MINIMAX_API_KEY` / `MINIMAX_CN_API_KEY`），且国内命名空间按“区域专用 → 通用”顺序查找变量，未配置区域专用变量时可回退到通用变量。
+
+   DeepSeek 全球单端点，不拆分区域。
+
+10. **端点与凭证均可经环境变量覆盖**：`api_base_env` 支持有序候选列表，既用于自建网关/代理，也用于兼容既有的 `OPENAI_BASE_URL` / `OPENAI_API_BASE` 风格配置（`openai-compatible` 命名空间即为此设）。
+
+11. **测试替身内置**：`MockLLMClient`（返回预设结果并记录入参）与 `FailingLLMClient`（始终抛错）用于覆盖正常路径与失败路径。
 
 ## 后果
 
-- 好处：业务代码只依赖 `LLMClient`；厂商切换零成本且早失败；国产厂商无需伪造成 `openai/` 前缀；单元测试无需网络、无需额度；结构化输出在各厂商上行为一致；超时可被应用层单独识别并重试。
-- 代价：新增一层模型与转换代码；维护两套适配器（LiteLLM 与 OpenAI SDK）；提示词约束式结构化输出在 schema 复杂时解析失败率高于厂商原生方案，失败以 `LLMParseError` 暴露，需要调用方决定重试策略；`create_client` 强制在创建时校验配置，增加了启动期的配置解析开销。
+- 好处：业务代码只依赖 `LLMClient`；厂商切换零成本且早失败；国产厂商无需伪造成 `openai/` 前缀；区域归属显式，Key 与端点错配可被提前发现；单元测试无需网络、无需额度；结构化输出在各厂商上行为一致；超时可被应用层单独识别并重试。
+- 代价：新增一层模型与转换代码；维护两套适配器（LiteLLM 与 OpenAI SDK）；命名空间数量随厂商×区域增长；提示词约束式结构化输出在 schema 复杂时解析失败率高于厂商原生方案，失败以 `LLMParseError` 暴露，需要调用方决定重试策略；`create_client` 强制在创建时校验配置，增加了启动期的配置解析开销。
 - 边界：流式输出、多模态内容、token 计费精度暂不在本次抽象范围内，待 Agent Loop 主题（Day 5）明确需求后再决定是否扩展 Protocol。扩展时保持向后兼容。
 
 ## 补充说明（2026-11-17）
 
 首版实现遗漏了超时与厂商解析，且适配器测试覆盖率仅 36%。补齐内容：新增 `LLMTimeoutError` 与请求级/客户端级超时、`resolve_provider` 与 `create_client`、LiteLLM 适配器的 payload 组装与错误映射测试。
 
-同日二次修订：把厂商解析从“解析 litellm model 字符串”改为“命名空间注册表”，并新增 `OpenAICompatibleClient` 原生适配器，以支持 MiniMax / DeepSeek / 通义千问 / 智谱 / Moonshot / SiliconFlow 等国产厂商，避免 `openai/minimax-M3.1-Flash` 式的怪异命名空间。接入方操作手册见 [`docs/engineering/llm.md`](../../engineering/llm.md)。
+同日二次修订：把厂商解析从“解析 litellm model 字符串”改为“命名空间注册表”，并新增 `OpenAICompatibleClient` 原生适配器，以支持 MiniMax / DeepSeek / 通义千问 / 智谱 / Moonshot / SiliconFlow 等国产厂商，避免 `openai/minimax-M3.1-Flash` 式的怪异命名空间。
+
+同日三次修订：新增区域化命名空间（`<vendor>` / `<vendor>-cn`）与 `Region` 字段，凭证/端点环境变量改为有序候选列表，并新增 `openai-compatible` 通用命名空间兼容既有 `OPENAI_BASE_URL` 配置。
+
+实测校正（以 MiniMax 国内站 Key 为准）：
+
+- 真实模型 id 是 `MiniMax-M3.1-Flash`（大写 M），不是 `minimax-M3.1-Flash`——模型 id 大小写敏感。
+- 国内端点为 `api.minimaxi.com/v1` 与 `api.minimax.cn/v1`；`api.minimax.io/v1` 为国际站，用国内 Key 返回 401。
+- `api.minimaxi.cn` 主机不存在（DNS 解析失败），属常见误写。
+
+接入方操作手册见 [`docs/engineering/llm.md`](../../engineering/llm.md)。

@@ -20,10 +20,15 @@ from agent_learning_coach.core.llm.models import (
 )
 from agent_learning_coach.core.llm.openai_compatible_client import OpenAICompatibleClient
 from agent_learning_coach.core.llm.protocol import LLMClient
-from agent_learning_coach.core.llm.providers import create_client, resolve_provider
+from agent_learning_coach.core.llm.providers import (
+    create_client,
+    describe_providers,
+    resolve_provider,
+)
 from agent_learning_coach.core.llm.registry import (
     ProtocolKind,
     ProviderSpec,
+    Region,
     get_provider,
     list_providers,
     provider_namespaces,
@@ -53,10 +58,12 @@ __all__ = [
     "OpenAICompatibleClient",
     "ProtocolKind",
     "ProviderSpec",
+    "Region",
     "ToolCall",
     "ToolResult",
     "ToolSpec",
     "create_client",
+    "describe_providers",
     "get_provider",
     "list_providers",
     "provider_namespaces",

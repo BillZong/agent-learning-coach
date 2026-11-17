@@ -100,7 +100,7 @@ Agent Runtime 为应用层提供可复用的 Agent 执行能力。
 - 结构化输出：`src/agent_learning_coach/core/llm/structured.py`
 - 测试替身：`src/agent_learning_coach/core/llm/mock.py`
 
-Provider 用命名空间（厂商名，如 `minimax`、`deepseek`、`anthropic`）表达，模型名保持厂商原生形式，不需要 `openai/` 之类的前缀。入口为 `create_client(provider, model=...)`；超时支持请求级与客户端级两级配置，超时映射为 `LLMTimeoutError`。
+Provider 用命名空间（厂商名 + 区域，如 `minimax`（国际）、`minimax-cn`（国内）、`deepseek`、`anthropic`）表达，模型名保持厂商原生形式，不需要 `openai/` 之类的前缀。入口为 `create_client(provider, model=...)`；超时支持请求级与客户端级两级配置，超时映射为 `LLMTimeoutError`。
 
 决策依据：[ADR-0002](decisions/0002-llm-client-protocol.md)。
 接入说明：[LLM 接入说明](../engineering/llm.md)。
