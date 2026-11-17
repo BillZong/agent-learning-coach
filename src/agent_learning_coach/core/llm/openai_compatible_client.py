@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from pydantic import BaseModel
@@ -64,23 +65,52 @@ class OpenAICompatibleClient:
         self.extra_headers = dict(extra_headers or {})
         self.config = config
         self._client: Any | None = None
+        """外部注入的 SDK 客户端（如测试替身）。非 None 时优先使用。"""
+        self._sdk_client: Any | None = None
+        """自建的 SDK 客户端，按 event loop 缓存。"""
+        self._sdk_client_loop: asyncio.AbstractEventLoop | None = None
+        """``_sdk_client`` 创建时所在的 event loop。"""
 
     def _get_client(self) -> Any:
-        """惰性创建 OpenAI 异步客户端。"""
-        if self._client is None:
+        """惰性创建 OpenAI 异步客户端。
+
+        OpenAI SDK 内部的 httpx 连接池绑定在创建时的 event loop 上。若同一客户端
+        被用于另一个 event loop（例如脚本里多次 ``asyncio.run()``），连接池会因
+        旧 loop 已关闭而报 ``Event loop is closed``。因此这里按当前 running loop
+        追踪**自建**的客户端，loop 变化时重建。
+
+        外部注入的客户端（``_client`` 由调用方赋值）不做 loop 判定：注入方
+        自行管理其生命周期。
+        """
+        if self._client is not None:
+            # 外部注入的客户端，直接复用
+            return self._client
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if self._sdk_client is not None and loop is not None and self._sdk_client_loop is not loop:
+            # 旧的连接池绑定在已关闭的 loop 上，丢弃重建
+            self._sdk_client = None
+            self._sdk_client_loop = None
+
+        if self._sdk_client is None:
             try:
                 from openai import AsyncOpenAI
             except ImportError as exc:  # pragma: no cover - 依赖缺失时的显式错误
                 raise LLMError("未安装 openai，无法使用 OpenAICompatibleClient") from exc
 
-            self._client = AsyncOpenAI(
+            self._sdk_client = AsyncOpenAI(
                 base_url=self.api_base,
                 api_key=self.api_key,
                 timeout=self.timeout,
                 default_headers=self.extra_headers or None,
                 **self.config,
             )
-        return self._client
+            self._sdk_client_loop = loop
+        return self._sdk_client
 
     def build_payload(self, request: LLMRequest) -> dict[str, Any]:
         """构造 OpenAI SDK 调用参数。"""
@@ -137,6 +167,25 @@ class OpenAICompatibleClient:
         response = await self.generate(structured_request)
         text = extract_text(response.contents)
         return parse_structured_output(text, output_model)
+
+    async def aclose(self) -> None:
+        """关闭底层连接池。
+
+        OpenAI SDK 内部的 httpx 连接池持有 socket 与后台任务，不显式关闭时会在
+        所属 event loop 关闭后被 GC，产生 ``Event loop is closed`` 噪声。
+        短生命周期脚本应在退出前调用本方法。
+
+        外部注入的客户端由注入方管理生命周期，本方法不处理。
+        """
+        client = self._sdk_client
+        self._sdk_client = None
+        self._sdk_client_loop = None
+        if client is None:
+            return
+        try:
+            await client.close()
+        except Exception:  # pragma: no cover - 关闭失败不应掩盖主流程
+            pass
 
 
 def _translate_error(exc: Exception) -> LLMError:

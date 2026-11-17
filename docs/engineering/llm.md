@@ -282,6 +282,20 @@ failing = FailingLLMClient("boom")  # 覆盖失败路径
 5. **注意区域与 Key 的匹配**。国内站 Key 在国际站会返回 401，
    命名空间选错是最常见的配置错误。
 6. **单元测试一律用 Mock 替身**；真实调用留给集成测试与手工验证。
+7. **短生命周期脚本要显式关闭客户端**。`OpenAICompatibleClient` 内部持有
+   httpx 连接池，不关闭时会在所属 event loop 关闭后被 GC，产生
+   `Event loop is closed` 噪声：
+
+   ```python
+   client = create_client("minimax-cn")
+   try:
+       response = await client.generate(request)
+   finally:
+       await client.aclose()  # 仅 OpenAICompatibleClient 提供
+   ```
+
+   客户端内部按 event loop 缓存 SDK 连接池，跨 loop 复用时会自动重建，因此
+   同一实例用于多个 `asyncio.run()` 是安全的。
 
 ## 8. 当前未覆盖范围
 

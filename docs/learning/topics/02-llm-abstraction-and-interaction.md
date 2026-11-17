@@ -58,14 +58,16 @@
   - 厂商原生 schema 优先：保真度更好但牺牲跨厂商一致性。
   - 抽象层内置重试：隐藏了成本与延迟，且重试策略本应按调用场景决定。
 - 测试结果如何？
-  `pytest` 85 passed；`core/llm` 覆盖率 100%（首版适配器仅 36%）。
+  `pytest` 94 passed；`core/llm` 覆盖率 100%（首版适配器仅 36%）。
   `ruff format --check` / `ruff check` / `mypy` 全部通过。
-  真实厂商联调：MiniMax 国内站用实际 Key 跑通真实推理（`MiniMax-M3.1-Flash`）。
+  真实厂商联调：MiniMax 国内站用实际 Key 跑通真实推理（`MiniMax-M3.1-Flash`）、
+  结构化输出与工具调用。
 - 实践结果是否支持阅读材料中的观点？
   支持：把协议作为边界后，测试完全不触网，业务层代码不出现任何厂商标识。
   反面教材：首版把“厂商路由”完全交给 LiteLLM 隐式处理，把超时留到应用层，导致标识写错要等到真实调用才暴露、超时无法与其它错误区分——边界一旦定下，能力缺口应在同层补齐而不是下沉到调用方。
   二次反面教材：直接沿用 LiteLLM 的 `<provider>/<model>` 形态，会得到 `openai/minimax-M3.1-Flash` 这种怪异命名空间——把厂商名塞进模型名，既不准确也无法表达真实归属。抽象层不能假设底层工具的命名空间体系就是自己的命名空间体系。
-  三次反面教材：把区域当运行时参数或忽略区域。国产厂商国内/国际站签发不同 Key、部署不同端点，用错端点只表现为 401/403 而非清晰报错——区域必须显式进命名空间。同理，模型 id 大小写敏感（`MiniMax-M3.1-Flash` 而非 `minimax-M3.1-Flash`），端点主机名也易误写（`api.minimaxi.cn` 不存在）。这些都只能靠真实调用发现，纸面设计看不出来。
+  三次反面教材：把区域当运行时参数或忽略区域。国产厂商国内/国际站签发不同 Key、部署不同端点，用错端点只表现为 401/403 而非清晰报错——区域必须显式进命名空间。同理，模型 id 大小写敏感（`MiniMax-M3.1-Flash` 而非 `minimax-M3.1-Flash`），端点主机名以官方文档为准（国内站 `api.minimax.cn/v1`）。这些都只能靠真实调用发现，纸面设计看不出来。
+  四次反面教材：抽象层把自己的生命周期假设泄漏给底层 SDK。OpenAI SDK 内部的 httpx 连接池绑定在创建时的 event loop 上，客户端跨 `asyncio.run()` 复用就会报 `Event loop is closed`；修复时又差点把「外部注入的测试替身」误判为「跨 loop 需重建」而打上真实网络。教训：底层 SDK 的资源生命周期必须在适配器内收敛（按 loop 缓存 + 显式 `aclose`），同时注入点与自建资源要分开建模，不能混用一个字段。
 
 ## 6. Reflection
 
@@ -79,7 +81,7 @@
 ## 7. Output
 
 - Code / PR: `src/agent_learning_coach/core/llm/`（protocol / models / types / errors / messages / structured / litellm_client / openai_compatible_client / mock / registry / providers）
-- Tests: `tests/test_llm_protocol.py`、`tests/test_litellm_client.py`、`tests/test_provider_registry.py`
+- Tests: `tests/test_llm_protocol.py`、`tests/test_litellm_client.py`、`tests/test_provider_registry.py`、`tests/test_openai_compatible_client.py`
 - ADR: `docs/architecture/decisions/0002-llm-client-protocol.md`
 - Integration Notes: `docs/engineering/llm.md`
 - Article Notes: docs/articles/agent-runtime.md
