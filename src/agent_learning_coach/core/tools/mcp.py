@@ -22,6 +22,17 @@ MCP 把「工具」标准化为「带 JSON Schema 的可调用能力」，通过
 
 实现刻意停留在**协议层**（``mcp`` SDK 的低层 Server / ClientSession），
 不依赖 FastMCP 的便捷封装：适配器应当直接说协议，而不是说某个框架。
+
+**为什么用低层 ``Server`` 而不是官方 SDK 的中层 ``MCPServer``**：``MCPServer``
+的注册接口只接受可调用对象，参数校验依据的是**从 Python 签名推导的
+``arg_model``**，与我们显式声明的 ``definition.parameters`` 不是同一份。实测
+（真实协议路径）：``additionalProperties: False`` 与 ``minLength`` 均不生效
+——多传参数被静默丢弃、短字符串被接受。``**kwargs`` 绕过方案也不可行，arg
+binding 会要求一个名为 ``kwargs`` 的参数并直接拒绝调用。
+
+低层 Server 让「模型看到的契约」与「实际强制的契约」保持同一份，这是
+ADR-0003 的硬约束。代价是 stdio 运行器与测试夹具要自己写，且低层 API 在
+SDK 大版本间更易变动——我们接受这个代价。推导见 ADR-0004。
 """
 
 from __future__ import annotations

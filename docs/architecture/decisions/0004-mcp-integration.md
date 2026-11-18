@@ -80,6 +80,29 @@ JSON Schema。因此适配不需要语义转换：
 低层 API 用回调注册处理器（`on_list_tools` / `on_call_tool`），因此
 `ToolDefinition.parameters` 可以原样传给 MCP 客户端。
 
+**为什么不用官方 SDK 自带的中层 `mcp.server.mcpserver.MCPServer`**（它不属于
+「框架封装」，是 SDK 的一部分，值得单独说明）：
+
+实测结论（真实协议路径，内存传输 + `ClientSession`）：
+
+| 维度 | `MCPServer` | 低层 `Server` |
+| ---- | ----------- | ------------- |
+| 注册工具的入参 | 只接受可调用对象（`add_tool(fn)` / `@server.tool`），schema 必然从签名推导；唯一可显式传 schema 的入口是构造函数 `tools=[Tool(...)]` 配合 `model_copy(update={"parameters": ...})`（内部字段覆写，对 SDK 变更脆弱） | 处理器回调直接拿 `definition.parameters` |
+| **参数校验依据** | **从签名推导的 `arg_model`**——与我们显式声明的 schema 不是同一份 | 与广告出去的 schema 是同一份（`validate_arguments`） |
+| `additionalProperties: False` | **不生效**：多传参数被静默丢弃，调用仍成功 | 生效，报校验错误 |
+| `minLength: 2` | **不生效**：单字符字符串被接受 | 生效 |
+| `**kwargs` 绕过方案 | 不可行：arg binding 把 `kwargs` 当作名为 `kwargs` 的普通参数（`arg_model` 字段 `['text', 'kwargs']`，`required: ['kwargs']`），调用被直接拒绝（`Tool 'echo' rejected arguments: ['kwargs']`） | 不涉及 |
+| stdio / HTTP 传输 | 内置 `run_stdio_async()` / `run_streamable_http_async()` | 同样具备：`stdio_server()` / `streamable_http_app()`（含完整鉴权参数） |
+
+决定性的是「参数校验依据」一行：`MCPServer` 会让**广告出去的契约**与**实际
+强制的契约**变成两份不同的东西——正是 ADR-0003 明令禁止的「契约错位」。
+要绕过它就得让函数签名逐字段镜像 schema，等于把 JSON Schema 再表达一遍，
+重新引入两份真相。
+
+代价是诚实的：低层 API 需要自己写 stdio 运行器与测试夹具，且在 SDK 大版本
+间会更频繁地变动（本次已遇到 `isError` → `is_error` 改名）。我们接受这个代价，
+因为契约一致性不可妥协，而 HTTP 传输在低层同样可得。
+
 ### 5. 错误语义保持 MCP 的两类区分
 
 | 失败 | MCP 表现 | 本项目表现 |

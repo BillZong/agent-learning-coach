@@ -236,6 +236,53 @@ def test_call_reports_error_for_invalid_arguments() -> None:
     ) or "required property" in extract_text_content(result)
 
 
+def test_advertised_schema_is_the_enforced_schema() -> None:
+    """「模型看到的契约」与「实际强制的契约」必须是同一份。
+
+    这条不变式是选低层 Server 而非 ``MCPServer`` 的原因：后者的参数校验
+    依据是从函数签名推导的 arg_model，与广告出去的 schema 不是同一份。
+
+    因此这里用一个带 ``additionalProperties: False`` 与 ``minLength`` 的
+    schema，同时断言两件事——客户端看到这些约束，且违反约束的调用被拒绝。
+    """
+    schema = {
+        "type": "object",
+        "properties": {"text": {"type": "string", "minLength": 3}},
+        "required": ["text"],
+        "additionalProperties": False,
+    }
+
+    async def _handler(context: ToolContext, arguments: dict[str, Any]) -> str:
+        return str(arguments.get("text", ""))
+
+    registry = ToolRegistry()
+    registry.register(
+        FunctionTool(
+            definition=ToolDefinition(name="strict", description="严格校验", parameters=schema),
+            func=_handler,
+        )
+    )
+    server = build_mcp_server(registry)
+
+    async def _run() -> tuple[dict[str, Any], types.CallToolResult, types.CallToolResult]:
+        async with _client_session(server) as session:
+            tools = await session.list_tools()
+            advertised = tools.tools[0].input_schema
+            too_short = await session.call_tool("strict", {"text": "ab"})
+            extra = await session.call_tool("strict", {"text": "abcd", "nope": 1})
+            return advertised, too_short, extra
+
+    advertised, too_short, extra = asyncio.run(_run())
+
+    # 客户端看到完整约束
+    assert advertised == schema
+    assert advertised["additionalProperties"] is False
+    assert advertised["properties"]["text"]["minLength"] == 3
+    # 且这些约束真的被强制
+    assert too_short.is_error is True
+    assert extra.is_error is True
+
+
 def test_call_unknown_tool_is_protocol_error() -> None:
     """工具不存在是协议级错误，不是工具执行错误。
 

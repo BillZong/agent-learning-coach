@@ -128,13 +128,35 @@ MCP 区分两类失败，本项目的适配器保持这个区分：
 
 ## 6. 实现选型：停留在协议层
 
-适配器直接使用 `mcp` SDK 的低层 `Server` / `ClientSession`，不依赖 FastMCP
-的便捷封装。理由：适配器应当直接说协议，而不是说某个框架。FastMCP 的
-schema 由 Python 函数签名推导，无法保真我们显式声明的 JSON Schema
-（`additionalProperties`、`minimum`、嵌套结构等都会被丢掉）。
+适配器直接使用 `mcp` SDK 的低层 `Server` / `ClientSession`。这是**协议层**，
+不是「框架封装」——`mcp` 是官方 SDK，FastMCP 才是第三方封装。
 
 低层 API 用回调注册处理器（`on_list_tools` / `on_call_tool`），因此
-`ToolDefinition.parameters` 可以原样传给 MCP 客户端。
+`ToolDefinition.parameters` 可以原样传给 MCP 客户端，且参数校验用的就是
+同一份 schema——**模型看到的契约与实际强制的契约必然一致**。
+
+### 6.1 为什么不用 `mcp.server.mcpserver.MCPServer`
+
+`MCPServer` 是官方 SDK 自带的中层 server（不是第三方框架），值得单独比较。
+实测结论（真实协议路径）：
+
+| 维度 | `MCPServer` | 低层 `Server`（本项目采用） |
+| ---- | ----------- | --------------------------- |
+| 注册工具入参 | 只接受可调用对象，schema 必然从签名推导 | 处理器回调直接用 `definition.parameters` |
+| **参数校验依据** | 从签名推导的 `arg_model`，与显式 schema 不是同一份 | 与广告出去的 schema 同一份 |
+| `additionalProperties: False` | 不生效（多传参数被静默丢弃） | 生效 |
+| `minLength` / `minimum` | 不生效 | 生效 |
+| `**kwargs` 绕过 | 不可行（arg binding 要求名为 `kwargs` 的参数，调用被拒） | 不涉及 |
+| stdio / HTTP 传输 | 内置 | 同样具备（`stdio_server()` / `streamable_http_app()`） |
+
+决定性的是「参数校验依据」：`MCPServer` 会让广告出去的契约与实际强制的
+契约变成两份不同的东西。要绕过它就得让函数签名逐字段镜像 schema，等于把
+JSON Schema 再表达一遍，重新引入两份真相。
+
+代价：低层 API 需要自己写 stdio 运行器与测试夹具，且在 SDK 大版本间更频繁
+地变动。我们接受这个代价——契约一致性不可妥协。
+
+完整推导见 [ADR-0004](../architecture/decisions/0004-mcp-integration.md)。
 
 ## 7. 传输
 
