@@ -105,6 +105,28 @@ Provider 用命名空间（厂商名 + 区域，如 `minimax`（国际）、`min
 决策依据：[ADR-0002](decisions/0002-llm-client-protocol.md)。
 接入说明：[LLM 接入说明](../engineering/llm.md)。
 
+#### Tool Calling
+
+工具调用由 `core/tools` 包提供，与 `core/llm` 平级：
+
+- 核心类型：`src/agent_learning_coach/core/tools/types.py`
+  - `ToolDefinition`：工具的静态契约（名称、描述、参数 JSON Schema、超时），可转换为 `ToolSpec` 发给模型
+  - `ToolContext`：运行时上下文（会话、调用方、截止时间）
+  - `ToolOutcome`：归一化执行结果（状态、内容、结构化数据、错误、耗时）
+  - `Tool` Protocol：工具契约，实现方无需继承
+- 工具注册表：`src/agent_learning_coach/core/tools/registry.py`
+- 工具调度器：`src/agent_learning_coach/core/tools/dispatcher.py`
+- 参数校验：`src/agent_learning_coach/core/tools/schema.py`（JSON Schema draft 2020-12）
+- 结果归一化：`src/agent_learning_coach/core/tools/normalization.py`
+- 异常类型：`src/agent_learning_coach/core/tools/errors.py`
+
+职责边界：**注册表管「有什么工具」，调度器管「怎么执行」**。参数校验集中在调度器一处——工具只声明「我接受什么」（JSON Schema），由调度器保证「传进来的一定合法」，避免每个工具各自实现校验逻辑。发给模型的 schema 与实际校验的 schema 是同一份，不会出现契约错位。
+
+调用级失败（参数不合法、超时、执行异常）一律归一化成 `ToolOutcome(status="error")` 回填给模型，让模型能读懂错误并调整下一步；工具未注册属配置错误，抛 `ToolNotFoundError`。超时优先级为工具定义 > 调度器默认值，用 `asyncio.timeout` 实现，保证取消信号送达被调用协程。
+
+决策依据：[ADR-0003](decisions/0003-tool-system.md)。
+接入说明：[工具系统接入说明](../engineering/tools.md)。
+
 ### 3.5 基础设施层（Infrastructure Layer）
 
 负责外部依赖和底层技术基础设施的接入。
