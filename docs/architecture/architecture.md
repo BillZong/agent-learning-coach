@@ -127,6 +127,20 @@ Provider 用命名空间（厂商名 + 区域，如 `minimax`（国际）、`min
 决策依据：[ADR-0003](decisions/0003-tool-system.md)。
 接入说明：[工具系统接入说明](../engineering/tools.md)。
 
+#### MCP 协议适配
+
+工具系统与 MCP 协议双向适配，位于 `src/agent_learning_coach/core/tools/mcp.py`：
+
+- 客户端侧（生产组件）：`MCPTool` / `discover_mcp_tools` 把远端 MCP Server 的工具适配成本项目的 `Tool`，注册进 `ToolRegistry`，复用现有 `ToolDispatcher` 的校验、超时与归一化。
+- 服务端侧（PoC 与协议参考实现）：`build_mcp_server` 把工具注册表暴露为 MCP Server；可运行示例见 `examples/mcp_server.py`。
+
+本项目的 `ToolDefinition`（名称 + 描述 + JSON Schema）与 MCP 的工具形状同构，因此适配是三字段映射。适配器停留在协议层（`mcp` SDK 低层 `Server` / `ClientSession`），不依赖框架封装，以保证 JSON Schema 保真——「模型看到的契约」与「实际校验的契约」必须是同一份。
+
+本项目自有工具不部署为 MCP Server：MCP 的价值在于独立部署与跨客户端复用，而自有工具与 Agent Loop 同属一个进程、同一团队。第三方 MCP Server 的消费才是当前的实际需求。
+
+决策依据：[ADR-0004](decisions/0004-mcp-integration.md)。
+接入说明：[MCP 架构说明](../engineering/mcp.md)。
+
 ### 3.5 基础设施层（Infrastructure Layer）
 
 负责外部依赖和底层技术基础设施的接入。

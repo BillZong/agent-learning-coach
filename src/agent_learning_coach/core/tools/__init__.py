@@ -20,6 +20,8 @@
   级为工具定义 > Dispatcher 默认值。
 - **Tool Result Normalization**（``normalization``）：把任意返回值收敛成统一
   的文本与结构。
+- **MCP 协议适配**（``mcp``）：双向适配——把工具注册表暴露为 MCP Server，
+  或把远端 MCP 工具接入本项目的注册表。
 
 导入约定：调用方统一从 ``agent_learning_coach.core.tools`` 导入公开符号。
 """
@@ -31,6 +33,17 @@ from agent_learning_coach.core.tools.errors import (
     ToolNotFoundError,
     ToolTimeoutError,
     ToolValidationError,
+)
+from agent_learning_coach.core.tools.mcp import (
+    MCPTool,
+    build_mcp_server,
+    discover_mcp_tools,
+    extract_text_content,
+    from_mcp_tool,
+    run_stdio_server,
+    serve,
+    stdio_session,
+    to_mcp_tool,
 )
 from agent_learning_coach.core.tools.normalization import (
     normalize_content,
@@ -51,6 +64,7 @@ from agent_learning_coach.core.tools.types import (
 
 __all__ = [
     "FunctionTool",
+    "MCPTool",
     "Tool",
     "ToolContext",
     "ToolDefinition",
@@ -63,10 +77,18 @@ __all__ = [
     "ToolRegistry",
     "ToolTimeoutError",
     "ToolValidationError",
+    "build_mcp_server",
     "describe_schema",
+    "discover_mcp_tools",
+    "extract_text_content",
+    "from_mcp_tool",
     "normalize_content",
     "normalize_data",
     "normalize_error",
     "normalize_outcome",
+    "run_stdio_server",
+    "serve",
+    "stdio_session",
+    "to_mcp_tool",
     "validate_arguments",
 ]
