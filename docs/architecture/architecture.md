@@ -136,6 +136,8 @@ Provider 用命名空间（厂商名 + 区域，如 `minimax`（国际）、`min
 
 本项目的 `ToolDefinition`（名称 + 描述 + JSON Schema）与 MCP 的工具形状同构，因此适配是三字段映射。适配器停留在协议层（`mcp` SDK 低层 `Server` / `ClientSession`），不依赖框架封装，以保证 JSON Schema 保真——「模型看到的契约」与「实际校验的契约」必须是同一份。
 
+适配器遵守一条硬规则：**发现与结果回填不得静默丢失信息**。远端 `tools/list` 分页必须翻完；结构化输出与非文本内容块必须保留而非变成空字符串；远端声明的输出契约（`output_schema` 等）在发现阶段不得丢弃。判据是空内容与「工具确实没有输出」无法区分——若吞成空串，模型会误判工具行为。连接建立阶段的失败（命令不存在、握手超时、远端进程退出）统一收敛为 `MCPConnectionError`，并把 SDK 任务组包起来的真实原因摊平到错误消息里。
+
 本项目自有工具不部署为 MCP Server：MCP 的价值在于独立部署与跨客户端复用，而自有工具与 Agent Loop 同属一个进程、同一团队。第三方 MCP Server 的消费才是当前的实际需求。
 
 决策依据：[ADR-0004](decisions/0004-mcp-integration.md)。

@@ -28,6 +28,7 @@
 
 from agent_learning_coach.core.tools.dispatcher import ToolDispatcher
 from agent_learning_coach.core.tools.errors import (
+    MCPConnectionError,
     ToolError,
     ToolExecutionError,
     ToolNotFoundError,
@@ -64,6 +65,7 @@ from agent_learning_coach.core.tools.types import (
 
 __all__ = [
     "FunctionTool",
+    "MCPConnectionError",
     "MCPTool",
     "Tool",
     "ToolContext",

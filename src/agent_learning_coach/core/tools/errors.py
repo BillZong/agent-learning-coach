@@ -66,7 +66,30 @@ class ToolExecutionError(ToolError):
         self.cause = cause
 
 
+class MCPConnectionError(ToolError):
+    """与远端 MCP Server 建立会话失败。
+
+    属于系统级错误：远端进程没起来、握手没完成或超时——都是环境或配置问题，
+    模型无法通过调整参数修复，因此直接抛出而不是归一化成工具结果。
+
+    SDK 内部的并发原语会把真实原因包进 ``ExceptionGroup``（层层嵌套，最外层
+    只显示 "unhandled errors in a TaskGroup"）。本错误类型把根因摊平到消息里，
+    让调用方一眼看出问题出在哪。
+    """
+
+    def __init__(self, message: str, *, cause: BaseException | None = None) -> None:
+        """初始化连接错误。
+
+        Args:
+            message: 人类可读的失败原因。
+            cause: 原始异常。
+        """
+        super().__init__(message)
+        self.cause = cause
+
+
 __all__ = [
+    "MCPConnectionError",
     "ToolError",
     "ToolExecutionError",
     "ToolNotFoundError",

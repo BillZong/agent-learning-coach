@@ -37,8 +37,10 @@ SDK 大版本间更易变动——我们接受这个代价。推导见 ADR-0004�
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
 
 import mcp.types as types
@@ -46,6 +48,7 @@ from mcp.client.session import ClientSession
 from mcp.server.lowlevel import Server
 
 from agent_learning_coach.core.tools.dispatcher import ToolDispatcher
+from agent_learning_coach.core.tools.errors import MCPConnectionError
 from agent_learning_coach.core.tools.registry import ToolRegistry
 from agent_learning_coach.core.tools.types import (
     ToolContext,
@@ -76,28 +79,98 @@ def to_mcp_tool(definition: ToolDefinition) -> types.Tool:
 def from_mcp_tool(mcp_tool: types.Tool) -> ToolDefinition:
     """把 MCP 工具描述转换为 ``ToolDefinition``。
 
+    除三字段核心契约（名称、描述、参数 Schema）外，远端的其余契约信息会被
+    保留在 ``metadata`` 中：结构化输出契约 ``output_schema``、标题 ``title``
+    与行为注解 ``annotations``。丢弃它们会让远端声明的输出契约在发现阶段
+    就失传——调用方无从知道工具会返回什么形状的数据。
+
     Args:
         mcp_tool: MCP 协议的工具描述。
 
     Returns:
         工具定义。
     """
-    schema = getattr(mcp_tool, "input_schema", None)
-    if schema is None:  # pragma: no cover - 兼容旧字段名
-        schema = getattr(mcp_tool, "inputSchema", None)
+    schema = _field(mcp_tool, "input_schema", "inputSchema")
+    metadata: dict[str, Any] = {}
+    output_schema = _field(mcp_tool, "output_schema", "outputSchema")
+    if output_schema is not None:
+        metadata["output_schema"] = output_schema
+    title = _field(mcp_tool, "title")
+    if title is not None:
+        metadata["title"] = title
+    annotations = _field(mcp_tool, "annotations")
+    if annotations is not None:
+        metadata["annotations"] = annotations
     return ToolDefinition(
         name=mcp_tool.name,
         description=mcp_tool.description or "",
         parameters=dict(schema or {}),
+        metadata=metadata,
     )
 
 
-def extract_text_content(result: types.CallToolResult) -> str:
-    """从 MCP 调用结果中提取文本。
+def _field(item: Any, *names: str) -> Any:
+    """按候选名读取属性，兼容 SDK 的 Python 字段名与 wire 格式别名。
 
-    MCP 的调用结果是一个内容块列表，可能混合文本与其它类型。本项目只取文本
-    部分——这与 ``ToolOutcome.content`` 的语义一致：回填给模型的内容必须是
-    可安全阅读的字符串。
+    MCP SDK 的模型用 snake_case 作为 Python 字段名（``mime_type``），而协议
+    上是 camelCase（``mimeType``）。不同 SDK 版本还可能直接用 wire 名做字段
+    名，因此两个都试。
+
+    Args:
+        item: 对象。
+        names: 候选属性名，按优先级排列。
+
+    Returns:
+        第一个存在的属性值；都不存在时返回 None。
+    """
+    for name in names:
+        value = getattr(item, name, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _describe_content_block(item: Any) -> str:
+    """描述一个无法转成文本的 MCP 内容块。
+
+    用于非文本内容（图片、音频、资源）。**不能直接丢弃**：空内容与「工具
+    确实没有输出」无法区分，模型会误判工具行为。占位描述至少让模型知道
+    「有东西回来了，但不是文本」。
+
+    Args:
+        item: MCP 内容块。
+
+    Returns:
+        占位描述文本。
+    """
+    kind = _field(item, "type") or "unknown"
+    details: list[str] = []
+    mime = _field(item, "mime_type", "mimeType")
+    if mime:
+        details.append(f"mimeType={mime}")
+    uri = _field(item, "uri")
+    if uri:
+        details.append(f"uri={uri}")
+    name = _field(item, "name")
+    if name:
+        details.append(f"name={name}")
+    suffix = "".join(f", {d}" for d in details)
+    return f"[MCP 内容块:{kind}{suffix}]"
+
+
+def extract_text_content(result: types.CallToolResult) -> str:
+    """从 MCP 调用结果中提取可回填给模型的文本。
+
+    MCP 的调用结果不止文本一种形态：
+
+    - **文本块**（``TextContent``）：直接取文本。
+    - **结构化输出**（``structured_content``）：按 JSON 序列化后保留，机器可读
+      的数据不能因为「不是文本」而被丢掉。
+    - **其它内容块**（图片、音频、资源）：以占位描述代替，不静默丢弃。
+
+    只要远端返回了任何东西，本函数就不会返回空字符串——空内容与「工具确实
+    没有输出」无法区分，会让模型误判。远端确实什么都没返回时，返回空串是
+    诚实的答案。
 
     Args:
         result: MCP 调用结果。
@@ -110,6 +183,13 @@ def extract_text_content(result: types.CallToolResult) -> str:
         text = getattr(item, "text", None)
         if text is not None:
             parts.append(text)
+        else:
+            parts.append(_describe_content_block(item))
+
+    structured = getattr(result, "structured_content", None)
+    if structured is not None:
+        parts.append(json.dumps(structured, ensure_ascii=False, default=str))
+
     return "\n".join(parts)
 
 
@@ -190,23 +270,110 @@ async def discover_mcp_tools(
     session: ClientSession,
     *,
     namespace: str | None = None,
+    max_pages: int = 100,
 ) -> list[MCPTool]:
     """发现远端 MCP Server 的工具并适配成本项目的工具。
+
+    **翻页**：MCP 的 ``tools/list`` 是分页协议，响应带 ``next_cursor`` 时表示
+    还有下一页。只取第一页会让工具**静默丢失**——调用方看到的工具清单不完整，
+    却没有任何报错。因此这里必须翻完所有页。
+
+    ``max_pages`` 是防御性上限：远端若反复返回同一个游标，翻页会不收敛，
+    上限保证发现过程一定终止。
 
     Args:
         session: 已建立的 MCP 客户端会话。
         namespace: 工具名前缀。用于避免多个 MCP Server 的同名工具冲突，
             形如 ``"web"`` 会把 ``search`` 改名为 ``web_search``。
+        max_pages: 最多翻取的页数。
 
     Returns:
         适配后的工具列表。
     """
-    response = await session.list_tools()
     tools: list[MCPTool] = []
-    for mcp_tool in response.tools:
-        local_name = f"{namespace}_{mcp_tool.name}" if namespace else None
-        tools.append(MCPTool(mcp_tool, session, local_name=local_name))
+    cursor: str | None = None
+    for _ in range(max_pages):
+        params = types.PaginatedRequestParams(cursor=cursor) if cursor is not None else None
+        response = await session.list_tools(params=params)
+        for mcp_tool in response.tools:
+            local_name = f"{namespace}_{mcp_tool.name}" if namespace else None
+            tools.append(MCPTool(mcp_tool, session, local_name=local_name))
+        cursor = response.next_cursor
+        if not cursor:
+            break
     return tools
+
+
+DEFAULT_HANDSHAKE_TIMEOUT = 30.0
+"""握手超时默认值（秒）。远端无响应时不能无限期挂起。"""
+
+
+def _root_cause(exc: BaseException) -> BaseException:
+    """从嵌套 ``ExceptionGroup`` 里找出最有信息量的异常。
+
+    MCP SDK 用 anyio 任务组管理子进程与协议读写，失败时会把根因包进层层
+    嵌套的 ``ExceptionGroup``，最外层只显示 "unhandled errors in a TaskGroup"。
+    真正有用的信息（连接关闭、进程退出码）在里面。
+
+    查找规则：优先返回我们自己抛出的 ``MCPConnectionError``——它的消息已经
+    写清了原因；没有则逐层下钻取最内层异常。异常组只有一个成员时，容器
+    没有额外信息，直接下钻即可——调用方拿到的仍是原本的异常类型。
+
+    Args:
+        exc: 异常。
+
+    Returns:
+        最有信息量的异常。
+    """
+    current = exc
+    while isinstance(current, BaseExceptionGroup) and current.exceptions:
+        for sub in current.exceptions:
+            if isinstance(sub, MCPConnectionError):
+                return sub
+        current = current.exceptions[0]
+    return current
+
+
+def _as_connection_error(exc: BaseException, command: str) -> BaseException:
+    """把建立连接阶段的异常转换成可读错误。
+
+    Args:
+        exc: 原始异常。
+        command: 启动命令。
+
+    Returns:
+        ``MCPConnectionError``，或已经是它的异常本身。
+    """
+    cause = _root_cause(exc)
+    if isinstance(cause, MCPConnectionError):
+        return cause
+    if isinstance(exc, FileNotFoundError) or isinstance(cause, FileNotFoundError):
+        return MCPConnectionError(f"无法启动 MCP Server：找不到可执行文件 {command!r}")
+    return MCPConnectionError(
+        f"无法与 MCP Server 建立会话（{command}）：{type(cause).__name__}: {cause}"
+    )
+
+
+async def _initialize_session(
+    session: ClientSession,
+    command: str,
+    timeout: float,
+) -> None:
+    """完成 MCP 握手，失败时抛出可读错误。
+
+    Args:
+        session: 客户端会话。
+        command: 启动命令，仅用于错误消息。
+        timeout: 握手超时（秒）。
+
+    Raises:
+        MCPConnectionError: 握手超时。
+    """
+    try:
+        async with asyncio.timeout(timeout):
+            await session.initialize()
+    except TimeoutError as exc:
+        raise MCPConnectionError(f"MCP Server 握手超时（{timeout}s）：{command}") from exc
 
 
 @asynccontextmanager
@@ -214,25 +381,56 @@ async def stdio_session(
     command: str,
     args: list[str] | None = None,
     env: dict[str, str] | None = None,
+    *,
+    timeout: float = DEFAULT_HANDSHAKE_TIMEOUT,
 ) -> AsyncIterator[ClientSession]:
     """通过 stdio 启动 MCP Server 并建立会话。
+
+    建立连接的过程有三类可预期的失败，都收敛成 ``MCPConnectionError``：
+
+    - 启动命令不存在（``FileNotFoundError``）。
+    - 握手超时（远端无响应）。
+    - 连接中断（远端进程退出或不是 MCP Server）。
+
+    这三类若原样抛出，调用方只能看到 ``ExceptionGroup`` 的
+    "unhandled errors in a TaskGroup"，真实原因被埋在里面。摊平之后，错误
+    消息直接指出是哪个命令、什么原因。
+
+    转换只作用于**建立阶段**：握手完成后的调用方代码抛出的异常原样透传。
 
     Args:
         command: 启动命令。
         args: 命令参数。
         env: 环境变量。
+        timeout: 握手超时（秒）。
 
     Yields:
         已完成初始化的 MCP 客户端会话。
+
+    Raises:
+        MCPConnectionError: 启动失败、握手失败或握手超时。
     """
     from mcp import StdioServerParameters
     from mcp.client.stdio import stdio_client
 
     params = StdioServerParameters(command=command, args=args or [], env=env)
-    async with stdio_client(params) as (read_stream, write_stream):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
+    ready = False
+    try:
+        async with AsyncExitStack() as stack:
+            read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
+            session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+            await _initialize_session(session, command, timeout)
+            ready = True
             yield session
+    except BaseException as exc:
+        cause = _root_cause(exc)
+        if isinstance(cause, (KeyboardInterrupt, SystemExit)):
+            # 中断信号必须原样透传
+            raise cause from exc.__cause__
+        if ready:
+            # 握手已完成：这是调用方代码的异常，不该被改写成连接错误
+            raise cause from exc.__cause__
+        raise _as_connection_error(cause, command) from exc.__cause__
 
 
 def build_mcp_server(

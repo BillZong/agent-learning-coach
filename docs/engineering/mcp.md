@@ -126,6 +126,21 @@ MCP 区分两类失败，本项目的适配器保持这个区分：
 跨协议只传**可读消息**——错误类型名留在本地的 `ToolOutcome.error` 上。
 回填给模型的内容要让人（模型）读懂，类型名对它没有意义。
 
+### 5.1 连接建立阶段的错误
+
+| 失败 | 表现 | 本项目表现 |
+| ---- | ---- | ---------- |
+| 启动命令不存在 | `FileNotFoundError` | `MCPConnectionError`（消息指出是哪个命令） |
+| 握手无响应 | 无限期挂起 | `MCPConnectionError`（握手超时，默认 30 秒） |
+| 远端进程退出 / 不是 MCP Server | `ExceptionGroup("unhandled errors in a TaskGroup")` | `MCPConnectionError`（消息含真实原因） |
+
+SDK 用 anyio 任务组管理子进程与协议读写，失败时把根因包进层层嵌套的
+`ExceptionGroup`，最外层只有一句 "unhandled errors in a TaskGroup"。适配器
+把根因摊平——这是对外 API 的基本要求：错误消息必须指出**是哪个命令、
+什么原因**。
+
+握手完成后的调用方代码异常**原样透传**，不被改写成连接错误。
+
 ## 6. 实现选型：停留在协议层
 
 适配器直接使用 `mcp` SDK 的低层 `Server` / `ClientSession`。这是**协议层**，
@@ -162,13 +177,29 @@ JSON Schema 再表达一遍，重新引入两份真相。
 
 | 传输 | 支持方式 | 适用场景 |
 | ---- | -------- | -------- |
-| stdio | `stdio_session(command, args, env)` | 本地子进程，示例 Server |
+| stdio | `stdio_session(command, args, env, timeout=30.0)` | 本地子进程，示例 Server |
 | 内存 | `mcp.shared.memory.create_client_server_memory_streams` | 单元测试，无需起进程 |
 
 HTTP / SSE 传输由 MCP SDK 提供，本适配器不绑定具体传输——它只依赖
 `ClientSession` 抽象。
 
-## 8. 已知限制
+## 8. 发现与结果回填的保证
+
+适配器的一类失败不是「报错」，而是**安静地少给东西**。四条保证：
+
+| 场景 | 保证 | 实现细节 |
+| ---- | ---- | -------- |
+| 远端 `tools/list` 分页 | 翻完所有页，工具不丢 | `discover_mcp_tools` 跟随 `next_cursor`；`max_pages`（默认 100）防止病态服务端导致不收敛 |
+| 远端返回结构化输出 | 保留为 JSON 文本 | `extract_text_content` 序列化 `structured_content` |
+| 远端返回非文本内容块 | 以占位描述代替，不丢弃 | `[MCP 内容块:image, mimeType=image/png]` |
+| 远端声明的输出契约 | 发现阶段保留 | `output_schema` / `title` / `annotations` 存入 `ToolDefinition.metadata` |
+
+判据：**空内容与「工具确实没有输出」无法区分**。若适配器把内容吞成空串，
+模型会以为工具什么都没做，而工具其实已经返回了数据。
+
+远端确实什么都没返回时，返回空串是诚实的答案。
+
+## 9. 已知限制
 
 | 限制 | 影响 | 后续 |
 | ---- | ---- | ---- |
@@ -176,8 +207,9 @@ HTTP / SSE 传输由 MCP SDK 提供，本适配器不绑定具体传输——它
 | 无能力协商 | 不按 Server 声明的能力裁剪工具清单 | 可按 `server_capabilities` 过滤 |
 | 连接生命周期由调用方管理 | 每次 `stdio_session` 都是新连接 | 长会话应复用连接 |
 | 远端 schema 变更无防护 | 远端改了 schema，本地缓存的 `ToolDefinition` 会过期 | 需要时加版本协商或重新发现 |
+| 服务端不分页 | 本项目的 MCP Server 单页返回全部工具 | 工具量小，暂无必要；客户端已能正确跟随远端分页 |
 
-## 9. 相关文档
+## 10. 相关文档
 
 - 工具系统接入说明：[tools.md](tools.md)
 - 决策依据：[ADR-0004](../architecture/decisions/0004-mcp-integration.md)

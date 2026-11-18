@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -23,6 +24,7 @@ from mcp.shared.memory import create_client_server_memory_streams
 
 from agent_learning_coach.core.tools import (
     FunctionTool,
+    MCPConnectionError,
     ToolContext,
     ToolDefinition,
     ToolDispatcher,
@@ -34,6 +36,7 @@ from agent_learning_coach.core.tools.mcp import (
     extract_text_content,
     from_mcp_tool,
     serve,
+    stdio_session,
     to_mcp_tool,
 )
 
@@ -281,6 +284,283 @@ def test_advertised_schema_is_the_enforced_schema() -> None:
     # 且这些约束真的被强制
     assert too_short.is_error is True
     assert extra.is_error is True
+
+
+# --------------------------------------------------------------------------
+# 结果提取：结构化输出与非文本内容块不得被静默丢弃
+# --------------------------------------------------------------------------
+
+
+def test_structured_output_is_not_dropped() -> None:
+    """远端按 outputSchema 返回结构化输出时，内容不得变成空字符串。
+
+    空字符串与「工具确实没有输出」无法区分——模型会误判工具行为。
+    """
+
+    async def on_list_tools(context: Any, params: Any) -> types.ListToolsResult:
+        return types.ListToolsResult(
+            tools=[
+                types.Tool(
+                    name="structured",
+                    description="结构化输出",
+                    inputSchema={"type": "object"},
+                    outputSchema={
+                        "type": "object",
+                        "properties": {"answer": {"type": "number"}},
+                        "required": ["answer"],
+                    },
+                )
+            ]
+        )
+
+    async def on_call_tool(
+        context: Any, params: types.CallToolRequestParams
+    ) -> types.CallToolResult:
+        return types.CallToolResult(content=[], structuredContent={"answer": 42})
+
+    server = Server("structured", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+
+    async def _run() -> str:
+        async with _client_session(server) as session:
+            tools = await discover_mcp_tools(session)
+            return await tools[0].execute(ToolContext(caller="test"), {})  # type: ignore[arg-type]
+
+    text = asyncio.run(_run())
+
+    assert text != ""
+    assert "42" in text
+
+
+def test_non_text_content_block_is_not_dropped() -> None:
+    """远端返回图片等非文本内容块时，内容不得变成空字符串。"""
+
+    async def on_list_tools(context: Any, params: Any) -> types.ListToolsResult:
+        return types.ListToolsResult(
+            tools=[types.Tool(name="image", description="图片", inputSchema={"type": "object"})]
+        )
+
+    async def on_call_tool(
+        context: Any, params: types.CallToolRequestParams
+    ) -> types.CallToolResult:
+        return types.CallToolResult(
+            content=[types.ImageContent(type="image", data="AAAA", mimeType="image/png")]
+        )
+
+    server = Server("image", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+
+    async def _run() -> str:
+        async with _client_session(server) as session:
+            tools = await discover_mcp_tools(session)
+            return await tools[0].execute(ToolContext(caller="test"), {})  # type: ignore[arg-type]
+
+    text = asyncio.run(_run())
+
+    assert text != ""
+    assert "image" in text
+
+
+def test_text_and_structured_output_are_both_kept() -> None:
+    """文本与结构化输出同时存在时，两者都要保留。"""
+    result = types.CallToolResult(
+        content=[types.TextContent(type="text", text="结论:42")],
+        structuredContent={"answer": 42},
+    )
+
+    text = extract_text_content(result)
+
+    assert "结论:42" in text
+    # 结构化部分必须以 JSON 形态出现，而不只是恰好包含数字 42
+    assert '"answer": 42' in text
+
+
+def test_extraction_never_silently_loses_content() -> None:
+    """提取结果的每一部分都能在原始内容里找到出处。"""
+    result = types.CallToolResult(
+        content=[
+            types.TextContent(type="text", text="A"),
+            types.AudioContent(type="audio", data="BBB", mimeType="audio/wav"),
+            types.ResourceLink(type="resource_link", uri="file:///notes.md", name="notes"),
+        ],
+        structuredContent={"k": "v"},
+    )
+
+    text = extract_text_content(result)
+
+    assert "A" in text
+    assert "audio" in text
+    assert "notes" in text
+    assert '"k"' in text
+
+
+def test_discovery_preserves_remote_output_contract() -> None:
+    """发现阶段不得丢弃远端的结构化输出契约与元数据。"""
+    mcp_tool = types.Tool(
+        name="search",
+        title="检索资料",
+        description="检索",
+        inputSchema={"type": "object"},
+        outputSchema={"type": "object", "properties": {"hits": {"type": "array"}}},
+        annotations=types.ToolAnnotations(readOnlyHint=True),
+    )
+
+    definition = from_mcp_tool(mcp_tool)
+
+    assert definition.metadata.get("output_schema") == mcp_tool.output_schema
+    assert definition.metadata.get("title") == "检索资料"
+    assert definition.metadata.get("annotations") is not None
+
+
+# --------------------------------------------------------------------------
+# 发现机制：分页不得被静默截断
+# --------------------------------------------------------------------------
+
+
+def _paged_server(pages: list[list[types.Tool]]) -> Server:
+    """构造一个按页返回工具的 MCP Server。"""
+
+    async def on_list_tools(context: Any, params: Any) -> types.ListToolsResult:
+        cursor = getattr(params, "cursor", None) if params is not None else None
+        index = 0 if cursor is None else int(cursor)
+        page = pages[index]
+        next_cursor = str(index + 1) if index + 1 < len(pages) else None
+        return types.ListToolsResult(tools=page, nextCursor=next_cursor)
+
+    return Server("paged", on_list_tools=on_list_tools)
+
+
+def test_discovery_follows_pagination_cursor() -> None:
+    """远端分页时，发现机制必须翻完所有页，不能只取第一页。"""
+    first = [
+        types.Tool(name=f"a{i}", description="d", inputSchema={"type": "object"}) for i in range(3)
+    ]
+    second = [
+        types.Tool(name=f"b{i}", description="d", inputSchema={"type": "object"}) for i in range(3)
+    ]
+    server = _paged_server([first, second])
+
+    async def _run() -> list[Any]:
+        async with _client_session(server) as session:
+            return await discover_mcp_tools(session)
+
+    tools = asyncio.run(_run())
+
+    assert len(tools) == 6
+    assert {t.definition.name for t in tools} == {f"a{i}" for i in range(3)} | {
+        f"b{i}" for i in range(3)
+    }
+
+
+def test_discovery_stops_on_repeating_cursor() -> None:
+    """远端若反复返回同一个游标，发现机制不得无限循环。"""
+
+    async def on_list_tools(context: Any, params: Any) -> types.ListToolsResult:
+        # 病态服务端：永远返回同一个游标
+        return types.ListToolsResult(
+            tools=[types.Tool(name="t", description="d", inputSchema={"type": "object"})],
+            nextCursor="same",
+        )
+
+    server = Server("looping", on_list_tools=on_list_tools)
+
+    async def _run() -> list[Any]:
+        async with _client_session(server) as session:
+            return await discover_mcp_tools(session, max_pages=3)
+
+    tools = asyncio.run(_run())
+
+    # 到达页数上限即停止，而不是挂死
+    assert len(tools) == 3
+
+
+# --------------------------------------------------------------------------
+# 连接建立：握手超时与可读错误
+# --------------------------------------------------------------------------
+
+
+def test_stdio_session_raises_readable_error_when_server_exits() -> None:
+    """远端进程立即退出时，错误必须可读，不能只抛 ExceptionGroup。"""
+
+    async def _run() -> None:
+        async with stdio_session("true") as session:  # type: ignore[arg-type]
+            await session.initialize()
+
+    with pytest.raises(MCPConnectionError) as exc_info:
+        asyncio.run(_run())
+
+    message = str(exc_info.value)
+    # 必须包含真正的失败原因，而不是 "unhandled errors in a TaskGroup"
+    assert "TaskGroup" not in message
+    assert "true" in message
+
+
+def test_stdio_session_raises_readable_error_when_command_missing() -> None:
+    """启动命令不存在时，错误必须指出是哪个命令找不到。"""
+
+    async def _run() -> None:
+        async with stdio_session("no-such-mcp-binary-xyz") as session:  # type: ignore[arg-type]
+            await session.initialize()
+
+    with pytest.raises(MCPConnectionError) as exc_info:
+        asyncio.run(_run())
+
+    message = str(exc_info.value)
+    assert "no-such-mcp-binary-xyz" in message
+    assert "TaskGroup" not in message
+
+
+def test_stdio_session_handshake_times_out() -> None:
+    """远端无响应时，握手必须超时退出，不能无限期挂起。"""
+
+    async def _run() -> None:
+        async with stdio_session("sleep", ["30"], timeout=1.0) as session:  # type: ignore[arg-type]
+            await session.initialize()
+
+    started = time.monotonic()
+    with pytest.raises(MCPConnectionError) as exc_info:
+        asyncio.run(_run())
+    elapsed = time.monotonic() - started
+
+    assert "超时" in str(exc_info.value)
+    # 必须真的超时返回，而不是等满 30 秒
+    assert elapsed < 10
+
+
+def test_caller_exception_after_handshake_is_not_rewritten() -> None:
+    """握手完成后，调用方代码的异常不得被改写成连接错误。"""
+    import os
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    script = root / "examples" / "mcp_server.py"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(root / "src")
+
+    async def _run() -> None:
+        async with stdio_session(sys.executable, [str(script)], env=env):
+            raise ValueError("调用方自己的 bug")
+
+    with pytest.raises(ValueError, match="调用方自己的 bug"):
+        asyncio.run(_run())
+
+
+def test_keyboard_interrupt_is_not_rewritten() -> None:
+    """中断信号必须原样透传，不能被改写成连接错误。"""
+    import os
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    script = root / "examples" / "mcp_server.py"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(root / "src")
+
+    async def _run() -> None:
+        async with stdio_session(sys.executable, [str(script)], env=env):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(_run())
 
 
 def test_call_unknown_tool_is_protocol_error() -> None:
