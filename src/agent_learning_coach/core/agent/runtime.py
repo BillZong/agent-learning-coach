@@ -1,6 +1,6 @@
-"""Agent Loop：ReAct 执行循环。
+"""Agent Runtime：ReAct 执行循环 + 运行时状态。
 
-一次循环的形状是::
+一次运行的形状是::
 
     Think  ->  Act  ->  Observe  ->  Think -> ...
     (模型)     (工具)     (结果回填)      (模型)
@@ -16,6 +16,15 @@
 **Observation**（``_observe``）：把工具结果回填给模型，让它看到事实后继续
 推理。
 
+## 状态：Execution Context
+
+运行过程中的**全部状态**都记在 ``ExecutionContext`` 里——事件历史、步数、
+草稿本、用量与成本。运行时不另设一份状态，因此「运行发生了什么」只有一个
+答案：上下文里的事件序列。
+
+这让运行**可测试、可复现**：给定同样的输入与同样的事件序列，就能得到同样
+的结论。
+
 ## 停止策略
 
 Topic 05 提出的问题是：**循环在什么条件下必须停止？Stop Condition 与 Max
@@ -28,12 +37,18 @@ Steps 如何配合，既避免死循环，也避免过早收敛？**
 2. **工具失败不终止循环**：失败被归一化成错误结果回填给模型，让它换参数、
    换工具或直接回答——这正是工具系统「调用级失败归一化」的意义。模型能
    自愈的错误就让它自愈。
-3. **预算是兜底，不是主路径**：步数、工具调用数、连续失败数、重复调用数
-   四个阈值只在模型**不再前进**时兜底。它们的存在是为了让失控的循环一定
-   会停下来，而不是为了提前结束一个正在取得进展的任务。
+3. **预算是兜底，不是主路径**：步数、工具调用数、token 数、成本、连续失败
+   数、重复调用数六个阈值只在模型**不再前进**时兜底。它们的存在是为了让失控
+   的循环一定会停下来，而不是为了提前结束一个正在取得进展的任务。
 
 「过早收敛」的防护因此来自两条规则：预算是兜底而非目标；工具错误回填而非
 终止。
+
+## 成本控制
+
+价格表由调用方提供（``AgentConfig.prices``），运行时只负责核算与执行预算。
+设了 ``max_cost`` 却没有覆盖实际模型的单价属于配置错误，直接抛
+``AgentConfigError``——预算无法被执行就等于没设。
 
 ## 边界
 
@@ -53,26 +68,31 @@ import json
 import time
 from collections import Counter
 
+from agent_learning_coach.core.agent.errors import AgentConfigError
 from agent_learning_coach.core.agent.types import (
+    EXECUTION_CONTEXT_KEY,
     AgentConfig,
-    AgentRun,
+    AgentResult,
+    AgentStatus,
     AgentStep,
+    Event,
+    ExecutionContext,
     StopReason,
 )
 from agent_learning_coach.core.llm.errors import LLMError
-from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse, LLMUsage
+from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
 from agent_learning_coach.core.llm.protocol import LLMClient
 from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall
 from agent_learning_coach.core.tools.dispatcher import ToolDispatcher
 from agent_learning_coach.core.tools.types import ToolContext, ToolOutcome
 
 
-class AgentLoop:
-    """ReAct 执行循环。
+class AgentRuntime:
+    """ReAct 执行循环 + 运行时状态。
 
-    职责边界：只管「模型 ↔ 工具」的循环控制。模型调用委托给 ``LLMClient``，
-    工具执行委托给 ``ToolDispatcher``，两者都不在本类里实现——因此换成别的
-    模型或别的工具来源都不需要改循环。
+    职责边界：只管「模型 ↔ 工具」的循环控制与状态记录。模型调用委托给
+    ``LLMClient``，工具执行委托给 ``ToolDispatcher``，两者都不在本类里实现
+    ——因此换成别的模型或别的工具来源都不需要改运行时。
     """
 
     def __init__(
@@ -81,40 +101,51 @@ class AgentLoop:
         dispatcher: ToolDispatcher,
         *,
         config: AgentConfig | None = None,
+        name: str = "agent",
     ) -> None:
-        """初始化循环。
+        """初始化运行时。
 
         Args:
             client: 模型客户端。
             dispatcher: 工具调度器。
             config: 运行参数。为 None 时用默认配置。
+            name: 运行时的名字，用于事件作者标记。
         """
         self.client = client
         self.dispatcher = dispatcher
         self.config = config or AgentConfig()
+        self.name = name
 
     async def run(
         self,
         prompt: str | list[ContentItem],
         *,
-        context: ToolContext | None = None,
-    ) -> AgentRun:
+        context: ExecutionContext | None = None,
+        tool_context: ToolContext | None = None,
+    ) -> AgentResult:
         """执行一次完整的 Agent 运行。
 
         Args:
             prompt: 用户输入。可以是一段文本，或一组厂商无关的内容项。
-            context: 工具执行上下文。为 None 时构造一个只带调用方标识的上下文。
+            context: 执行上下文。为 None 时新建一个——传入已有上下文可以
+                续接之前的对话。
+            tool_context: 工具执行上下文。为 None 时构造一个只带调用方标识
+                的上下文。
 
         Returns:
             运行结果。即使是超时或预算耗尽，也会返回已完成的部分结果——
             调用方能知道「走到了哪一步」以及「为什么停」。
         """
         config = self.config
-        tool_context = context or ToolContext(caller="agent_loop")
+        ctx = context if context is not None else ExecutionContext()
+        tools_ctx = tool_context or ToolContext(
+            caller="agent_runtime",
+            metadata={EXECUTION_CONTEXT_KEY: ctx},
+        )
 
-        contents: list[ContentItem] = list(_normalize_prompt(prompt))
+        ctx.add_event(Event.create(ctx.execution_id, "user", _normalize_prompt(prompt)))
+
         steps: list[AgentStep] = []
-        usage = LLMUsage()
         total_tool_calls = 0
         consecutive_errors = 0
         call_counts: Counter[str] = Counter()
@@ -123,36 +154,36 @@ class AgentLoop:
         for index in range(config.max_steps):
             # 预算在步之间检查：达到上限就不再开始新的一步。当前步内的调用
             # 全部执行完，保证每条 tool_call 都有对应的 tool_result。
-            if config.max_tool_calls is not None and total_tool_calls >= config.max_tool_calls:
-                return _finish(steps, contents, usage, "max_tool_calls")
+            budget_stop = self._check_budgets(ctx, total_tool_calls)
+            if budget_stop is not None:
+                return self._result(ctx, steps, budget_stop)
 
             # --- Thought：模型决定下一步要做什么 ---
             try:
-                response = await self._think(contents, deadline)
+                response = await self._think(ctx, deadline)
             except TimeoutError:
-                return _finish(steps, contents, usage, "timeout")
+                return self._result(ctx, steps, "timeout")
             except LLMError as exc:
                 # 模型调用失败与超时是同一类运行时失败：都要返回已完成的部分
                 # 结果，而不是丢弃整个运行。调用方据此决定是否重跑。
-                return _finish(
-                    steps, contents, usage, "llm_error", error=f"{type(exc).__name__}: {exc}"
-                )
+                return self._result(ctx, steps, "llm_error", error=f"{type(exc).__name__}: {exc}")
 
-            usage = _accumulate_usage(usage, response)
-            contents.extend(response.contents)
+            ctx.record_usage(response.usage, response.model or config.model, config.prices)
+            ctx.add_event(Event.create(ctx.execution_id, self.name, response.contents))
 
             tool_calls = tuple(item for item in response.contents if isinstance(item, ToolCall))
 
             if not tool_calls:
                 # 模型不再请求工具——循环自然结束，这是唯一的成功路径。
                 steps.append(AgentStep(index=index, response=response))
-                return _finish(steps, contents, usage, "completed")
+                ctx.increment_step()
+                return self._result(ctx, steps, "completed")
 
             # --- Action：执行模型请求的工具 ---
-            outcomes = await self._act(tool_calls, tool_context)
+            outcomes = await self._act(tool_calls, tools_ctx)
 
             # --- Observation：把工具结果回填给模型 ---
-            self._observe(tool_calls, outcomes, contents)
+            self._observe(ctx, tool_calls, outcomes)
 
             for outcome in outcomes:
                 if outcome.succeeded:
@@ -171,15 +202,53 @@ class AgentLoop:
                 outcomes=tuple(outcomes),
             )
             steps.append(step)
+            ctx.increment_step()
 
             stop = self._check_stop_conditions(
                 consecutive_errors=consecutive_errors,
                 call_counts=call_counts,
             )
             if stop is not None:
-                return _finish(steps, contents, usage, stop)
+                return self._result(ctx, steps, stop)
 
-        return _finish(steps, contents, usage, "max_steps")
+        return self._result(ctx, steps, "max_steps")
+
+    async def _think(
+        self,
+        ctx: ExecutionContext,
+        deadline: float | None,
+    ) -> LLMResponse:
+        """执行一次模型调用（Thought）。
+
+        Args:
+            ctx: 执行上下文。
+            deadline: 整体截止时刻（``time.monotonic`` 基准）。None 表示不限。
+
+        Returns:
+            模型响应。
+
+        Raises:
+            TimeoutError: 超过整体截止时间。
+        """
+        config = self.config
+        request = LLMRequest(
+            model=config.model,
+            instructions=list(config.instructions),
+            contents=ctx.contents,
+            tools=self.dispatcher.registry.specs(),
+            tool_choice=config.tool_choice,
+            temperature=config.temperature,
+            max_output_tokens=config.max_output_tokens,
+        )
+
+        if deadline is None:
+            return await self.client.generate(request)
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        async with asyncio.timeout(remaining):
+            return await self.client.generate(request)
 
     async def _act(
         self,
@@ -208,9 +277,9 @@ class AgentLoop:
 
     @staticmethod
     def _observe(
+        ctx: ExecutionContext,
         tool_calls: tuple[ToolCall, ...],
         outcomes: list[ToolOutcome],
-        contents: list[ContentItem],
     ) -> None:
         """把工具结果回填给模型（Observation）。
 
@@ -221,45 +290,41 @@ class AgentLoop:
         本身（「哪个工具、执行成没成」），不知道它属于哪一次调用。
 
         Args:
+            ctx: 执行上下文。
             tool_calls: 模型请求的工具调用。
             outcomes: 与之对应的执行结果。
-            contents: 对话记录（原地追加）。
         """
-        for call, outcome in zip(tool_calls, outcomes, strict=True):
-            contents.append(outcome.to_message_result(call.tool_call_id))
+        results = [
+            outcome.to_message_result(call.tool_call_id)
+            for call, outcome in zip(tool_calls, outcomes, strict=True)
+        ]
+        ctx.add_event(Event.create(ctx.execution_id, "tools", results))
 
-    async def _think(self, contents: list[ContentItem], deadline: float | None) -> LLMResponse:
-        """执行一次模型调用（Think）。
+    def _check_budgets(
+        self,
+        ctx: ExecutionContext,
+        total_tool_calls: int,
+    ) -> StopReason | None:
+        """检查预算类停止条件。
 
         Args:
-            contents: 当前对话记录。
-            deadline: 整体截止时刻（``time.monotonic`` 基准）。None 表示不限。
+            ctx: 执行上下文。
+            total_tool_calls: 已执行的工具调用数。
 
         Returns:
-            模型响应。
-
-        Raises:
-            TimeoutError: 超过整体截止时间。
+            停止原因；未超预算时返回 None。
         """
         config = self.config
-        request = LLMRequest(
-            model=config.model,
-            instructions=list(config.instructions),
-            contents=list(contents),
-            tools=self.dispatcher.registry.specs(),
-            tool_choice=config.tool_choice,
-            temperature=config.temperature,
-            max_output_tokens=config.max_output_tokens,
-        )
-
-        if deadline is None:
-            return await self.client.generate(request)
-
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError
-        async with asyncio.timeout(remaining):
-            return await self.client.generate(request)
+        if config.max_tool_calls is not None and total_tool_calls >= config.max_tool_calls:
+            return "max_tool_calls"
+        if (
+            config.max_total_tokens is not None
+            and ctx.usage.input_tokens + ctx.usage.output_tokens >= config.max_total_tokens
+        ):
+            return "max_tokens"
+        if config.max_cost is not None and ctx.cost >= config.max_cost:
+            return "max_cost"
+        return None
 
     def _check_stop_conditions(
         self,
@@ -269,8 +334,8 @@ class AgentLoop:
     ) -> StopReason | None:
         """判断是否应当停止。
 
-        只检查「模型不再前进」的两类信号：连续失败与原地打转。步数与工具
-        调用预算在步之间检查。
+        只检查「模型不再前进」的两类信号：连续失败与原地打转。步数、工具
+        调用预算、token 与成本预算在步之间检查。
 
         Args:
             consecutive_errors: 当前连续工具失败次数。
@@ -293,6 +358,36 @@ class AgentLoop:
 
         return None
 
+    def _result(
+        self,
+        ctx: ExecutionContext,
+        steps: list[AgentStep],
+        stop_reason: StopReason,
+        *,
+        error: str | None = None,
+    ) -> AgentResult:
+        """打包运行结果。
+
+        Args:
+            ctx: 执行上下文。
+            steps: 逐步记录。
+            stop_reason: 停止原因。
+            error: 失败原因。
+
+        Returns:
+            运行结果。
+        """
+        ctx.final_result = _last_assistant_text(ctx)
+        status: AgentStatus = "complete" if stop_reason == "completed" else "error"
+        return AgentResult(
+            context=ctx,
+            output=ctx.final_result,
+            status=status,
+            stop_reason=stop_reason,
+            steps=tuple(steps),
+            error=error,
+        )
+
 
 def _normalize_prompt(prompt: str | list[ContentItem]) -> list[ContentItem]:
     """把用户输入规范化为内容项列表。
@@ -306,6 +401,21 @@ def _normalize_prompt(prompt: str | list[ContentItem]) -> list[ContentItem]:
     if isinstance(prompt, str):
         return [Message(role="user", content=prompt)]
     return list(prompt)
+
+
+def _last_assistant_text(ctx: ExecutionContext) -> str | None:
+    """取出最后一条 assistant 文本。
+
+    Args:
+        ctx: 执行上下文。
+
+    Returns:
+        文本；没有时返回 None。
+    """
+    for item in reversed(ctx.contents):
+        if isinstance(item, Message) and item.role == "assistant":
+            return item.content
+    return None
 
 
 def _call_key(call: ToolCall) -> str:
@@ -324,49 +434,4 @@ def _call_key(call: ToolCall) -> str:
     return f"{call.name}:{arguments}"
 
 
-def _accumulate_usage(total: LLMUsage, response: LLMResponse) -> LLMUsage:
-    """累加 token 用量。
-
-    Args:
-        total: 当前累计值。
-        response: 本次响应。
-
-    Returns:
-        新的累计值。
-    """
-    return LLMUsage(
-        input_tokens=total.input_tokens + response.usage.input_tokens,
-        output_tokens=total.output_tokens + response.usage.output_tokens,
-    )
-
-
-def _finish(
-    steps: list[AgentStep],
-    contents: list[ContentItem],
-    usage: LLMUsage,
-    stop_reason: StopReason,
-    *,
-    error: str | None = None,
-) -> AgentRun:
-    """打包运行结果。
-
-    Args:
-        steps: 逐步记录。
-        contents: 对话记录。
-        usage: 累计用量。
-        stop_reason: 停止原因。
-        error: 失败原因。
-
-    Returns:
-        运行结果。
-    """
-    return AgentRun(
-        steps=tuple(steps),
-        stop_reason=stop_reason,
-        contents=tuple(contents),
-        usage=usage,
-        error=error,
-    )
-
-
-__all__ = ["AgentLoop"]
+__all__ = ["AgentConfigError", "AgentRuntime"]
