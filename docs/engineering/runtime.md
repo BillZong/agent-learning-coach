@@ -1,39 +1,52 @@
 # 运行时（Runtime）
 
-> 状态：部分实现（Agent Loop 已交付）
+> 状态：部分实现（Agent Runtime 基础能力已交付）
 
 Agent Runtime 层为应用层提供可复用的 Agent 执行能力，位于
 `src/agent_learning_coach/core/agent/`。
 
-## Agent Loop
+## 1. 组成
 
-ReAct 执行循环：「模型 → 工具 → 结果回填 → 模型」。
+| 模块 | 内容 |
+| ---- | ---- |
+| `runtime.py` | `AgentRuntime`——ReAct 执行循环与状态记录 |
+| `types.py` | `Event` / `ExecutionContext` / `AgentConfig` / `AgentStep` / `AgentResult` / `StopReason` |
+| `cost.py` | `TokenPrice`——token 单价与成本核算 |
+| `errors.py` | `AgentError` / `AgentConfigError` |
+
+## 2. Agent Runtime
+
+ReAct 执行循环 + 运行时状态：「模型 → 工具 → 结果回填 → 模型」。
 
 ```python
-from agent_learning_coach.core.agent import AgentConfig, AgentLoop
+from agent_learning_coach.core.agent import AgentConfig, AgentRuntime
 from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
 
 registry = ToolRegistry()
 dispatcher = ToolDispatcher(registry)
-loop = AgentLoop(client, dispatcher, config=AgentConfig(max_steps=12))
+runtime = AgentRuntime(client, dispatcher, config=AgentConfig(max_steps=12))
 
-run = await loop.run("帮我安排本周的学习计划")
+result = await runtime.run("帮我安排本周的学习计划")
 
-print(run.stop_reason)  # completed / max_steps / ...
-print(run.final_text)  # 模型最后一段说明
+print(result.status)  # complete / error
+print(result.stop_reason)  # completed / max_steps / ...
+print(result.output)  # 最终产物
+print(result.usage)  # 累计 token
+print(result.cost)  # 累计成本
 ```
 
 ### 职责边界
 
-循环只管「模型 ↔ 工具」的节奏：
+运行时只管「模型 ↔ 工具」的节奏与状态：
 
 | 关注点 | 归属 |
 | ------ | ---- |
 | 模型调用、厂商差异、结构化输出 | `core/llm`（`LLMClient`） |
 | 工具契约、参数校验、超时、结果归一化 | `core/tools`（`ToolDispatcher`） |
-| 循环控制、停止条件、对话记录 | `core/agent`（`AgentLoop`） |
+| 循环控制、停止条件、状态记录 | `core/agent`（`AgentRuntime`） |
 
-因此替换模型不需要改循环，换工具来源（本地工具 / MCP 远端工具）也不需要改循环。
+因此替换模型不需要改运行时，换工具来源（本地工具 / MCP 远端工具）也不需要改
+运行时。
 
 ### 三个阶段
 
@@ -46,8 +59,78 @@ ReAct 的三个阶段各自是一个方法，职责单一、可独立测试：
 | **Observation** | `_observe` | 把工具结果转成 `ToolResult` 回填给模型 |
 
 一处细节：工具调用 id 来自**调用**而非执行结果——`ToolOutcome` 描述的是工具
-本身（哪个工具、执行成没成），不知道它属于哪一次调用，因此 `_observe` 同时
-接收 `tool_calls` 与 `outcomes` 并按位置配对。
+本身（哪个工具、执行成没成），不知道它属于哪一次调用，因此 `_observe` 需要
+同时接收 `tool_calls` 与 `outcomes` 并按位置配对。
+
+### Execution Context
+
+一次执行的**全部运行时状态**都记在 `ExecutionContext` 里：
+
+| 状态 | 用途 |
+| ---- | ---- |
+| `execution_id` | 执行身份，串联事件、日志与外部系统 |
+| `events` | 执行历史，按发生顺序排列 |
+| `current_step` | 已完成的步数 |
+| `state` | 运行时草稿本 |
+| `usage` / `cost` | 预算执行与事后核算 |
+| `final_result` | 最终产物 |
+
+这让运行**可测试、可复现**：给定同样的输入与同样的事件序列，就能得到同样的
+结论。
+
+**Event** 与「扁平的对话列表」的区别在于额外携带了**是谁**说的与**什么时候**
+说的——这两点让历史可审计、可回放、可定位问题。`context.contents` 提供展平
+后的对话视图，并保持不变量：**每条 `tool_call` 都有对应的 `tool_result`**。
+
+传入已有上下文即可续接对话：
+
+```python
+context = ExecutionContext(execution_id="session-42")
+result = await runtime.run("这一轮的问题", context=context)
+# 上一轮的事件仍在 context.events 里
+```
+
+### Runtime State
+
+`context.state` 是运行时草稿本：**工具与应用层可见，模型看不到**。
+
+工具通过 `ToolContext.metadata["execution_context"]` 取到执行上下文：
+
+```python
+execution = context.metadata.get("execution_context")
+if execution is not None:
+    execution.state["searched"] = execution.state.get("searched", []) + [query]
+```
+
+之所以用字符串键而不在 `ToolContext` 上加字段：`core/tools` 不应该知道
+`core/agent` 的存在——那会让工具系统反向依赖 Agent 运行时。约定放在使用方更
+符合依赖方向。
+
+### Cost Control
+
+价格表**由调用方提供**，不内置在包里——价格会变、随厂商与地区不同、有时还随
+合同而变；写死等于制造一个必然过期的真相来源。
+
+```python
+from agent_learning_coach.core.agent import AgentConfig, TokenPrice
+
+config = AgentConfig(
+    max_total_tokens=50_000,
+    max_cost=2.0,
+    prices={"minimax-cn/MiniMax-M2": TokenPrice(input_per_1k=0.01, output_per_1k=0.02)},
+)
+```
+
+两个预算的分工：
+
+- **`max_total_tokens`** 约束**实际消耗**而非步数——同样 12 步，简短回答可能
+  只花几百 token，逐字输出长文档可能花掉几万。
+- **`max_cost`** 是金额预算，需要价格表。
+
+两者都在**步之间**检查，与其它预算一致。
+
+**预算无法执行就是配置错误**：设了 `max_cost` 却无法确定模型名，或价格表没有
+覆盖实际使用的模型，运行时抛 `AgentConfigError`——预算没被执行等于没设。
 
 ### 异常处理
 
@@ -103,6 +186,8 @@ run = await loop.run("闭包是什么")
 连续工具失败超限           -> consecutive_errors
 同一工具同一参数反复调用    -> repeated_call
 工具调用预算耗尽           -> max_tool_calls
+token 预算耗尽             -> max_tokens
+成本预算耗尽               -> max_cost
 步数上限                   -> max_steps
 整体截止时间已到            -> timeout
 模型调用失败               -> llm_error
@@ -154,6 +239,7 @@ run = await loop.run("闭包是什么")
 | 示例 | 说明 |
 | ---- | ---- |
 | `examples/basic_react_agent.py` | 基础 ReAct Agent：纯本地工具、无子进程、无凭证，脚本化模型走完三轮工具调用 |
+| `examples/agent_runtime.py` | 基础 Agent Runtime：演示 Execution Context、Runtime State 与 Cost Control |
 | `examples/agent_loop_with_mcp.py` | 同一个循环驱动远端 MCP 工具与本地工具（真实 MCP 子进程 + 真实协议） |
 
 两个示例并列即可看出「换工具来源不改循环」：循环代码完全一样，只有工具注册表
@@ -161,6 +247,6 @@ run = await loop.run("闭包是什么")
 
 ## 相关文档
 
-- 决策依据：[ADR-0005](../architecture/decisions/0005-agent-loop.md)
+- 决策依据：[ADR-0005](../architecture/decisions/0005-agent-loop.md)、[ADR-0006](../architecture/decisions/0006-execution-context-and-cost-control.md)
 - 学习笔记：[Topic 05 · ReAct 与 Agent Loop](../learning/topics/05-react-and-agent-loop.md)
 - 上游：[工具系统接入说明](tools.md)、[LLM 接入说明](llm.md)

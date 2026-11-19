@@ -131,20 +131,26 @@ Provider 用命名空间（厂商名 + 区域，如 `minimax`（国际）、`min
 决策依据：[ADR-0003](decisions/0003-tool-system.md)。
 接入说明：[工具系统接入说明](../engineering/tools.md)。
 
-#### Agent Loop
+#### Agent Runtime
 
-ReAct 执行循环，位于 `src/agent_learning_coach/core/agent/`：
+ReAct 执行循环 + 运行时状态，位于 `src/agent_learning_coach/core/agent/`：
 
-- 循环控制：`src/agent_learning_coach/core/agent/loop.py`（`AgentLoop`）
-- 核心类型：`src/agent_learning_coach/core/agent/types.py`（`AgentConfig` / `AgentStep` / `AgentRun` / `StopReason`）
+- 循环与状态：`src/agent_learning_coach/core/agent/runtime.py`（`AgentRuntime`）
+- 核心类型：`src/agent_learning_coach/core/agent/types.py`（`ExecutionContext` / `Event` / `AgentConfig` / `AgentStep` / `AgentResult` / `StopReason`）
+- 成本核算：`src/agent_learning_coach/core/agent/cost.py`（`TokenPrice`）
+- 异常类型：`src/agent_learning_coach/core/agent/errors.py`
 
-循环形状是「模型 → 工具 → 结果回填 → 模型」。模型调用委托给 `LLMClient`，工具执行委托给 `ToolDispatcher`，因此换模型或换工具来源都不需要改循环。
+循环形状是「模型 → 工具 → 结果回填 → 模型」。模型调用委托给 `LLMClient`，工具执行委托给 `ToolDispatcher`，因此换模型或换工具来源都不需要改运行时。
+
+**Execution Context** 承载一次执行的全部状态：执行身份、事件历史、步数、草稿本、用量、成本、最终产物。运行时不另设一份状态，因此「运行发生了什么」只有一个答案——上下文里的事件序列。这让运行可测试、可复现、可续接。
+
+**成本控制**有两个维度：token 预算（约束实际消耗而非步数）与成本预算（金额）。价格表由调用方提供——价格会变、随厂商与地区不同，运行时内置一份只会制造一个必然过期的真相来源。预算无法执行（模型名无从确定或价格表未覆盖）属配置错误，直接抛出。
 
 停止策略分三层：**自然结束是主路径**（模型不再请求工具即结束，只有模型自己知道任务是否完成）；**失败回填而非终止**（工具出错一律归一化成错误结果回填，让模型换参数、换工具或直接回答）；**预算是兜底**（步数、工具调用数、连续失败数、重复调用数四个阈值只在模型不再前进时生效，保证失控的循环一定会停下来）。
 
 对话记录保持一条不变量：**每条 `tool_call` 都有对应的 `tool_result`**——因此结果可直接作为下一轮对话输入继续。
 
-决策依据：[ADR-0005](decisions/0005-agent-loop.md)。
+决策依据：[ADR-0005](decisions/0005-agent-loop.md)、[ADR-0006](decisions/0006-execution-context-and-cost-control.md)。
 接入说明：[运行时接入说明](../engineering/runtime.md)。
 
 #### MCP 协议适配
