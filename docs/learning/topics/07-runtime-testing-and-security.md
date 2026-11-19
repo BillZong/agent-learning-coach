@@ -143,9 +143,9 @@ ScopePolicy(granted=frozenset({"fs:read"}))
    另一处修正：原本以为「输入净化」是防注入的正路。OWASP 明确建议做，但读了 Cheat Sheet 才发现它自己也把净化放在「纵深防御」里、并且强调外部数据一律不可信。真正的教训不是「做不做净化」，而是**任何单一手段都不够，因此必须让多个手段互不依赖**——这恰好是权限模型的设计逻辑：可见性过滤、强制检查、参数校验，三层各自独立。
 
 3. **当前实现还有哪些局限？**
-   - **T6 目标操纵完全未缓解**——工具结果与模型输出在上下文里不可区分，模型可以被外部内容改写学习目标。这是当前最大的缺口，且**权限模型管不了它**。
+   - **T6 目标操纵完全未缓解**——工具结果与模型输出在上下文里不可区分，模型可以被外部内容改写学习目标。这是当前最大的缺口，且**权限模型管不了它**。→ 归 **Day 63 Security Review**（本 Topic 写下时它没有归属，2026-11-19 决定留在那里）。
    - **权限只到工具粒度，不到参数粒度**——`read_notes` 拿到了 `fs:read`，它内部读什么路径不在管辖范围内。
-   - **没有沙箱**——见 `docs/engineering/sandbox.md`，是设计不是实现。
+   - **没有沙箱**——见 `docs/engineering/sandbox.md`，是设计不是实现。→ 归 **Day 63 Security Review**（同上）。
    - **没有人工确认**——高风险工具没有 T10 意义上的拦截。OWASP 提到批准必须「原子地检查并消费」，防止并发或重放复用批准——这一点在设计 HITL 时必须处理。
    - **Agent Evaluation 尚未数据集化**——33 个用例是 pytest 断言，Phase 0 交付物要求的「基础评估数据集 / 评估用例」还没有。这是 Phase 0 **范围内**的欠账，属 Topic 14。（Learning Evaluation 不在此列：它属 Phase 5，现在不预设基准。）
    - **上下文不压缩**（属 Topic 08）——长会话撑爆窗口，间接放大 T4。
@@ -166,7 +166,7 @@ ScopePolicy(granted=frozenset({"fs:read"}))
 - ADR: `docs/architecture/decisions/0007-tool-permission-and-sandbox-boundary.md`
 - Article Notes: `docs/articles/agent-runtime.md`、`docs/engineering/security.md`、`docs/engineering/threat-model.md`、`docs/engineering/sandbox.md`
 - Unresolved Questions:
-  - T6 目标操纵的缓解方案（来源标记 / 边界分隔 / 内容净化 / 独立校验调用）该如何选型？
-  - HITL 的批准记录如何做到「原子检查并消费」？运行时的暂停/恢复状态模型怎么设计？
-  - 权限如何从工具粒度下沉到参数粒度（例如路径白名单）？这属于工具自身职责还是策略职责？
-  - Phase 0 的「基础评估数据集」怎么组织才既能进 CI 又不与 pytest 重复？（Learning Evaluation 的基准属 Phase 5，现在不预设。）
+  - T6 目标操纵的缓解方案（来源标记 / 边界分隔 / 内容净化 / 独立校验调用）该如何选型？→ **Day 63**
+  - HITL 的批准记录如何做到「原子检查并消费」？运行时的暂停/恢复状态模型怎么设计？→ **Day 09 Session 与 HITL**
+  - 权限如何从工具粒度下沉到参数粒度（例如路径白名单）？这属于工具自身职责还是策略职责？→ **Day 63**（与沙箱一并考虑）
+  - Phase 0 的「基础评估数据集」怎么组织才既能进 CI 又不与 pytest 重复？→ **Day 14 可靠性与阶段验收**（Learning Evaluation 的基准属 Phase 5，现在不预设。）
