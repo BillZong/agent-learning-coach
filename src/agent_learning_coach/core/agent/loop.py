@@ -37,8 +37,9 @@ Steps 如何配合，既避免死循环，也避免过早收敛？**
 
 ## 边界
 
-- 模型调用失败（``LLMError``）**向上抛出**，不重试。响应可靠性属于模型
-  客户端的职责，循环只管工具调用周期。
+- 模型调用失败（``LLMError``）**不重试**，但也不丢弃已完成的结果：运行以
+  ``stop_reason="llm_error"`` 结束，部分结果照常返回。重试策略由调用方决定
+  ——它知道这次运行值不值得重跑。
 - 工具**顺序执行**，不并发。并发执行需要考虑取消、超时传播与结果的确定性
   顺序，属于后续议题。
 - 上下文裁剪（记忆管理）不在本模块：对话记录原样保留并返回，由调用方决定
@@ -58,6 +59,7 @@ from agent_learning_coach.core.agent.types import (
     AgentStep,
     StopReason,
 )
+from agent_learning_coach.core.llm.errors import LLMError
 from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse, LLMUsage
 from agent_learning_coach.core.llm.protocol import LLMClient
 from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall
@@ -129,6 +131,12 @@ class AgentLoop:
                 response = await self._think(contents, deadline)
             except TimeoutError:
                 return _finish(steps, contents, usage, "timeout")
+            except LLMError as exc:
+                # 模型调用失败与超时是同一类运行时失败：都要返回已完成的部分
+                # 结果，而不是丢弃整个运行。调用方据此决定是否重跑。
+                return _finish(
+                    steps, contents, usage, "llm_error", error=f"{type(exc).__name__}: {exc}"
+                )
 
             usage = _accumulate_usage(usage, response)
             contents.extend(response.contents)
@@ -337,6 +345,8 @@ def _finish(
     contents: list[ContentItem],
     usage: LLMUsage,
     stop_reason: StopReason,
+    *,
+    error: str | None = None,
 ) -> AgentRun:
     """打包运行结果。
 
@@ -345,6 +355,7 @@ def _finish(
         contents: 对话记录。
         usage: 累计用量。
         stop_reason: 停止原因。
+        error: 失败原因。
 
     Returns:
         运行结果。
@@ -354,6 +365,7 @@ def _finish(
         stop_reason=stop_reason,
         contents=tuple(contents),
         usage=usage,
+        error=error,
     )
 
 

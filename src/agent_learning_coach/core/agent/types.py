@@ -26,6 +26,7 @@ StopReason = Literal[
     "consecutive_errors",
     "repeated_call",
     "timeout",
+    "llm_error",
 ]
 """停止原因。
 
@@ -35,6 +36,7 @@ StopReason = Literal[
 - ``consecutive_errors``：连续工具失败次数超限，模型陷入失败循环。
 - ``repeated_call``：同一工具以相同参数被反复调用，模型陷入原地打转。
 - ``timeout``：整体截止时间已到。
+- ``llm_error``：模型调用失败（``LLMError``）。
 
 多个条件同时命中时，**更具体的原因优先**：``repeated_call`` 与
 ``consecutive_errors`` 指向模型行为，``max_steps`` 只是预算耗尽。因此模型
@@ -149,6 +151,13 @@ class AgentRun:
 
     usage: LLMUsage = field(default_factory=LLMUsage)
     """累计 token 用量。"""
+
+    error: str | None = None
+    """失败原因。非 ``None`` 时说明运行是失败结束的。
+
+    只有 ``stop_reason="llm_error"`` 会填这个字段——其它停止原因要么是预算
+    耗尽（不是错误），要么是模型主动结束。
+    """
 
     @property
     def succeeded(self) -> bool:

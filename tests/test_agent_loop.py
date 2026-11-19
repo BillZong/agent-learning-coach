@@ -426,8 +426,47 @@ def test_step_records_failure() -> None:
     assert run.steps[0].executed_tool_calls == 1
 
 
-def test_model_error_propagates_to_caller() -> None:
-    """模型调用失败必须向上抛出，由调用方决定是否重试。"""
+def test_model_error_ends_the_run_but_keeps_partial_result() -> None:
+    """模型调用失败时运行结束，但已完成的部分结果必须保留。
+
+    模型失败与超时是同一类运行时失败：两者都返回部分结果，而不是把整次
+    运行丢掉。调用方据此决定是否重跑。
+    """
+    from agent_learning_coach.core.llm.errors import LLMError
+
+    class FailingClient:
+        """第一轮正常，之后失败。"""
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def generate(self, request: LLMRequest) -> LLMResponse:
+            self.calls += 1
+            if self.calls == 1:
+                return tool_call_response()
+            raise LLMError("模型服务不可用")
+
+        async def generate_structured(
+            self, request: LLMRequest, output_model: type[Any]
+        ) -> Any:  # pragma: no cover
+            raise NotImplementedError
+
+    loop = make_loop(FailingClient())
+
+    run = asyncio.run(loop.run("测试"))
+
+    assert run.stop_reason == "llm_error"
+    assert run.succeeded is False
+    assert run.error is not None
+    assert "模型服务不可用" in run.error
+    # 第一步已完成的部分结果保留
+    assert len(run.steps) == 1
+    assert run.tool_call_count == 1
+    assert tool_results(run)
+
+
+def test_model_error_on_first_call_ends_the_run() -> None:
+    """第一次模型调用就失败时，运行以 llm_error 结束。"""
     from agent_learning_coach.core.llm.errors import LLMError
 
     class FailingClient:
@@ -441,5 +480,26 @@ def test_model_error_propagates_to_caller() -> None:
 
     loop = make_loop(FailingClient())
 
-    with pytest.raises(LLMError, match="模型服务不可用"):
+    run = asyncio.run(loop.run("测试"))
+
+    assert run.stop_reason == "llm_error"
+    assert run.steps == ()
+    assert run.tool_call_count == 0
+
+
+def test_non_llm_exception_is_not_swallowed() -> None:
+    """非 LLMError 的异常必须照常抛出——那是编程错误，不该被包装成运行结果。"""
+
+    class BrokenClient:
+        async def generate(self, request: LLMRequest) -> LLMResponse:
+            raise AttributeError("客户端实现有 bug")
+
+        async def generate_structured(
+            self, request: LLMRequest, output_model: type[Any]
+        ) -> Any:  # pragma: no cover
+            raise NotImplementedError
+
+    loop = make_loop(BrokenClient())
+
+    with pytest.raises(AttributeError, match="客户端实现有 bug"):
         asyncio.run(loop.run("测试"))
