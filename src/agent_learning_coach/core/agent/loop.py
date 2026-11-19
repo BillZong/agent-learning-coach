@@ -5,12 +5,16 @@
     Think  ->  Act  ->  Observe  ->  Think -> ...
     (模型)     (工具)     (结果回填)      (模型)
 
-**Think**：把当前对话与工具清单交给模型，模型要么给出回答，要么请求调用工具。
+三个阶段各自是一个方法，职责单一、可独立测试：
 
-**Act**：执行模型请求的工具调用。执行走 ``ToolDispatcher``，因此参数校验、
-超时与结果归一化与本地工具完全一致。
+**Thought**（``_think``）：把当前对话与工具清单交给模型，模型要么给出回答，
+要么请求调用工具。
 
-**Observe**：把工具结果回填给模型，让它看到事实后继续推理。
+**Action**（``_act``）：执行模型请求的工具调用。执行走 ``ToolDispatcher``，
+因此参数校验、超时与结果归一化与本地工具完全一致。
+
+**Observation**（``_observe``）：把工具结果回填给模型，让它看到事实后继续
+推理。
 
 ## 停止策略
 
@@ -58,7 +62,7 @@ from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse, LLMUsa
 from agent_learning_coach.core.llm.protocol import LLMClient
 from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall
 from agent_learning_coach.core.tools.dispatcher import ToolDispatcher
-from agent_learning_coach.core.tools.types import ToolContext
+from agent_learning_coach.core.tools.types import ToolContext, ToolOutcome
 
 
 class AgentLoop:
@@ -120,6 +124,7 @@ class AgentLoop:
             if config.max_tool_calls is not None and total_tool_calls >= config.max_tool_calls:
                 return _finish(steps, contents, usage, "max_tool_calls")
 
+            # --- Thought：模型决定下一步要做什么 ---
             try:
                 response = await self._think(contents, deadline)
             except TimeoutError:
@@ -135,20 +140,20 @@ class AgentLoop:
                 steps.append(AgentStep(index=index, response=response))
                 return _finish(steps, contents, usage, "completed")
 
-            outcomes = []
-            for call in tool_calls:
-                total_tool_calls += 1
-                outcome = await self.dispatcher.dispatch_safe(
-                    call.name, call.arguments, tool_context
-                )
-                outcomes.append(outcome)
-                contents.append(outcome.to_message_result(call.tool_call_id))
+            # --- Action：执行模型请求的工具 ---
+            outcomes = await self._act(tool_calls, tool_context)
 
+            # --- Observation：把工具结果回填给模型 ---
+            self._observe(tool_calls, outcomes, contents)
+
+            for outcome in outcomes:
                 if outcome.succeeded:
                     consecutive_errors = 0
                 else:
                     consecutive_errors += 1
 
+            for call in tool_calls:
+                total_tool_calls += 1
                 call_counts[_call_key(call)] += 1
 
             step = AgentStep(
@@ -167,6 +172,53 @@ class AgentLoop:
                 return _finish(steps, contents, usage, stop)
 
         return _finish(steps, contents, usage, "max_steps")
+
+    async def _act(
+        self,
+        tool_calls: tuple[ToolCall, ...],
+        tool_context: ToolContext,
+    ) -> list[ToolOutcome]:
+        """执行模型请求的工具（Action）。
+
+        执行委托给 ``ToolDispatcher``，因此参数校验、超时与结果归一化与本地
+        工具完全一致。调用级失败（参数不合法、工具内部报错、工具不存在）都
+        被归一化成错误结果而不是抛出——它们要回填给模型，让模型自愈。
+
+        Args:
+            tool_calls: 模型请求的工具调用。
+            tool_context: 工具执行上下文。
+
+        Returns:
+            与 ``tool_calls`` 一一对应的执行结果。
+        """
+        outcomes: list[ToolOutcome] = []
+        for call in tool_calls:
+            outcomes.append(
+                await self.dispatcher.dispatch_safe(call.name, call.arguments, tool_context)
+            )
+        return outcomes
+
+    @staticmethod
+    def _observe(
+        tool_calls: tuple[ToolCall, ...],
+        outcomes: list[ToolOutcome],
+        contents: list[ContentItem],
+    ) -> None:
+        """把工具结果回填给模型（Observation）。
+
+        回填的是 ``ToolResult``——模型能读懂的内容。这是「观察」的意义：让
+        模型看到事实，而不是让它推理工具内部的数据结构。
+
+        工具调用 id 来自**调用**而非执行结果：``ToolOutcome`` 描述的是工具
+        本身（「哪个工具、执行成没成」），不知道它属于哪一次调用。
+
+        Args:
+            tool_calls: 模型请求的工具调用。
+            outcomes: 与之对应的执行结果。
+            contents: 对话记录（原地追加）。
+        """
+        for call, outcome in zip(tool_calls, outcomes, strict=True):
+            contents.append(outcome.to_message_result(call.tool_call_id))
 
     async def _think(self, contents: list[ContentItem], deadline: float | None) -> LLMResponse:
         """执行一次模型调用（Think）。
