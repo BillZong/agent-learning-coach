@@ -132,6 +132,34 @@ config = AgentConfig(
 **预算无法执行就是配置错误**：设了 `max_cost` 却无法确定模型名，或价格表没有
 覆盖实际使用的模型，运行时抛 `AgentConfigError`——预算没被执行等于没设。
 
+### 结构化输出
+
+设置 `AgentConfig.output_model` 后，运行时补一个 `final_answer` 工具，参数
+schema 就是目标模型的 JSON Schema。模型调用它即表示提交最终答案：
+
+```python
+from pydantic import BaseModel, Field
+
+
+class LearningPlan(BaseModel):
+    topic: str = Field(description="学习主题")
+    minutes: int = Field(description="预计分钟数")
+
+
+runtime = AgentRuntime(
+    client,
+    dispatcher,
+    config=AgentConfig(output_model=LearningPlan),
+)
+
+result = await runtime.run("安排闭包的学习计划")
+plan = result.output  # 已校验的 LearningPlan 实例
+```
+
+走工具通道而不是另开一条「结构化输出」路径的好处：`final_answer` 就是普通
+工具——同一套参数校验、同一套超时、同一套结果归一化；模型给出的 JSON 不符合
+目标模型时，错误被回填让它自己纠正；也不需要为结构化输出单独适配厂商。
+
 ### 异常处理
 
 每一类可预期的失败都有明确的处理方式，没有一类是「崩掉」：

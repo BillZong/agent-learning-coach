@@ -84,7 +84,25 @@ Agent Loop 可测试、可复现？**
 `AgentConfigError`。理由：预算没被执行等于没设——继续跑下去只会让真实账单
 超出预期，而用户以为有限额。宁可早失败。
 
-### 7. token 预算与成本预算互补
+### 7. 结构化输出走工具通道
+
+主教材 4.7「Tools as output formatters」：设置 `AgentConfig.output_model` 后，
+运行时补一个 `final_answer` 工具，其参数 schema 就是目标模型的 JSON Schema。
+模型调用它即表示提交最终答案，运行时把结果还原成目标模型的**已校验实例**。
+
+不另开「结构化输出」通道的理由：
+
+- **契约一致**——`final_answer` 就是普通工具，同一套参数校验、同一套超时、同一
+  套结果归一化；循环的停止条件（模型不再请求工具）保持不变。
+- **失败可自愈**——JSON 不符合目标模型时错误被回填，模型可以改一份再交。
+- **无需厂商适配**——function calling 能力已由 `core/llm` 的适配器隔离。
+
+实现上有一处必须做对：Pydantic 嵌套模型的 `$ref: "#/$defs/X"` 相对**根 schema**
+解析，把模型 schema 包进 `output` 字段时必须把 `$defs` 提升到外层，否则引用解析
+失败，jsonschema 抛的是 `PointerToNowhere` 而非校验错误——那会逃出错误归一化
+直接中断运行。
+
+### 8. token 预算与成本预算互补
 
 `max_total_tokens` 约束**实际消耗**而非步数——同样 12 步，简短回答可能只花
 几百 token，逐字输出长文档可能花掉几万。`max_cost` 是金额预算。
@@ -102,7 +120,8 @@ Agent Loop 可测试、可复现？**
   维护。
 - 边界：`state` 不持久化（进程重启即丢）；没有跨进程的状态共享；事件不压缩
   （长会话的上下文膨胀问题仍未解决，属 Topic 08 记忆与上下文工程）；成本
-  只按 token 估算，不含缓存命中、批处理折扣等厂商计费细节。
+  只按 token 估算，不含缓存命中、批处理折扣等厂商计费细节；结构化输出只支持
+  单个目标模型，不支持「文本或结构化」二选一。
 
 ## 补充说明（2026-11-19）
 
@@ -119,6 +138,9 @@ Agent Loop 可测试、可复现？**
    细节一致。
 4. **命名统一比新增别名更有价值**：与其同时保留 `AgentLoop` / `AgentRuntime`
    两套说法，不如一次切换到与架构层、参考实现都一致的词汇。
+5. **参考实现的 `$defs` 处理有缺陷**：`ai-agent-from-scratch` 直接
+   `pop("$defs")`，嵌套模型因此无法通过校验——本项目把 `$defs` 提升到外层解决
+   这一点。差异来自「原实现没有嵌套模型的实际用例」。
 
 接入说明见 [`docs/engineering/runtime.md`](../../engineering/runtime.md)。
 学习笔记见 [`docs/learning/topics/06-execution-context-and-runtime.md`](../../learning/topics/06-execution-context-and-runtime.md)。
