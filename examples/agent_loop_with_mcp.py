@@ -2,7 +2,7 @@
 
 演示的核心命题：**换工具来源不改循环**。
 
-同一个 ``AgentLoop``，工具既可以来自本地注册表，也可以来自远端 MCP Server
+同一个 ``AgentRuntime``，工具既可以来自本地注册表，也可以来自远端 MCP Server
 ——循环不知道也不需要知道工具从哪来：它只把 ``registry.specs()`` 发给模型，
 再把模型请求的工具调用交给 ``ToolDispatcher``。
 
@@ -39,7 +39,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from agent_learning_coach.core.agent import AgentConfig, AgentLoop  # noqa: E402
+from agent_learning_coach.core.agent import AgentConfig, AgentRuntime  # noqa: E402
 from agent_learning_coach.core.llm.mock import MockLLMClient  # noqa: E402
 from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse  # noqa: E402
 from agent_learning_coach.core.llm.types import Message, ToolCall  # noqa: E402
@@ -151,7 +151,7 @@ async def main() -> None:
 
         print("=== 3. 运行 Agent Loop ===")
         client = build_client()
-        loop = AgentLoop(
+        loop = AgentRuntime(
             client,
             ToolDispatcher(registry),
             config=AgentConfig(instructions=("你是学习教练。",), max_steps=6),

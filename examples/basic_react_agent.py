@@ -28,7 +28,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from agent_learning_coach.core.agent import AgentConfig, AgentLoop  # noqa: E402
+from agent_learning_coach.core.agent import AgentConfig, AgentRuntime  # noqa: E402
 from agent_learning_coach.core.llm.mock import MockLLMClient  # noqa: E402
 from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse  # noqa: E402
 from agent_learning_coach.core.llm.types import Message, ToolCall  # noqa: E402
@@ -142,7 +142,7 @@ def _build_client() -> Any:
 async def main() -> None:
     """跑一次完整的 ReAct 循环。"""
     registry = build_registry()
-    loop = AgentLoop(
+    loop = AgentRuntime(
         _build_client(),
         ToolDispatcher(registry),
         config=AgentConfig(
