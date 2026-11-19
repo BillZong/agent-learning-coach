@@ -27,6 +27,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from agent_learning_coach.core.agent.cost import TokenPrice
+from agent_learning_coach.core.context.builder import ContextBuilder, ContextView
 from agent_learning_coach.core.llm.models import LLMResponse, LLMUsage
 from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall
 from agent_learning_coach.core.tools.types import ToolOutcome
@@ -177,6 +178,14 @@ class ExecutionContext:
     final_result: str | BaseModel | None = None
     """最终产物。文本回答，或结构化输出的已校验实例。"""
 
+    last_context_view: ContextView | None = None
+    """最近一次模型请求实际发送的上下文视图。
+
+    运行时按预算裁剪历史，但**存储侧不变**——这里记录的是「呈现」的结果，
+    因此「这次请求为什么变短了」有答案。运行时未配置 ``context_builder``
+    时为 None。
+    """
+
     def add_event(self, event: Event) -> None:
         """追加一个事件。
 
@@ -326,8 +335,16 @@ class AgentConfig:
     output_model: type[BaseModel] | None = None
     """结构化输出的目标模型。None 表示最终答案是纯文本。
 
-    设置后运行时会补一个 ``final_answer`` 工具，其参数 schema 就是目标模型
-    的 JSON Schema——模型调用它即表示给出最终答案（主教材 4.7 的做法）。
+    设置后运行时会补一个 ``final_answer`` 工具，其参数 schema 就是目标模型的
+    JSON Schema——模型调用它即表示提交最终答案（主教材 4.7 的做法）。
+    """
+
+    context_builder: ContextBuilder | None = None
+    """上下文构建器。None 表示不做预算裁剪。
+
+    设置后，运行时发给模型的内容是**完整历史按预算裁剪后的视图**，而不是
+    完整历史本身（主教材 6.2.1「存储与呈现分离」）。执行上下文里的历史始终
+    完整——裁剪只发生在呈现层。
     """
 
 

@@ -11,11 +11,14 @@
 - **Agent Result**（``types.AgentResult``）：运行结果，携带执行上下文。
 - **Token Price**（``cost.TokenPrice``）：模型 token 单价，由调用方提供。
 - **结构化输出**（``output``）：把最终答案作为一个工具产出（``final_answer``）。
+- **Session Context**（``session.SessionContext``）：跨多次运行持续存在的会话
+  ——学习者与教练的多轮对话，累积在同一份执行上下文里。
 
 职责边界：运行时只管「模型 ↔ 工具」的节奏与状态。模型调用委托给
 ``core.llm.LLMClient``，工具执行委托给 ``core.tools.ToolDispatcher``——
-因此替换模型或替换工具来源都不需要改运行时。上下文管理、记忆、护栏与
-可观测性是同层的其它能力，尚未实现。
+因此替换模型或替换工具来源都不需要改运行时。上下文的**预算裁剪**委托给
+``core.context.ContextBuilder``（存储与呈现分离）；记忆、护栏与可观测性是
+同层的其它能力，尚未实现。
 
 导入约定：调用方统一从 ``agent_learning_coach.core.agent`` 导入公开符号。
 """
@@ -28,6 +31,7 @@ from agent_learning_coach.core.agent.output import (
     build_output_schema,
 )
 from agent_learning_coach.core.agent.runtime import AgentRuntime
+from agent_learning_coach.core.agent.session import SessionContext
 from agent_learning_coach.core.agent.types import (
     AgentConfig,
     AgentResult,
@@ -49,6 +53,7 @@ __all__ = [
     "AgentStep",
     "Event",
     "ExecutionContext",
+    "SessionContext",
     "StopReason",
     "TokenPrice",
     "build_final_answer_tool",

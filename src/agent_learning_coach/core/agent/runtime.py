@@ -254,13 +254,23 @@ class AgentRuntime:
             TimeoutError: 超过整体截止时间。
         """
         config = self.config
+        # 只把当前策略允许的工具给模型：模型看不到无权调用的工具，
+        # 不会浪费轮次去尝试。强制仍在 Dispatcher 那一侧。
+        specs = self.dispatcher.allowed_specs(caller=tool_context.caller)
+
+        # 存储与呈现分离：完整历史留在 ctx 里，发给模型的是按预算裁剪的视图。
+        contents = ctx.contents
+        builder = config.context_builder
+        if builder is not None:
+            view = builder.build(contents, tools=specs, model=config.model)
+            contents = list(view.contents)
+            ctx.last_context_view = view
+
         request = LLMRequest(
             model=config.model,
             instructions=list(config.instructions),
-            contents=ctx.contents,
-            # 只把当前策略允许的工具给模型：模型看不到无权调用的工具，
-            # 不会浪费轮次去尝试。强制仍在 Dispatcher 那一侧。
-            tools=self.dispatcher.allowed_specs(caller=tool_context.caller),
+            contents=contents,
+            tools=specs,
             tool_choice=config.tool_choice,
             temperature=config.temperature,
             max_output_tokens=config.max_output_tokens,
