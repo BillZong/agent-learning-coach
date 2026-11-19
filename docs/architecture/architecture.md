@@ -88,6 +88,10 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 
 Agent Runtime 为应用层提供可复用的 Agent 执行能力。
 
+代码上，`Model Abstraction` 与 `Tool Calling` 分属 `core/llm` 与 `core/tools`
+两个平级包；`Agent Loop` 独立成 `core/agent` 包，与它们平级——循环只负责
+「模型 ↔ 工具」的控制，不寄生在模型客户端或工具系统里。
+
 #### Model Abstraction
 
 模型调用通过 `LLMClient` Protocol 抽象，厂商差异由适配器隔离：
@@ -126,6 +130,22 @@ Provider 用命名空间（厂商名 + 区域，如 `minimax`（国际）、`min
 
 决策依据：[ADR-0003](decisions/0003-tool-system.md)。
 接入说明：[工具系统接入说明](../engineering/tools.md)。
+
+#### Agent Loop
+
+ReAct 执行循环，位于 `src/agent_learning_coach/core/agent/`：
+
+- 循环控制：`src/agent_learning_coach/core/agent/loop.py`（`AgentLoop`）
+- 核心类型：`src/agent_learning_coach/core/agent/types.py`（`AgentConfig` / `AgentStep` / `AgentRun` / `StopReason`）
+
+循环形状是「模型 → 工具 → 结果回填 → 模型」。模型调用委托给 `LLMClient`，工具执行委托给 `ToolDispatcher`，因此换模型或换工具来源都不需要改循环。
+
+停止策略分三层：**自然结束是主路径**（模型不再请求工具即结束，只有模型自己知道任务是否完成）；**失败回填而非终止**（工具出错一律归一化成错误结果回填，让模型换参数、换工具或直接回答）；**预算是兜底**（步数、工具调用数、连续失败数、重复调用数四个阈值只在模型不再前进时生效，保证失控的循环一定会停下来）。
+
+对话记录保持一条不变量：**每条 `tool_call` 都有对应的 `tool_result`**——因此结果可直接作为下一轮对话输入继续。
+
+决策依据：[ADR-0005](decisions/0005-agent-loop.md)。
+接入说明：[运行时接入说明](../engineering/runtime.md)。
 
 #### MCP 协议适配
 
