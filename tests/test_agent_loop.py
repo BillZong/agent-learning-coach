@@ -426,6 +426,32 @@ def test_step_records_failure() -> None:
     assert run.steps[0].executed_tool_calls == 1
 
 
+def test_basic_react_agent_example_runs() -> None:
+    """基础 ReAct Agent 示例必须能真实跑通——它是交付物，不是摆设。"""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(root / "src")
+
+    result = subprocess.run(
+        [sys.executable, str(root / "examples" / "basic_react_agent.py")],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+        cwd=str(root),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "停止原因: completed" in result.stdout
+    assert "工具调用数: 2" in result.stdout
+    assert "步数: 3" in result.stdout
+
+
 def test_model_error_ends_the_run_but_keeps_partial_result() -> None:
     """模型调用失败时运行结束，但已完成的部分结果必须保留。
 
