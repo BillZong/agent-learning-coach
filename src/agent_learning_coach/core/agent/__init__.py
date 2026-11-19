@@ -10,6 +10,7 @@
 - **Agent Config**（``types.AgentConfig``）：运行参数——预算与停止阈值。
 - **Agent Result**（``types.AgentResult``）：运行结果，携带执行上下文。
 - **Token Price**（``cost.TokenPrice``）：模型 token 单价，由调用方提供。
+- **结构化输出**（``output``）：把最终答案作为一个工具产出（``final_answer``）。
 
 职责边界：运行时只管「模型 ↔ 工具」的节奏与状态。模型调用委托给
 ``core.llm.LLMClient``，工具执行委托给 ``core.tools.ToolDispatcher``——
@@ -21,6 +22,11 @@
 
 from agent_learning_coach.core.agent.cost import TokenPrice
 from agent_learning_coach.core.agent.errors import AgentConfigError, AgentError
+from agent_learning_coach.core.agent.output import (
+    FINAL_ANSWER_TOOL_NAME,
+    build_final_answer_tool,
+    build_output_schema,
+)
 from agent_learning_coach.core.agent.runtime import AgentRuntime
 from agent_learning_coach.core.agent.types import (
     AgentConfig,
@@ -33,6 +39,7 @@ from agent_learning_coach.core.agent.types import (
 )
 
 __all__ = [
+    "FINAL_ANSWER_TOOL_NAME",
     "AgentConfig",
     "AgentConfigError",
     "AgentError",
@@ -44,4 +51,6 @@ __all__ = [
     "ExecutionContext",
     "StopReason",
     "TokenPrice",
+    "build_final_answer_tool",
+    "build_output_schema",
 ]

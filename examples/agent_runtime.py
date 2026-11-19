@@ -33,6 +33,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from pydantic import BaseModel, Field  # noqa: E402
+
 from agent_learning_coach.core.agent import (  # noqa: E402
     AgentConfig,
     AgentRuntime,
@@ -53,6 +55,21 @@ from agent_learning_coach.core.tools import (  # noqa: E402
     ToolDispatcher,
     ToolRegistry,
 )
+
+
+class StudyStep(BaseModel):
+    """学习步骤。"""
+
+    title: str = Field(description="步骤标题")
+    minutes: int = Field(description="预计分钟数")
+
+
+class LearningPlan(BaseModel):
+    """结构化输出：学习计划。"""
+
+    topic: str = Field(description="学习主题")
+    steps: list[StudyStep] = Field(description="学习步骤")
+
 
 # 价格表由调用方提供（单位：每千 token）
 PRICES = {
@@ -123,6 +140,40 @@ def _build_client() -> Any:
     return MockLLMClient(handler=handler, model="mock-model")
 
 
+def _build_structured_client() -> Any:
+    """构造提交结构化答案的模型客户端。"""
+    script: list[LLMResponse] = [
+        LLMResponse(
+            model="mock-model",
+            contents=[
+                ToolCall(
+                    tool_call_id="call-1",
+                    name="final_answer",
+                    arguments={
+                        "output": {
+                            "topic": "闭包",
+                            "steps": [
+                                {"title": "理解词法作用域", "minutes": 20},
+                                {"title": "读懂闭包的概念", "minutes": 30},
+                            ],
+                        }
+                    },
+                )
+            ],
+            usage=LLMUsage(input_tokens=150, output_tokens=60),
+        ),
+    ]
+    index = 0
+
+    def handler(request: LLMRequest) -> LLMResponse:
+        nonlocal index
+        response = script[min(index, len(script) - 1)]
+        index += 1
+        return response
+
+    return MockLLMClient(handler=handler, model="mock-model")
+
+
 async def main() -> None:
     """跑一次带预算控制的 Agent 运行。"""
     runtime = AgentRuntime(
@@ -166,6 +217,26 @@ async def main() -> None:
     assert result.context.state["searched"] == ["闭包"]
     assert result.cost > 0
     print("\n[PASS] 执行上下文承载了历史、草稿本、用量与成本")
+
+    # --- 4. 结构化输出：最终答案走 final_answer 工具 ---
+    print("\n=== 结构化输出 ===")
+    structured_runtime = AgentRuntime(
+        _build_structured_client(),
+        ToolDispatcher(build_registry()),
+        config=AgentConfig(
+            model="mock-model",
+            max_steps=4,
+            output_model=LearningPlan,
+        ),
+    )
+    structured = await structured_runtime.run("安排闭包的学习计划")
+
+    assert isinstance(structured.output, LearningPlan)
+    print(f"  输出类型: {type(structured.output).__name__}")
+    print(f"  主题: {structured.output.topic}")
+    for step in structured.output.steps:
+        print(f"    - {step.title}（{step.minutes} 分钟）")
+    print("\n[PASS] 最终答案是已校验的模型实例，不是文本")
 
 
 if __name__ == "__main__":

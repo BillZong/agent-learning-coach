@@ -107,6 +107,14 @@ class ToolRegistry:
         """列出全部工具的静态契约，按工具名排序。"""
         return [self._tools[name].definition for name in sorted(self._tools)]
 
+    def tools(self) -> list[Tool]:
+        """列出全部工具实现，按工具名排序。
+
+        与 ``definitions()`` 对称：前者给契约，后者给实现。需要**组合**注册表
+        时（例如给某个注册表补一个工具）用它——直接改动原注册表会产生副作用。
+        """
+        return [self._tools[name] for name in sorted(self._tools)]
+
     def specs(self) -> list[ToolSpec]:
         """导出给模型的工具清单。
 

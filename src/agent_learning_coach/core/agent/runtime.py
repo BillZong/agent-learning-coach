@@ -68,7 +68,13 @@ import json
 import time
 from collections import Counter
 
+from pydantic import BaseModel
+
 from agent_learning_coach.core.agent.errors import AgentConfigError
+from agent_learning_coach.core.agent.output import (
+    FINAL_ANSWER_TOOL_NAME,
+    build_final_answer_tool,
+)
 from agent_learning_coach.core.agent.types import (
     EXECUTION_CONTEXT_KEY,
     AgentConfig,
@@ -84,6 +90,7 @@ from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
 from agent_learning_coach.core.llm.protocol import LLMClient
 from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall
 from agent_learning_coach.core.tools.dispatcher import ToolDispatcher
+from agent_learning_coach.core.tools.registry import ToolRegistry
 from agent_learning_coach.core.tools.types import ToolContext, ToolOutcome
 
 
@@ -112,8 +119,8 @@ class AgentRuntime:
             name: 运行时的名字，用于事件作者标记。
         """
         self.client = client
-        self.dispatcher = dispatcher
         self.config = config or AgentConfig()
+        self.dispatcher = _compose_dispatcher(dispatcher, self.config.output_model)
         self.name = name
 
     async def run(
@@ -184,6 +191,20 @@ class AgentRuntime:
 
             # --- Observation：把工具结果回填给模型 ---
             self._observe(ctx, tool_calls, outcomes)
+
+            structured = self._structured_output(tool_calls, outcomes)
+            if structured is not None:
+                # 模型提交了最终答案——运行就此结束
+                steps.append(
+                    AgentStep(
+                        index=index,
+                        response=response,
+                        tool_calls=tool_calls,
+                        outcomes=tuple(outcomes),
+                    )
+                )
+                ctx.increment_step()
+                return self._result(ctx, steps, "completed", structured=structured)
 
             for outcome in outcomes:
                 if outcome.succeeded:
@@ -300,6 +321,34 @@ class AgentRuntime:
         ]
         ctx.add_event(Event.create(ctx.execution_id, "tools", results))
 
+    def _structured_output(
+        self,
+        tool_calls: tuple[ToolCall, ...],
+        outcomes: list[ToolOutcome],
+    ) -> BaseModel | None:
+        """取出结构化输出。
+
+        模型通过调用 ``final_answer`` 提交最终答案。执行成功时，其结果里带着
+        已校验的数据；这里把它还原成目标模型的实例。
+
+        Args:
+            tool_calls: 模型请求的工具调用。
+            outcomes: 与之对应的执行结果。
+
+        Returns:
+            目标模型实例；本次没有提交最终答案时返回 None。
+        """
+        output_model = self.config.output_model
+        if output_model is None:
+            return None
+        for call, outcome in zip(tool_calls, outcomes, strict=True):
+            if call.name != FINAL_ANSWER_TOOL_NAME or not outcome.succeeded:
+                continue
+            # final_answer 总是返回已校验的模型实例，其 dump 必为 dict
+            assert outcome.data is not None
+            return output_model.model_validate(outcome.data)
+        return None
+
     def _check_budgets(
         self,
         ctx: ExecutionContext,
@@ -365,6 +414,7 @@ class AgentRuntime:
         stop_reason: StopReason,
         *,
         error: str | None = None,
+        structured: BaseModel | None = None,
     ) -> AgentResult:
         """打包运行结果。
 
@@ -373,11 +423,12 @@ class AgentRuntime:
             steps: 逐步记录。
             stop_reason: 停止原因。
             error: 失败原因。
+            structured: 结构化输出。
 
         Returns:
             运行结果。
         """
-        ctx.final_result = _last_assistant_text(ctx)
+        ctx.final_result = structured if structured is not None else _last_assistant_text(ctx)
         status: AgentStatus = "complete" if stop_reason == "completed" else "error"
         return AgentResult(
             context=ctx,
@@ -387,6 +438,31 @@ class AgentRuntime:
             steps=tuple(steps),
             error=error,
         )
+
+
+def _compose_dispatcher(
+    dispatcher: ToolDispatcher,
+    output_model: type[BaseModel] | None,
+) -> ToolDispatcher:
+    """必要时给调度器补上 ``final_answer`` 工具。
+
+    组合出一个**新的**注册表与调度器，而不是往调用方的注册表里塞工具——调用方
+    的注册表可能被多处共享，就地修改会产生副作用。调用方的默认超时会被保留。
+
+    Args:
+        dispatcher: 调用方提供的调度器。
+        output_model: 结构化输出的目标模型。None 表示不需要补。
+
+    Returns:
+        实际使用的调度器。
+    """
+    if output_model is None:
+        return dispatcher
+    registry = ToolRegistry()
+    for tool in dispatcher.registry.tools():
+        registry.register(tool)
+    registry.register(build_final_answer_tool(output_model))
+    return ToolDispatcher(registry, default_timeout=dispatcher.default_timeout)
 
 
 def _normalize_prompt(prompt: str | list[ContentItem]) -> list[ContentItem]:

@@ -24,6 +24,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from pydantic import BaseModel
+
 from agent_learning_coach.core.agent.cost import TokenPrice
 from agent_learning_coach.core.llm.models import LLMResponse, LLMUsage
 from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall
@@ -172,8 +174,8 @@ class ExecutionContext:
     cost: float = 0.0
     """累计成本。按价格表核算。"""
 
-    final_result: str | None = None
-    """最终产物。通常是模型给出的回答文本。"""
+    final_result: str | BaseModel | None = None
+    """最终产物。文本回答，或结构化输出的已校验实例。"""
 
     def add_event(self, event: Event) -> None:
         """追加一个事件。
@@ -321,6 +323,13 @@ class AgentConfig:
     max_output_tokens: int | None = None
     """单次模型调用的最大输出 token 数，透传给模型客户端。"""
 
+    output_model: type[BaseModel] | None = None
+    """结构化输出的目标模型。None 表示最终答案是纯文本。
+
+    设置后运行时会补一个 ``final_answer`` 工具，其参数 schema 就是目标模型
+    的 JSON Schema——模型调用它即表示给出最终答案（主教材 4.7 的做法）。
+    """
+
 
 @dataclass(frozen=True)
 class AgentStep:
@@ -360,8 +369,12 @@ class AgentResult:
     context: ExecutionContext
     """本次运行的执行上下文。"""
 
-    output: str | None = None
-    """最终产物。通常是模型给出的回答文本。"""
+    output: str | BaseModel | None = None
+    """最终产物。
+
+    未设置 ``output_model`` 时是模型给出的回答文本；设置了则是目标模型的
+    **已校验实例**。
+    """
 
     status: AgentStatus = "complete"
     """运行状态。只有 ``"complete"`` 表示正常结束。"""
