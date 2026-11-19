@@ -8,6 +8,7 @@
 2. 工具调用与状态管理
 3. 上下文窗口的工程约束
 4. 失败处理与恢复
+5. 信任边界与工具权限
 
 ## 正文
 
@@ -104,8 +105,77 @@ way to pass dependencies and data to code you implement」。模型看到的是�
 最后是尚未解决的一半：**恢复**。当前一次运行是原子的——中途失败不会留下可
 续接的检查点。断点续跑需要更强的事件模型（可回放的状态机），那是后续议题。
 
+### 5. 信任边界与工具权限
+
+前四节讲的是「运行得对不对」。这一节讲「运行得**安全**吗」。
+
+**出发点只有一个假设：模型的输出不可信。** 模型可能幻觉，可能被注入，可能
+只是想试试看。因此模型只能**请求**做什么，不能**决定**做什么。
+
+#### 授权在哪一层做
+
+这是本项目一个明确的决策：**权限检查在 `ToolDispatcher`，不在 `AgentRuntime`。**
+
+理由是「检查点在哪里」比「检查有多严」更重要。Dispatcher 是**唯一的执行
+边界**——本地工具、远端 MCP 工具、结构化输出的 `final_answer` 工具全部经过
+它。检查点只有一个，就不存在「新增一条执行路径忘了检查」这种 fail-open 漏洞。
+放在 Runtime 的话，Runtime 必须知道每个工具的来源与危险程度，一旦有人新写
+一条路径而忘了检查，检查就默认放行了。
+
+Runtime 仍然有一份职责，但它是**可见性**而非强制：给模型的工具清单来自
+`dispatcher.allowed_specs()`，无权的工具模型根本看不见，不会浪费轮次去试。
+这是纵深防御的一层，不是唯一一层。
+
+OWASP 的 *AI Agent Security Cheat Sheet* 把这条讲得更直接：授权要在
+**执行组件**里做，不要放在 agent 的上下文里。
+
+#### 用能力（capability）而不是角色
+
+工具在自己的契约里声明需要哪些作用域：
+
+```python
+ToolDefinition(name="read_notes", ..., scopes=("fs:read",))
+```
+
+策略持有本次运行授予的作用域，工具所需是授予的**子集**才放行：
+
+```python
+ScopePolicy(granted=frozenset({"fs:read"}))
+```
+
+选能力模型而非角色模型，是因为角色模型要维护「角色 → 权限」的映射表，还要
+处理继承与冲突；能力模型只需要「本次授予了哪些能力」这一份清单，且这份清单
+天然与「本次会话允许做什么」对齐。
+
+作用域**不进 `ToolSpec`**，不会发给模型——它是运行时的授权依据，不是模型的
+输入。
+
+#### 一个必须写进文档的代价
+
+**未声明作用域的工具恒放行。** 这是声明式授权绕不开的代价：工具作者忘了声明，
+等于默认公开。
+
+替代方案是隐式默认拒绝，但那会让「写个普通工具」变成三行配置的事，实践中
+必然有人绕过。选显式声明，并且把远端工具的声明**自动化**——MCP 工具由
+`discover_mcp_tools` 补上 `mcp:<命名空间>` 作用域，**一个作用域就能关掉整个
+不可信 Server**。
+
+#### 这套机制管不到什么
+
+权限模型管的是「该不该调这个工具」，管不到：
+
+- **调了之后做什么**——`read_notes` 拿到了 `fs:read`，它内部读什么路径不在
+  管辖范围内。要管这个，得靠沙箱。
+- **模型被诱导说不该说的话**——不需要任何工具权限就能做到。工具结果与模型
+  输出在上下文里不可区分，这是间接注入的结构性成因。
+- **谁在调用**——`ToolContext.caller` 是标识，不是凭据。认证是应用层的事。
+
+完整的威胁清单与攻击路径见 [威胁模型](../engineering/threat-model.md)，沙箱
+方案见 [沙箱隔离设计](../engineering/sandbox.md)。
+
 ## 相关文档
 
 - 接入说明：[运行时接入说明](../engineering/runtime.md)
-- 决策依据：[ADR-0005](../architecture/decisions/0005-agent-loop.md)、[ADR-0006](../architecture/decisions/0006-execution-context-and-cost-control.md)
-- 学习笔记：[Topic 05 · ReAct 与 Agent Loop](../learning/topics/05-react-and-agent-loop.md)、[Topic 06 · Execution Context 与 Runtime](../learning/topics/06-execution-context-and-runtime.md)
+- 安全说明：[安全（Security）](../engineering/security.md)、[威胁模型](../engineering/threat-model.md)、[沙箱隔离设计](../engineering/sandbox.md)
+- 决策依据：[ADR-0005](../architecture/decisions/0005-agent-loop.md)、[ADR-0006](../architecture/decisions/0006-execution-context-and-cost-control.md)、[ADR-0007](../architecture/decisions/0007-tool-permission-and-sandbox-boundary.md)
+- 学习笔记：[Topic 05 · ReAct 与 Agent Loop](../learning/topics/05-react-and-agent-loop.md)、[Topic 06 · Execution Context 与 Runtime](../learning/topics/06-execution-context-and-runtime.md)、[Topic 07 · Runtime 测试与安全边界](../learning/topics/07-runtime-testing-and-security.md)

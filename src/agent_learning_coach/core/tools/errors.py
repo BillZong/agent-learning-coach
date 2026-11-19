@@ -66,6 +66,33 @@ class ToolExecutionError(ToolError):
         self.cause = cause
 
 
+class ToolPermissionError(ToolError):
+    """工具调用被权限策略拒绝。
+
+    属于调用级错误：会被归一化成错误结果回填给模型，让模型改用其它工具。
+    但它**不是**模型靠改参数能修好的——重试同一个工具只会被再次拒绝。
+    """
+
+
+class ToolSchemaError(ToolError):
+    """工具的参数 schema 本身不合法。
+
+    性质上是系统级错误（契约坏了不是模型的错），但仍然归一化成错误结果而
+    不是抛出：schema 可能来自远端 MCP Server，一个畸形 schema 不应该打断
+    整个 Agent 运行。
+    """
+
+    def __init__(self, message: str, *, cause: BaseException | None = None) -> None:
+        """初始化契约错误。
+
+        Args:
+            message: 人类可读的失败原因。
+            cause: 原始异常。
+        """
+        super().__init__(message)
+        self.cause = cause
+
+
 class MCPConnectionError(ToolError):
     """与远端 MCP Server 建立会话失败。
 
@@ -93,6 +120,8 @@ __all__ = [
     "ToolError",
     "ToolExecutionError",
     "ToolNotFoundError",
+    "ToolPermissionError",
+    "ToolSchemaError",
     "ToolTimeoutError",
     "ToolValidationError",
 ]

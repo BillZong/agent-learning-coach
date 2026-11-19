@@ -12,13 +12,18 @@
 使用 ``jsonschema`` 库做校验：它是 JSON Schema 的参考实现，完整覆盖
 draft 2020-12 规范；自行实现子集校验器会在边界情况上给出错误的通过/拒绝
 结论，而这种错误只在生产数据形态下才暴露。
+
+**schema 本身可能不合法**：``{"type": "bogus"}`` 这类畸形 schema 会让
+``jsonschema`` 在构造校验器或遍历错误时抛出 ``UnknownType`` / ``TypeError``
+等非校验类异常。schema 可能来自远端 MCP Server，因此这类异常必须被收敛成
+``ToolSchemaError``——否则一个畸形 schema 就能打断整个 Agent 运行。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from agent_learning_coach.core.tools.errors import ToolValidationError
+from agent_learning_coach.core.tools.errors import ToolSchemaError, ToolValidationError
 
 try:
     from jsonschema import Draft202012Validator
@@ -36,12 +41,19 @@ def validate_arguments(schema: dict[str, Any], arguments: dict[str, Any]) -> Non
 
     Raises:
         ToolValidationError: 参数不满足 schema 时抛出，附带逐条校验明细。
+        ToolSchemaError: schema 本身不合法时抛出。
     """
     if not schema:
         return
 
-    validator = Draft202012Validator(schema)
-    errors = sorted(validator.iter_errors(arguments), key=lambda err: list(err.absolute_path))
+    try:
+        validator = Draft202012Validator(schema)
+        errors = sorted(validator.iter_errors(arguments), key=lambda err: list(err.absolute_path))
+    except Exception as exc:
+        # schema 畸形（而不是参数不合法）。收敛成 ToolSchemaError，让调用方
+        # 归一化成错误结果，而不是让异常逃出去打断 Agent 运行。
+        raise ToolSchemaError(f"工具参数 schema 本身不合法：{exc}", cause=exc) from exc
+
     if not errors:
         return
 

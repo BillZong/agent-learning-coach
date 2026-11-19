@@ -227,6 +227,7 @@ class MCPTool:
         session: ClientSession,
         *,
         local_name: str | None = None,
+        scopes: tuple[str, ...] = (),
     ) -> None:
         """初始化适配器。
 
@@ -234,11 +235,19 @@ class MCPTool:
             mcp_tool: 远端 MCP 工具描述。
             session: 已建立的 MCP 客户端会话。
             local_name: 本地使用的工具名。为 None 时沿用远端名。
+            scopes: 工具所需的权限作用域。远端工具必须显式声明——未声明的
+                工具在任何作用域策略下都放行，等于把远端 Server 的全部能力
+                无条件授权。
         """
         self._remote_name = mcp_tool.name
         self._definition = from_mcp_tool(mcp_tool)
+        updates: dict[str, Any] = {}
         if local_name is not None:
-            self._definition = self._definition.model_copy(update={"name": local_name})
+            updates["name"] = local_name
+        if scopes:
+            updates["scopes"] = tuple(scopes)
+        if updates:
+            self._definition = self._definition.model_copy(update=updates)
         self._session = session
 
     @property
@@ -283,6 +292,7 @@ async def discover_mcp_tools(
     session: ClientSession,
     *,
     namespace: str | None = None,
+    scope: str | None = None,
     max_pages: int = 100,
 ) -> list[MCPTool]:
     """发现远端 MCP Server 的工具并适配成本项目的工具。
@@ -298,11 +308,16 @@ async def discover_mcp_tools(
         session: 已建立的 MCP 客户端会话。
         namespace: 工具名前缀。用于避免多个 MCP Server 的同名工具冲突，
             形如 ``"web"`` 会把 ``search`` 改名为 ``web_search``。
+        scope: 授予这些工具的权限作用域。为 None 时按 ``mcp:<namespace>``
+            推导；namespace 也为 None 时不授予作用域——此时这些工具在作用域
+            策略下不受限制，调用方应显式指定 scope。
         max_pages: 最多翻取的页数。
 
     Returns:
         适配后的工具列表。
     """
+    effective_scope = scope if scope is not None else (f"mcp:{namespace}" if namespace else None)
+    scopes = (effective_scope,) if effective_scope else ()
     tools: list[MCPTool] = []
     cursor: str | None = None
     for _ in range(max_pages):
@@ -310,7 +325,7 @@ async def discover_mcp_tools(
         response = await session.list_tools(params=params)
         for mcp_tool in response.tools:
             local_name = f"{namespace}_{mcp_tool.name}" if namespace else None
-            tools.append(MCPTool(mcp_tool, session, local_name=local_name))
+            tools.append(MCPTool(mcp_tool, session, local_name=local_name, scopes=scopes))
         cursor = response.next_cursor
         if not cursor:
             break

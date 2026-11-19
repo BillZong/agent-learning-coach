@@ -12,8 +12,10 @@
 - **Tool Result**（``types.ToolOutcome``）：归一化的执行结果——状态、内容、
   错误、耗时。无论工具返回什么类型，对外结构一致。
 - **Tool Registry**（``registry.ToolRegistry``）：工具可用性的唯一权威来源。
-- **Tool Dispatcher**（``dispatcher.ToolDispatcher``）：执行边界——查找、校验、
-  执行（带超时）、归一化。
+- **Tool Dispatcher**（``dispatcher.ToolDispatcher``）：执行边界——查找、权限
+  检查、校验、执行（带超时）、归一化。
+- **Tool Permission**（``permissions``）：权限策略——工具声明所需作用域，策略
+  决定放行与否。检查点唯一，因此不存在绕过检查的执行路径。
 - **Schema Validation**（``schema.validate_arguments``）：按 JSON Schema 校验
   参数，保证「模型看到的契约」与「实际校验的契约」一致。
 - **Tool Timeout**（``dispatcher.ToolDispatcher.resolve_timeout``）：超时优先
@@ -32,6 +34,8 @@ from agent_learning_coach.core.tools.errors import (
     ToolError,
     ToolExecutionError,
     ToolNotFoundError,
+    ToolPermissionError,
+    ToolSchemaError,
     ToolTimeoutError,
     ToolValidationError,
 )
@@ -52,6 +56,13 @@ from agent_learning_coach.core.tools.normalization import (
     normalize_error,
     normalize_outcome,
 )
+from agent_learning_coach.core.tools.permissions import (
+    AllowAllPolicy,
+    DenyAllPolicy,
+    PermissionDecision,
+    PermissionPolicy,
+    ScopePolicy,
+)
 from agent_learning_coach.core.tools.registry import ToolRegistry
 from agent_learning_coach.core.tools.schema import describe_schema, validate_arguments
 from agent_learning_coach.core.tools.types import (
@@ -64,9 +75,14 @@ from agent_learning_coach.core.tools.types import (
 )
 
 __all__ = [
+    "AllowAllPolicy",
+    "DenyAllPolicy",
     "FunctionTool",
     "MCPConnectionError",
     "MCPTool",
+    "PermissionDecision",
+    "PermissionPolicy",
+    "ScopePolicy",
     "Tool",
     "ToolContext",
     "ToolDefinition",
@@ -76,7 +92,9 @@ __all__ = [
     "ToolHandler",
     "ToolNotFoundError",
     "ToolOutcome",
+    "ToolPermissionError",
     "ToolRegistry",
+    "ToolSchemaError",
     "ToolTimeoutError",
     "ToolValidationError",
     "build_mcp_server",

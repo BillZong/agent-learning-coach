@@ -313,6 +313,6 @@ Agent 不能只是一个能够调用工具的 LLM 循环。
 - [`prd.md`](./prd.md)：产品需求文档。
 - [`OKR.md`](./OKR.md)：项目目标与关键结果。
 - [`PLAN.md`](./PLAN.md)：学习与开发执行计划。
-- [`roadmap.md`](../roadmap.md): 项目里程碑。
+- [`roadmap.md`](./roadmap.md): 项目里程碑。
 - `architecture/`：系统架构设计。
 - `ADR/`：架构决策记录。

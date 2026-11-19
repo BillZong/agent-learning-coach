@@ -54,6 +54,17 @@ class ToolDefinition(BaseModel):
     timeout: float | None = None
     """执行超时（秒）。为 None 时使用 Dispatcher 的默认超时。"""
 
+    scopes: tuple[str, ...] = ()
+    """工具执行所需的权限作用域，如 ``("fs:read", "net:fetch")``。
+
+    属于工具的静态契约，但**不会发给模型**——它是运行时的授权依据，不是
+    模型的输入。``ToolSpec`` 只带 name/description/parameters，作用域因此
+    不会泄露给模型。
+
+    未声明作用域的工具在任何作用域策略下都放行，因此接入不可信来源的工具
+    必须显式声明。
+    """
+
     metadata: dict[str, Any] = Field(default_factory=dict)
     """附加元数据。不参与校验，供调用方与观测使用。"""
 

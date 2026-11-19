@@ -24,14 +24,20 @@ import asyncio
 import time
 from typing import Any
 
+from agent_learning_coach.core.llm.models import ToolSpec
 from agent_learning_coach.core.tools.errors import (
     ToolError,
     ToolExecutionError,
+    ToolPermissionError,
     ToolTimeoutError,
 )
 from agent_learning_coach.core.tools.normalization import (
     normalize_error,
     normalize_outcome,
+)
+from agent_learning_coach.core.tools.permissions import (
+    AllowAllPolicy,
+    PermissionPolicy,
 )
 from agent_learning_coach.core.tools.registry import ToolRegistry
 from agent_learning_coach.core.tools.schema import validate_arguments
@@ -41,7 +47,11 @@ from agent_learning_coach.core.tools.types import ToolContext, ToolOutcome
 class ToolDispatcher:
     """工具调度器。
 
-    组合注册表与执行策略：按名字找工具、校验参数、执行、归一化结果。
+    组合注册表与执行策略：按名字找工具、检查权限、校验参数、执行、归一化结果。
+
+    **权限检查放在这里**：Dispatcher 是唯一的执行边界，所有工具来源（本地、
+    MCP、结构化输出的 ``final_answer``）都经过它。检查点只有一个，就不存在
+    「新增一条执行路径忘了检查」这种 fail-open 漏洞。
     """
 
     def __init__(
@@ -49,6 +59,7 @@ class ToolDispatcher:
         registry: ToolRegistry,
         *,
         default_timeout: float | None = None,
+        policy: PermissionPolicy | None = None,
     ) -> None:
         """初始化调度器。
 
@@ -56,9 +67,29 @@ class ToolDispatcher:
             registry: 工具注册表。
             default_timeout: 默认超时（秒）。工具自身定义了 ``timeout`` 时以工具的
                 为准；两者都未设置则不限制执行时长。
+            policy: 权限策略。为 None 时放行一切（``AllowAllPolicy``）。
         """
         self.registry = registry
         self.default_timeout = default_timeout
+        self.policy: PermissionPolicy = policy if policy is not None else AllowAllPolicy()
+
+    def allowed_specs(self, *, caller: str | None = None) -> list[ToolSpec]:
+        """导出当前策略允许的工具清单。
+
+        这是**可见性**过滤：不给模型看它无权调用的工具，模型就不会浪费轮次
+        去尝试。真正的强制在 ``dispatch`` 里。
+
+        Args:
+            caller: 调用方标识。供按调用方区分授权的策略使用。
+
+        Returns:
+            允许调用的工具契约，按工具名排序。
+        """
+        specs: list[ToolSpec] = []
+        for definition in self.registry.definitions():
+            if self.policy.check(definition, caller=caller).allowed:
+                specs.append(definition.to_spec())
+        return specs
 
     def resolve_timeout(self, tool_name: str) -> float | None:
         """确定一次调用实际生效的超时。
@@ -99,6 +130,17 @@ class ToolDispatcher:
         tool = self.registry.get(tool_name)
         definition = tool.definition
         started = time.monotonic()
+
+        # 权限检查在最前面：被拒绝的工具不进入校验与执行。既不浪费工作，
+        # 也不把「参数应该长什么样」泄露给无权调用的一方。
+        decision = self.policy.check(definition, caller=context.caller)
+        if not decision.allowed:
+            return normalize_error(
+                tool_name,
+                ToolPermissionError(decision.reason),
+                duration_ms=_elapsed_ms(started),
+                metadata={"permission_denied": True},
+            )
 
         try:
             validate_arguments(definition.parameters, arguments)

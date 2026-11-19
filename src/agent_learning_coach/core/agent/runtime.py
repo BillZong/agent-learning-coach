@@ -167,7 +167,7 @@ class AgentRuntime:
 
             # --- Thought：模型决定下一步要做什么 ---
             try:
-                response = await self._think(ctx, deadline)
+                response = await self._think(ctx, deadline, tools_ctx)
             except TimeoutError:
                 return self._result(ctx, steps, "timeout")
             except LLMError as exc:
@@ -238,12 +238,14 @@ class AgentRuntime:
         self,
         ctx: ExecutionContext,
         deadline: float | None,
+        tool_context: ToolContext,
     ) -> LLMResponse:
         """执行一次模型调用（Thought）。
 
         Args:
             ctx: 执行上下文。
             deadline: 整体截止时刻（``time.monotonic`` 基准）。None 表示不限。
+            tool_context: 工具执行上下文。用于确定「哪些工具对本次调用可见」。
 
         Returns:
             模型响应。
@@ -256,7 +258,9 @@ class AgentRuntime:
             model=config.model,
             instructions=list(config.instructions),
             contents=ctx.contents,
-            tools=self.dispatcher.registry.specs(),
+            # 只把当前策略允许的工具给模型：模型看不到无权调用的工具，
+            # 不会浪费轮次去尝试。强制仍在 Dispatcher 那一侧。
+            tools=self.dispatcher.allowed_specs(caller=tool_context.caller),
             tool_choice=config.tool_choice,
             temperature=config.temperature,
             max_output_tokens=config.max_output_tokens,
@@ -447,7 +451,9 @@ def _compose_dispatcher(
     """必要时给调度器补上 ``final_answer`` 工具。
 
     组合出一个**新的**注册表与调度器，而不是往调用方的注册表里塞工具——调用方
-    的注册表可能被多处共享，就地修改会产生副作用。调用方的默认超时会被保留。
+    的注册表可能被多处共享，就地修改会产生副作用。调用方的默认超时与权限策略
+    都会被保留：策略丢失会让组合后的调度器**默认放行**，等于给被限制的工具
+    开了一个后门。
 
     Args:
         dispatcher: 调用方提供的调度器。
@@ -462,7 +468,11 @@ def _compose_dispatcher(
     for tool in dispatcher.registry.tools():
         registry.register(tool)
     registry.register(build_final_answer_tool(output_model))
-    return ToolDispatcher(registry, default_timeout=dispatcher.default_timeout)
+    return ToolDispatcher(
+        registry,
+        default_timeout=dispatcher.default_timeout,
+        policy=dispatcher.policy,
+    )
 
 
 def _normalize_prompt(prompt: str | list[ContentItem]) -> list[ContentItem]:
