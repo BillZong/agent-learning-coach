@@ -426,6 +426,57 @@ def test_step_records_failure() -> None:
     assert run.steps[0].executed_tool_calls == 1
 
 
+def test_multi_round_tool_calling_accumulates_history_in_order() -> None:
+    """多轮工具调用：每轮结果都被回填，对话记录顺序正确，历史逐轮累积。
+
+    这是「多轮 Tool Calling」的核心保证——模型在第 N 轮必须能看到前 N-1 轮
+    的全部工具结果，否则它只能瞎猜。
+    """
+    client = ScriptedClient(
+        [
+            tool_call_response("search", {"query": "a"}, call_id="c1"),
+            tool_call_response("search", {"query": "b"}, call_id="c2"),
+            tool_call_response("search", {"query": "c"}, call_id="c3"),
+            text_response("三轮都完成了"),
+        ]
+    )
+    loop = make_loop(client)
+
+    run = asyncio.run(loop.run("测试"))
+
+    assert run.stop_reason == "completed"
+    assert run.tool_call_count == 3
+    assert len(run.steps) == 4  # 三轮工具 + 一轮总结
+
+    # 对话记录顺序：用户提问 -> (工具调用 + 工具结果) * 3 -> 最终回答
+    kinds = [type(item).__name__ for item in run.contents]
+    assert kinds == [
+        "Message",
+        "ToolCall",
+        "ToolResult",
+        "ToolCall",
+        "ToolResult",
+        "ToolCall",
+        "ToolResult",
+        "Message",
+    ]
+
+    # 工具结果与调用一一对应，且顺序一致
+    results = tool_results(run)
+    assert [r.tool_call_id for r in results] == ["c1", "c2", "c3"]
+    assert [r.content for r in results] == [
+        "检索 'a' 得到 3 条资料",
+        "检索 'b' 得到 3 条资料",
+        "检索 'c' 得到 3 条资料",
+    ]
+
+    # 每一轮发给模型的请求都带上此前全部结果
+    assert len(client.requests) == 4
+    for round_index in range(1, 4):
+        sent = client.requests[round_index].contents
+        assert sum(1 for item in sent if isinstance(item, ToolResult)) == round_index
+
+
 def test_basic_react_agent_example_runs() -> None:
     """基础 ReAct Agent 示例必须能真实跑通——它是交付物，不是摆设。"""
     import os
