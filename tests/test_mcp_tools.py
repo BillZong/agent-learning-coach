@@ -20,6 +20,7 @@ import mcp.types as types
 import pytest
 from mcp.client.session import ClientSession
 from mcp.server.lowlevel import Server
+from mcp.shared.exceptions import MCPError
 from mcp.shared.memory import create_client_server_memory_streams
 
 from agent_learning_coach.core.tools import (
@@ -31,6 +32,7 @@ from agent_learning_coach.core.tools import (
     ToolRegistry,
 )
 from agent_learning_coach.core.tools.mcp import (
+    MCPTool,
     build_mcp_server,
     discover_mcp_tools,
     extract_text_content,
@@ -563,14 +565,54 @@ def test_keyboard_interrupt_is_not_rewritten() -> None:
         asyncio.run(_run())
 
 
+def test_closed_session_gives_clear_error() -> None:
+    """会话关闭后调用远端工具，错误必须指出是会话问题。
+
+    远端工具的生命周期绑定在会话上。SDK 原始报错是 "Connection closed"，
+    容易被误读成「远端服务坏了」——适配器必须把它翻译成明确的会话问题。
+    """
+    server = build_mcp_server(_registry())
+
+    async def _run() -> str:
+        async with _client_session(server) as session:
+            tools = await discover_mcp_tools(session)
+        tool = tools[0]
+        with pytest.raises(RuntimeError) as exc_info:
+            await tool.execute(ToolContext(caller="test"), {"text": "x"})
+        return str(exc_info.value)
+
+    message = asyncio.run(_run())
+
+    assert "会话已关闭" in message
+    assert "Connection closed" not in message
+
+
+def test_other_mcp_errors_are_not_misreported_as_closed_session() -> None:
+    """非「连接关闭」的 MCP 错误必须原样抛出，不能被误报成会话问题。"""
+    server = build_mcp_server(_registry())
+
+    async def _run() -> str:
+        async with _client_session(server) as session:
+            ghost = MCPTool(
+                types.Tool(name="ghost", description="远端不存在", inputSchema={"type": "object"}),
+                session,
+            )
+            with pytest.raises(MCPError) as exc_info:
+                await ghost.execute(ToolContext(caller="test"), {})
+            return str(exc_info.value)
+
+    message = asyncio.run(_run())
+
+    assert "会话已关闭" not in message
+    assert "ghost" in message
+
+
 def test_call_unknown_tool_is_protocol_error() -> None:
     """工具不存在是协议级错误，不是工具执行错误。
 
     MCP 区分两类失败：协议错误（JSON-RPC error，客户端无法通过调整参数修复）
     与工具执行错误（is_error 结果，模型可以读懂并调整）。未知工具属于前者。
     """
-    from mcp.shared.exceptions import MCPError
-
     server = build_mcp_server(_registry())
 
     async def _run() -> None:

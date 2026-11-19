@@ -35,6 +35,27 @@ print(run.final_text)  # 模型最后一段说明
 
 因此替换模型不需要改循环，换工具来源（本地工具 / MCP 远端工具）也不需要改循环。
 
+### 与 MCP 工具集成
+
+远端 MCP 工具接入本地注册表后，与本地工具**完全平级**：
+
+```python
+async with stdio_session(cmd) as session:
+    for tool in await discover_mcp_tools(session):
+        registry.register(tool)
+
+loop = AgentLoop(client, ToolDispatcher(registry))
+run = await loop.run("闭包是什么")
+```
+
+模型看到的工具清单里两类工具混在一起，走同一个调度器，因此参数校验、超时与
+结果归一化的行为一致——模型不需要知道工具来自哪里。
+
+可运行示例见 `examples/agent_loop_with_mcp.py`（真实 MCP 子进程 + 真实协议）。
+
+**约束**：远端工具的生命周期绑定在会话上，会话关闭后已接入的远端工具立即失效。
+注册表的长生命周期必须与连接的长生命周期对齐。
+
 ### 停止条件
 
 ```

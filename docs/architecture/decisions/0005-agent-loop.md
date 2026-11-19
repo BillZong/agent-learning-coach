@@ -118,6 +118,12 @@ API 会直接报错。
    对应测试。
 3. **预算在步之间检查是被不变量逼出来的**：若在步内检查并中断，会留下没有
    结果的 `tool_call`，破坏「每条 tool_call 都有对应 tool_result」。
+4. **「换工具来源不改循环」已被集成验证**：远端 MCP 工具接入注册表后，与本地
+   工具在同一个循环里平级共存，模型看到的工具清单混在一起，走同一个调度器。
+   集成时暴露了一条此前只写在文档里的约束——**远端工具的生命周期绑定在会话
+   上**，会话一关，已接入注册表的远端工具立即失效。适配器因此按
+   `CONNECTION_CLOSED` 错误码识别这种情况，给出明确错误而不是含糊的
+   "Connection closed"。
 
 接入说明见 [`docs/engineering/runtime.md`](../../engineering/runtime.md)。
 学习笔记见 [`docs/learning/topics/05-react-and-agent-loop.md`](../../learning/topics/05-react-and-agent-loop.md)。

@@ -202,12 +202,30 @@ HTTP / SSE 传输由 MCP SDK 提供，本适配器不绑定具体传输——它
 ## 9. 已知限制
 
 | 限制 | 影响 | 后续 |
-| ---- | ---- | ---- |
+| ---- | ---- | -------- |
 | 无鉴权 | MCP Server 暴露的工具无法区分调用方 | 生产部署需加 MCP 授权机制 |
 | 无能力协商 | 不按 Server 声明的能力裁剪工具清单 | 可按 `server_capabilities` 过滤 |
-| 连接生命周期由调用方管理 | 每次 `stdio_session` 都是新连接 | 长会话应复用连接 |
+| **远端工具的生命周期绑定在会话上** | 会话关闭后，已接入注册表的远端工具立即失效 | 长会话应复用连接；需要时引入 MCP Server 注册表统一管理连接 |
 | 远端 schema 变更无防护 | 远端改了 schema，本地缓存的 `ToolDefinition` 会过期 | 需要时加版本协商或重新发现 |
 | 服务端不分页 | 本项目的 MCP Server 单页返回全部工具 | 工具量小，暂无必要；客户端已能正确跟随远端分页 |
+
+### 9.1 会话寿命与工具寿命
+
+`MCPTool` 持有的是一个**活的** `ClientSession`。因此：
+
+```python
+async with stdio_session(cmd) as session:
+    tools = await discover_mcp_tools(session)
+    for tool in tools:
+        registry.register(tool)  # 接入注册表
+    # 会话关闭后，registry 里的这些工具就失效了
+```
+
+会话关闭后再调用，适配器会抛出明确错误（「MCP 会话已关闭……」）而不是含糊的
+`Connection closed`——按 `CONNECTION_CLOSED` 错误码判定，不匹配错误消息字符串。
+
+这意味着**注册表的长生命周期与连接的长生命周期必须对齐**：要么连接跟着
+注册表一起长存，要么在会话结束前完成全部调用。
 
 ## 10. 相关文档
 

@@ -46,6 +46,8 @@ from typing import Any
 import mcp.types as types
 from mcp.client.session import ClientSession
 from mcp.server.lowlevel import Server
+from mcp.shared.exceptions import MCPError
+from mcp_types import CONNECTION_CLOSED
 
 from agent_learning_coach.core.tools.dispatcher import ToolDispatcher
 from agent_learning_coach.core.tools.errors import MCPConnectionError
@@ -252,6 +254,9 @@ class MCPTool:
     async def execute(self, context: ToolContext, arguments: dict[str, Any]) -> Any:
         """调用远端工具并返回文本结果。
 
+        远端工具的**生命周期绑定在会话上**：会话关闭后再调用会失败。这种失败
+        容易被误读成「远端坏了」，因此按错误码单独识别并给出明确提示。
+
         Args:
             context: 运行时上下文（远端工具不消费，仅满足协议）。
             arguments: 已通过本地 Schema 校验的参数。
@@ -259,7 +264,15 @@ class MCPTool:
         Returns:
             远端返回的文本内容。
         """
-        result = await self._session.call_tool(self._remote_name, arguments)
+        try:
+            result = await self._session.call_tool(self._remote_name, arguments)
+        except MCPError as exc:
+            if exc.code == CONNECTION_CLOSED:
+                raise RuntimeError(
+                    f"MCP 会话已关闭，无法调用远端工具 {self._remote_name}——"
+                    "远端工具的生命周期绑定在会话上，必须在会话存活期间使用"
+                ) from exc
+            raise
         if _is_error(result):
             detail = extract_text_content(result)
             raise RuntimeError(f"MCP 工具 {self._remote_name} 返回错误：{detail}")

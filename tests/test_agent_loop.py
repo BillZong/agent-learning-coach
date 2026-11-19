@@ -20,7 +20,7 @@ from agent_learning_coach.core.agent import (
     AgentLoop,
     AgentRun,
 )
-from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse, LLMUsage
+from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
 from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
 from agent_learning_coach.core.tools import (
     FunctionTool,
@@ -29,77 +29,7 @@ from agent_learning_coach.core.tools import (
     ToolDispatcher,
     ToolRegistry,
 )
-
-
-class ScriptedClient:
-    """按脚本依次返回预设响应的模型客户端。
-
-    ``repeat_last=True`` 时脚本耗尽后重复最后一个响应——用于模拟「模型一直
-    请求工具」的死循环场景。
-    """
-
-    def __init__(self, responses: list[LLMResponse], *, repeat_last: bool = False) -> None:
-        self.responses = list(responses)
-        self.repeat_last = repeat_last
-        self.requests: list[LLMRequest] = []
-        self._last_response: LLMResponse | None = None
-
-    async def generate(self, request: LLMRequest) -> LLMResponse:
-        self.requests.append(request)
-        if not self.responses:
-            if self.repeat_last and self._last_response is not None:
-                return self._last_response
-            raise AssertionError("脚本已耗尽，但循环仍在调用模型")
-        response = self.responses.pop(0)
-        self._last_response = response
-        return response
-
-    async def generate_structured(
-        self, request: LLMRequest, output_model: type[Any]
-    ) -> Any:  # pragma: no cover - Agent Loop 不使用结构化输出
-        raise NotImplementedError
-
-
-class SlowClient:
-    """每次调用都耗时的模型客户端，用于验证整体超时。"""
-
-    def __init__(self, delay: float) -> None:
-        self.delay = delay
-
-    async def generate(self, request: LLMRequest) -> LLMResponse:
-        await asyncio.sleep(self.delay)
-        return text_response("太慢了")
-
-    async def generate_structured(
-        self, request: LLMRequest, output_model: type[Any]
-    ) -> Any:  # pragma: no cover
-        raise NotImplementedError
-
-
-def tool_call_response(
-    name: str = "search",
-    arguments: dict[str, Any] | None = None,
-    call_id: str = "call-1",
-) -> LLMResponse:
-    """构造一个只含工具调用的模型响应。"""
-    return LLMResponse(
-        contents=[
-            ToolCall(
-                tool_call_id=call_id,
-                name=name,
-                arguments=arguments if arguments is not None else {"query": "闭包"},
-            )
-        ],
-        usage=LLMUsage(input_tokens=10, output_tokens=5),
-    )
-
-
-def text_response(text: str = "已完成") -> LLMResponse:
-    """构造一个只含文本的模型响应。"""
-    return LLMResponse(
-        contents=[Message(role="assistant", content=text)],
-        usage=LLMUsage(input_tokens=7, output_tokens=3),
-    )
+from support import ScriptedClient, SlowClient, text_response, tool_call_response
 
 
 def build_registry(*, failing: bool = False) -> ToolRegistry:
