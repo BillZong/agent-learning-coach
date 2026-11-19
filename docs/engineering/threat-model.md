@@ -63,7 +63,7 @@ flowchart LR
 | ① 用户输入 → 运行时 | 学习者的话 | 输入即数据；不被当作指令执行 |
 | ② 模型响应 → 运行时 | 模型要求的动作 | 工具调用是**请求**，不是命令；必须过权限与校验 |
 | ③ 运行时 → Dispatcher | 授权调用 | **权限检查**（唯一执行边界） |
-| ④ Dispatcher → 工具 | 真正产生副作用 | 参数校验；超时；沙箱（未实现） |
+| ④ Dispatcher → 工具 | 真正产生副作用 | 参数校验；超时；权限（作用域由**客户端**分配，不取自 Server 自报字段）；沙箱（未实现） |
 | ⑤ 工具结果 → 运行时 | 外部数据 | 归一化成文本/结构；不自动获得指令地位 |
 | ⑥ 运行时 → 模型 | 上下文 | 工具结果与模型输出同处一条消息流——**这是注入面** |
 
@@ -89,7 +89,7 @@ OWASP 的 Agentic 威胁分类（T1–T15）是本文的骨架，但**只列与�
 | **T6** | Intent Breaking & Goal Manipulation | 工具结果里的注入指令改写学习目标 | **无显式防护**——目前依赖「工具结果是数据」的隐式约定 | 未缓解 |
 | **T7** | Misaligned & Deceptive Behaviors | 模型为了完成任务绕过约束（例如谎称已完成的练习） | 无 | 未缓解 |
 | **T8** | Repudiation & Untraceability | 事后无法复盘某次运行 | `Event` 携带作者与时刻；`AgentResult` 携带完整上下文；工具结果与调用一一配对 | 已缓解 |
-| **T9** | Identity Spoofing & Impersonation | 工具名伪装成另一个工具；调用方身份被冒用 | 工具名唯一注册（重名报错）；`ToolContext.caller` 标识调用方；**无认证** | 部分缓解 |
+| **T9** | Identity Spoofing & Impersonation | 工具名伪装成另一个工具；调用方身份被冒用；远端 Server 自称「只读」「无害」 | 工具名唯一注册（重名报错）；`ToolContext.caller` 标识调用方；**远端 Server 的 annotations 按 MCP 规范视为不可信，不参与授权判断**——作用域由客户端按命名空间自行分配；**无认证** | 部分缓解 |
 | **T10** | Overwhelming Human in the Loop | 人工确认被淹没 | 无 HITL 机制（设计见 [sandbox.md](./sandbox.md)） | 未缓解 |
 | **T11** | Unexpected RCE & Code Attacks | 执行模型生成的代码；工具被诱导执行任意命令 | 权限模型是**前置条件**；沙箱隔离**未实现** | 未缓解 |
 | **T12** | Agent Communication Poisoning | 多智能体互相投毒 | 本项目是单智能体，不适用 | 不适用 |

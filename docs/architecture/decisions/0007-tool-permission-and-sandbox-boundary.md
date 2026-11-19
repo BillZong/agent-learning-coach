@@ -60,6 +60,12 @@ Runtime 仍然有一份职责，但它是**可见性**而非强制：`AgentRunti
 因此远端工具由 `discover_mcp_tools` 自动授予 `mcp:<命名空间>` 作用域——
 **一个作用域就能关掉整个不可信 Server**。
 
+**这个作用域由客户端分配，不取自 Server。** MCP 规范明确要求「clients MUST
+consider tool annotations to be untrusted unless they come from trusted servers」，
+所以 Server 能提供的只有 `inputSchema`（必须校验，且可能畸形）与 `annotations`
+（不可信，不参与授权判断）。作用域始终是我们按 Server 分配的——这正是「未声明
+作用域 = 恒放行」在远端场景下的具体解法。
+
 ### 4. 默认放行，但生产应显式给策略
 
 `ToolDispatcher` 的默认策略是 `AllowAllPolicy`，保证不配置权限时行为与引入

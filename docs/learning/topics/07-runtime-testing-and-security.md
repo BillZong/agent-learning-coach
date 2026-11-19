@@ -11,22 +11,24 @@ Agent Loop 的测试如何避免真实调用 LLM？Tool 权限检查应放在 Di
 - Book: Ch4：4.8；Ch8：8.1～8.2
 - Chapter / Section: Ch4 4.8「Testing with the GAIA benchmark」；Ch8 8.1「Giving agents a computer」、8.2「Connecting code environments」
 - 核心观点：
-  - **4.8 测的是「Agent 能不能解题」**：在 GAIA level-1 验证集上取 10 题，接真实模型（`gpt-5.5`）与真实 MCP 工具（`tavily-mcp`），`max_steps=15`，用 `asyncio.Semaphore(3)` 限并发，用 `output_type=GaiaOutput` 把答案收敛成结构化输出。
-  - **4.8 调试靠执行轨迹**：拿到一次运行后 `display_trace(result.context)` 把上下文摊开看。**轨迹是调试 Agent 的主要手段**——Agent 的行为是「模型 + 工具 + 上下文」的乘积，只看最终输出看不出哪一步歪了。
+  - **4.8 测的是「Agent 能不能解题」**（据参考实现 Listing 4.30–4.34）：在 GAIA level-1 验证集上取 10 题，接真实模型（`gpt-5.5`）与真实 MCP 工具（`tavily-mcp`），`max_steps=15`，用 `asyncio.Semaphore(3)` 限并发，用 `output_type=GaiaOutput` 把答案收敛成结构化输出。
+  - **4.8 调试靠执行轨迹**（Listing 4.34）：拿到一次运行后 `display_trace(result.context)` 把上下文摊开看。**轨迹是调试 Agent 的主要手段**——Agent 的行为是「模型 + 工具 + 上下文」的乘积，只看最终输出看不出哪一步歪了。
   - **8.1.1 预定义工具的局限**：每个能力一个工具，工具数量随需求组合爆炸；模型在「选哪个工具」上耗尽注意力。代码执行让模型用控制流表达复杂逻辑。
   - **8.1.3 代码动作的有效性**：代码表达力强，但代价是**要执行任意代码**。
   - **8.2.1 为什么必须要沙箱**：执行模型生成的代码，就等于给了它一台电脑。沙箱把「这台电脑」关起来。
-  - **8.2.2 E2B 的用法**：`Sandbox.create(timeout=300, envs={...})` 建沙箱、`sandbox.run_code(code)` 执行、`execution.error` 判错、`sandbox.kill()` 销毁；沙箱内**状态跨多次执行保留**。
-  - **8.2.3 把沙箱接进 Agent**：`ExecutionContext` 增加 `code_env` 字段承载沙箱生命周期，`Agent` 增加 `execute_python` 工具，构造与销毁在 `run()` 的 `try/finally` 里。
+  - **8.2.2 E2B 的用法**（Listing 8.5–8.8）：`Sandbox.create(timeout=300, envs={...})` 建沙箱、`sandbox.run_code(code)` 执行、`execution.error` 判错、`sandbox.kill()` 销毁；沙箱内**状态跨多次执行保留**。
+  - **8.2.3 把沙箱接进 Agent**（Listing 8.9–8.13 与参考实现代码）：`ExecutionContext` 增加 `code_env` 字段承载沙箱生命周期，`Agent` 增加 `execute_python` 工具，构造与销毁在 `run()` 的 `try/finally` 里。
+
+> **读法说明**：4.8、8.2.2、8.2.3 的每处细节都在参考实现的 listings 与代码里逐条核对过。**8.1.1、8.1.3、8.2.1 在参考笔记本里只有标题、没有正文**——正文在书中，本地不可得。因此这三条是从**小节标题与相邻 listings 推断出的读法**，不是书中原文的转述，读时应以书为准。
 
 ## 3. Cross References
 
 | 来源 | 核心观点 | 与主教材的关系 |
 |---|---|---|
-| OWASP *Agentic AI — Threats and Mitigations* v1.0（2025-02） | 给出 T1–T15 的 Agentic 威胁分类与逐条缓解措施：T1 Memory Poisoning、T2 Tool Misuse、T3 Privilege Compromise、T4 Resource Overload、T5 Cascading Hallucination、T6 Intent Breaking & Goal Manipulation、T7 Misaligned & Deceptive Behaviors、T8 Repudiation & Untraceability、T9 Identity Spoofing、T10 Overwhelming Human in the Loop、T11 Unexpected RCE and Code Attacks | 提供了**分类骨架**。8.2.1「为什么需要沙箱」在 T11 里得到正式表述：「Restrict AI code generation permissions, **sandbox execution**, and monitor AI-generated scripts」；4.8 的执行轨迹对应 T8「Implement comprehensive logging… to ensure accountability and traceability」 |
+| OWASP *Agentic AI — Threats and Mitigations* v1.0（2025-02） | 给出 T1–T15 的 Agentic 威胁分类与逐条缓解措施：T1 Memory Poisoning、T2 Tool Misuse、T3 Privilege Compromise、T4 Resource Overload、T5 Cascading Hallucination、T6 Intent Breaking & Goal Manipulation、T7 Misaligned & Deceptive Behaviors、T8 Repudiation & Untraceability、T9 Identity Spoofing & Impersonation、T10 Overwhelming Human in the Loop、T11 Unexpected RCE and Code Attacks | 提供了**分类骨架**。8.2.1「为什么需要沙箱」在 T11 里得到正式表述：「Restrict AI code generation permissions, **sandbox execution**, and monitor AI-generated scripts」；4.8 的执行轨迹对应 T8「Implement comprehensive logging… to ensure accountability and traceability」 |
 | OWASP *AI Agent Security Cheat Sheet* | 「**Enforce authorization in the execution component, outside the agent's context**」；「Implement **per-tool permission scoping**（read-only vs. write, specific resources）」；「**Fail closed** for unknown tools or missing approval requirements」；授权与执行要「**atomically** check and consume the approval immediately before execution」，防止并发或重放复用批准 | 直接支持本项目 ADR-0007 的两个核心决策：**检查点放在 Dispatcher（执行组件）而不是 Runtime（agent context）**，以及按作用域授权。原子消费批准这一点也进了 HITL 设计 |
-| Anthropic《Building effective agents》/ 工具设计实践 | 工具应当「少而清晰」，描述即契约；给模型的选择越多，决策质量越差；工具结果要当作不可信数据处理 | 印证 4.8 的调试思路与 8.1.1 的工具爆炸问题；也解释了本项目为什么把「无权的工具不给模型看」（可见性过滤）当作性能与安全双重收益 |
-| MCP 规范与 SDK 安全实践 | 工具的 `inputSchema` 由 Server 提供；Server 是**不受信任的第三方**；实践中普遍要求工具权限分级与人工确认 | 支撑本项目的两个具体决定：① 参数 schema 必须校验，且 **schema 本身可能畸形**（因此不能让它打断运行）；② 远端 MCP 工具按 `mcp:<命名空间>` 授予作用域，一个作用域关掉整个 Server |
+| Anthropic《Building effective agents》（2024-12，含 Appendix 2「Prompt engineering your tools」） | 「it is therefore crucial to design **toolsets and their documentation** clearly and thoughtfully」；好的工具定义应含示例用法、边界情况、输入格式要求，并与其它工具有「clear boundaries」；「**Poka-yoke** your tools. Change the arguments so that it is harder to make mistakes」；Agent 自主性带来「higher costs, and the potential for **compounding errors**」，因此「We recommend **extensive testing in sandboxed environments**, along with the appropriate guardrails」；并建议包含「stopping conditions (such as a maximum number of iterations)」 | 直接支持本项目的三项具体设计：① **参数校验就是 Poka-yoke**——把参数设计成「不容易传错」，校验器再兜一层；② **沙箱与停止条件**（`max_steps`）是官方推荐做法，不是本项目自创；③ 「工具描述即契约」印证可见性过滤的价值——工具越多、描述质量对决策的影响越大 |
+| MCP 规范（2025-06-18，Tools） | 工具的 `inputSchema` 由 Server 提供；规范要求「For trust & safety and security, there **SHOULD** always be **a human in the loop with the ability to deny tool invocations**」；并明确「clients **MUST** consider **tool annotations to be untrusted** unless they come from trusted servers」 | 支撑本项目的三个具体决定：① 参数 schema 必须校验，且 **schema 本身可能畸形**（因此不能让它打断运行）；② 远端 MCP 工具按 `mcp:<命名空间>` 授予作用域，一个作用域关掉整个 Server；③ **权限不能取自 Server 自报的任何字段（含 annotations）**——所以作用域由客户端按命名空间自行分配，而不是让 Server 声明 |
 | 论文 / 研究资料 | 间接提示注入（indirect prompt injection）：外部内容里的指令会被模型当作指令执行（Greshake et al., *Not what you've signed up for*, 2023）；AgentDojo（2024）提供可控的 Agent 攻击基准 | 解释了威胁模型里 **T6 未缓解** 的成因：**工具结果与模型输出在上下文里不可区分**，这是结构性的而非提示词工程问题。也说明「Agent 的输入不再只是用户输入」这一根本变化 |
 
 ## 4. Compare and Challenge
@@ -77,6 +79,7 @@ ScopePolicy(granted=frozenset({"fs:read"}))
 - 权限检查在**参数校验之前**：被拒的工具连参数都不校验，不向无权的一方泄露契约细节。
 - 拒绝归一化成错误结果回填给模型（`ToolPermissionError`），模型可以改用别的工具。
 - 远端 MCP 工具由 `discover_mcp_tools` 自动授予 `mcp:<命名空间>` 作用域——**一个作用域关掉整个不可信 Server**。
+- **远端工具的权限由客户端分配，不取自 Server**：MCP 规范明确「clients MUST consider tool annotations to be untrusted unless they come from trusted servers」。因此 `mcp:<命名空间>` 是**我们**按 Server 分配的——Server 能提供的只有 `inputSchema`（必须校验，且可能畸形）与 `annotations`（不可信，不用于授权判断）。这条约束是「未声明作用域 = 恒放行」在远端场景下的具体解法。
 
 **2. 契约防护（修了一个真实缺陷）**
 
@@ -158,6 +161,7 @@ ScopePolicy(granted=frozenset({"fs:read"}))
   - `src/agent_learning_coach/core/tools/errors.py`（`ToolPermissionError` / `ToolSchemaError`）
   - `src/agent_learning_coach/core/tools/mcp.py`（远端工具按命名空间授予作用域）
   - `src/agent_learning_coach/core/agent/runtime.py`（组合调度器保留策略；模型可见性过滤）
+  - `src/agent_learning_coach/core/tools/__init__.py`（导出新的权限与异常符号）
 - Tests: `tests/test_runtime_security.py`（33 个用例）
 - ADR: `docs/architecture/decisions/0007-tool-permission-and-sandbox-boundary.md`
 - Article Notes: `docs/articles/agent-runtime.md`、`docs/engineering/security.md`、`docs/engineering/threat-model.md`、`docs/engineering/sandbox.md`

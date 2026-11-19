@@ -74,6 +74,11 @@ tools = await discover_mcp_tools(session, namespace="web")
 policy = ScopePolicy(granted=frozenset({"mcp:web"}))
 ```
 
+**远端工具的作用域由客户端分配，不取自 Server。** MCP 规范明确要求
+「clients **MUST** consider tool annotations to be untrusted unless they come from
+trusted servers」——所以 Server 能提供的只有 `inputSchema`（必须校验，且可能畸形）
+与 `annotations`（不可信，不用于授权判断）。作用域是我们按 Server 分配的。
+
 ### 2.4 作用域不会发给模型
 
 `ToolDefinition.scopes` 属于运行时授权依据，**不进 `ToolSpec`**。模型看到的是
