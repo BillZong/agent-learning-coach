@@ -37,9 +37,11 @@ ReAct 循环在什么条件下必须停止？Stop Condition 与 Max Steps 如何
     - `types.py`：`AgentConfig` / `AgentStep` / `AgentRun` / `StopReason`
   - 循环形状：`Think`（模型） -> `Act`（工具） -> `Observe`（结果回填） -> `Think` ...
 - Think / Act / Observe
-  - `Think`：`AgentLoop._think` 构造 `LLMRequest`（对话 + `registry.specs()` 工具清单）交给 `LLMClient`
-  - `Act`：`ToolDispatcher.dispatch_safe` 执行模型请求的工具调用——参数校验、超时、结果归一化全部复用工具系统，循环不重复实现
-  - `Observe`：`ToolOutcome.to_message_result` 转成 `ToolResult` 回填进对话记录
+  - 三个阶段各自是独立方法：`_think` / `_act` / `_observe`——不内联在 `run()` 里，因为三者的失败模式不同，混在一起无法单独验证
+  - `Think`（`_think`）：构造 `LLMRequest`（对话 + `registry.specs()` 工具清单）交给 `LLMClient`
+  - `Action`（`_act`）：`ToolDispatcher.dispatch_safe` 执行模型请求的工具调用——参数校验、超时、结果归一化全部复用工具系统，循环不重复实现
+  - `Observe`（`_observe`）：`ToolOutcome.to_message_result` 转成 `ToolResult` 回填进对话记录
+  - 一处归属细节：工具调用 id 来自**调用**而非执行结果——`ToolOutcome` 描述的是工具本身，不知道它属于哪一次调用
 - Stop Condition
   - 六种停止原因，分三层：**自然结束**（模型不再请求工具，唯一成功路径）、**模型不再前进**（`consecutive_errors` / `repeated_call`）、**预算兜底**（`max_steps` / `max_tool_calls` / `timeout`）
   - 更具体的停止原因优先：`repeated_call` 指向模型行为，`max_steps` 只是预算耗尽
@@ -64,6 +66,14 @@ ReAct 循环在什么条件下必须停止？Stop Condition 与 Max Steps 如何
   - 新增 `examples/agent_loop_with_mcp.py`：真实 MCP 子进程 + 真实协议，把远端 MCP 工具与本地工具放进**同一个注册表**，由**同一个循环**驱动
   - 新增 `tests/test_agent_loop_mcp.py`（7 例）：远端工具经循环调用、两类工具平级共存、模型看到混合工具清单、远端失败回填、远端参数本地校验、示例脚本真实跑通
   - 集成时暴露一条此前只写在文档里的约束：**远端工具的生命周期绑定在会话上**，会话关闭后已接入注册表的远端工具立即失效。适配器改为按 `CONNECTION_CLOSED` 错误码识别，给出明确错误而非含糊的 "Connection closed"
+- 异常处理：每类失败都有明确处理
+  - 工具级失败（参数不合法 / 工具报错 / 工具不存在 / MCP 会话关闭）→ 归一化成错误结果回填，循环继续
+  - 模型调用失败（`LLMError`）→ `stop_reason="llm_error"`，保留部分结果；**非 `LLMError` 的异常照常抛出**（那是编程错误）
+  - 初版把「模型失败向上抛出」当成优点，实现后发现它与超时处理不一致——超时返回部分结果，模型失败却丢掉整次运行。统一为「运行时失败返回部分结果」
+- 交付物
+  - `examples/basic_react_agent.py`：基础 ReAct Agent，纯本地工具、无子进程、无凭证，脚本化模型走完三轮工具调用
+  - `examples/agent_loop_with_mcp.py`：同一个循环驱动远端 MCP 工具与本地工具
+  - 两个示例并列即可看出「换工具来源不改循环」
 - 实践结果是否支持阅读材料中的观点？
   - 支持「Stop Condition 与 Max Steps 要配合」：单靠 Max Steps 只能保证「会停」，不能保证「及时停」；单靠 Stop Condition 又无法兜底病态模型。两者配合才既避免死循环也避免过早收敛。
   - 修正一处直觉：最初以为「工具不存在」是配置错误、该终止；实测把错误回填后，模型会自行改用其它工具并正常完成。终止反而更早地放弃了一个模型能纠正的错误。
