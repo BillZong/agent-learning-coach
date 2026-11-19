@@ -99,9 +99,14 @@ def tool_call_response(
     name: str = "search",
     arguments: dict[str, Any] | None = None,
     call_id: str = "call-1",
+    model: str = "mock-model",
 ) -> LLMResponse:
-    """构造一个只含工具调用的模型响应。"""
+    """构造一个只含工具调用的模型响应。
+
+    默认上报模型名——真实客户端都会上报，成本核算依赖它。
+    """
     return LLMResponse(
+        model=model,
         contents=[
             ToolCall(
                 tool_call_id=call_id,
@@ -113,9 +118,13 @@ def tool_call_response(
     )
 
 
-def text_response(text: str = "已完成") -> LLMResponse:
-    """构造一个只含文本的模型响应。"""
+def text_response(text: str = "已完成", model: str = "mock-model") -> LLMResponse:
+    """构造一个只含文本的模型响应。
+
+    默认上报模型名——真实客户端都会上报，成本核算依赖它。
+    """
     return LLMResponse(
+        model=model,
         contents=[Message(role="assistant", content=text)],
         usage=LLMUsage(input_tokens=7, output_tokens=3),
     )

@@ -17,8 +17,8 @@ import pytest
 
 from agent_learning_coach.core.agent import (
     AgentConfig,
-    AgentLoop,
-    AgentRun,
+    AgentResult,
+    AgentRuntime,
 )
 from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
 from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
@@ -67,20 +67,20 @@ def make_loop(
     *,
     failing: bool = False,
     config: AgentConfig | None = None,
-) -> AgentLoop:
+) -> AgentRuntime:
     """构造被测循环。"""
     registry = build_registry(failing=failing)
-    return AgentLoop(client, ToolDispatcher(registry), config=config)
+    return AgentRuntime(client, ToolDispatcher(registry), config=config)
 
 
-def tool_results(run: AgentRun) -> list[ToolResult]:
+def tool_results(run: AgentResult) -> list[ToolResult]:
     """从运行结果中取出全部工具结果。"""
-    return [item for item in run.contents if isinstance(item, ToolResult)]
+    return [item for item in run.context.contents if isinstance(item, ToolResult)]
 
 
-def tool_calls(run: AgentRun) -> list[ToolCall]:
+def tool_calls(run: AgentResult) -> list[ToolCall]:
     """从运行结果中取出全部工具调用。"""
-    return [item for item in run.contents if isinstance(item, ToolCall)]
+    return [item for item in run.context.contents if isinstance(item, ToolCall)]
 
 
 # --------------------------------------------------------------------------
@@ -148,7 +148,7 @@ def test_tool_arguments_are_passed_through() -> None:
             func=echo,
         )
     )
-    loop = AgentLoop(
+    loop = AgentRuntime(
         ScriptedClient([tool_call_response("echo", {"q": "闭包"}), text_response()]),
         ToolDispatcher(registry),
     )
@@ -449,7 +449,7 @@ def test_multi_round_tool_calling_accumulates_history_in_order() -> None:
     assert len(run.steps) == 4  # 三轮工具 + 一轮总结
 
     # 对话记录顺序：用户提问 -> (工具调用 + 工具结果) * 3 -> 最终回答
-    kinds = [type(item).__name__ for item in run.contents]
+    kinds = [type(item).__name__ for item in run.context.contents]
     assert kinds == [
         "Message",
         "ToolCall",

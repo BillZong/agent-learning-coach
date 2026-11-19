@@ -2,7 +2,7 @@
 
 验证的核心命题：**换工具来源不改循环**。
 
-同一个 ``AgentLoop``，工具既可以来自本地注册表，也可以来自远端 MCP Server；
+同一个 ``AgentRuntime``，工具既可以来自本地注册表，也可以来自远端 MCP Server；
 两者都经由同一个 ``ToolDispatcher`` 执行，参数校验、超时与结果归一化的行为
 完全一致。
 
@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from agent_learning_coach.core.agent import AgentLoop
+from agent_learning_coach.core.agent import AgentRuntime
 from agent_learning_coach.core.llm.types import ToolResult
 from agent_learning_coach.core.tools import (
     FunctionTool,
@@ -131,7 +131,7 @@ def test_remote_tool_is_called_through_the_same_loop() -> None:
 
     async def _run() -> Any:
         async with registry_with_remote_tools(registry):
-            loop = AgentLoop(client, ToolDispatcher(registry))
+            loop = AgentRuntime(client, ToolDispatcher(registry))
             return await loop.run("闭包是什么")
 
     run = asyncio.run(_run())
@@ -139,7 +139,7 @@ def test_remote_tool_is_called_through_the_same_loop() -> None:
     assert run.stop_reason == "completed"
     assert run.tool_call_count == 1
 
-    results = [item for item in run.contents if isinstance(item, ToolResult)]
+    results = [item for item in run.context.contents if isinstance(item, ToolResult)]
     assert len(results) == 1
     assert results[0].status == "success"
     assert "远端检索" in results[0].content
@@ -158,14 +158,14 @@ def test_remote_and_local_tools_coexist_in_one_registry() -> None:
 
     async def _run() -> Any:
         async with registry_with_remote_tools(registry):
-            loop = AgentLoop(client, ToolDispatcher(registry))
+            loop = AgentRuntime(client, ToolDispatcher(registry))
             return await loop.run("闭包是什么")
 
     run = asyncio.run(_run())
 
     assert run.stop_reason == "completed"
     assert run.tool_call_count == 2
-    names = {result.name for result in run.contents if isinstance(result, ToolResult)}
+    names = {result.name for result in run.context.contents if isinstance(result, ToolResult)}
     assert names == {"remote_search", "local_explain"}
 
 
@@ -176,7 +176,7 @@ def test_model_sees_both_remote_and_local_tools() -> None:
 
     async def _run() -> Any:
         async with registry_with_remote_tools(registry):
-            loop = AgentLoop(client, ToolDispatcher(registry))
+            loop = AgentRuntime(client, ToolDispatcher(registry))
             await loop.run("测试")
         return client
 
@@ -201,13 +201,13 @@ def test_remote_failure_is_fed_back_and_loop_continues() -> None:
 
     async def _run() -> Any:
         async with registry_with_remote_tools(registry):
-            loop = AgentLoop(client, ToolDispatcher(registry))
+            loop = AgentRuntime(client, ToolDispatcher(registry))
             return await loop.run("测试")
 
     run = asyncio.run(_run())
 
     assert run.stop_reason == "completed"
-    results = [item for item in run.contents if isinstance(item, ToolResult)]
+    results = [item for item in run.context.contents if isinstance(item, ToolResult)]
     assert results[0].status == "error"
     assert "远端服务不可用" in results[0].content
 
@@ -224,13 +224,13 @@ def test_remote_tool_arguments_are_validated_before_the_call() -> None:
 
     async def _run() -> Any:
         async with registry_with_remote_tools(registry):
-            loop = AgentLoop(client, ToolDispatcher(registry))
+            loop = AgentRuntime(client, ToolDispatcher(registry))
             return await loop.run("测试")
 
     run = asyncio.run(_run())
 
     assert run.stop_reason == "completed"
-    results = [item for item in run.contents if isinstance(item, ToolResult)]
+    results = [item for item in run.context.contents if isinstance(item, ToolResult)]
     assert results[0].status == "error"
     assert "远端检索" not in results[0].content
 
@@ -261,8 +261,8 @@ def test_example_uses_same_loop_for_both_tool_sources() -> None:
     """示例必须证明「同一个循环驱动两类工具」，而不是跑两套逻辑。"""
     source = (ROOT / "examples" / "agent_loop_with_mcp.py").read_text(encoding="utf-8")
 
-    # 只构造一次 AgentLoop
-    assert source.count("AgentLoop(") == 1
+    # 只构造一次 AgentRuntime
+    assert source.count("AgentRuntime(") == 1
     # 两类工具进同一个注册表
     assert "registry.register(tool)" in source
     assert source.count("registry.register(") == 2
