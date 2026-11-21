@@ -42,6 +42,7 @@ StopReason = Literal[
     "repeated_call",
     "timeout",
     "llm_error",
+    "pending_approval",
 ]
 """停止原因。
 
@@ -54,17 +55,20 @@ StopReason = Literal[
 - ``repeated_call``：同一工具以相同参数被反复调用，模型陷入原地打转。
 - ``timeout``：整体截止时间已到。
 - ``llm_error``：模型调用失败（``LLMError``）。
+- ``pending_approval``：有工具调用需要人工确认，运行**暂停**等待决定。
 
 多个条件同时命中时，**更具体的原因优先**：``repeated_call`` 与
 ``consecutive_errors`` 指向模型行为，``max_steps`` 只是预算耗尽。因此模型
 原地打转时上报 ``repeated_call`` 而不是 ``max_steps``。
 """
 
-AgentStatus = Literal["complete", "error"]
+AgentStatus = Literal["complete", "error", "pending_approval"]
 """运行状态。
 
 - ``complete``：正常结束（``stop_reason="completed"``）。
 - ``error``：非正常结束——预算耗尽、超时、模型失败等。
+- ``pending_approval``：运行**暂停**，等待人工对工具调用的批准。这既不是
+  成功也不是失败——它还没结束。
 """
 
 EXECUTION_CONTEXT_KEY = "execution_context"
@@ -80,6 +84,42 @@ EXECUTION_CONTEXT_KEY = "execution_context"
 ``core/agent`` 的存在——那会让工具系统反向依赖 Agent 运行时。约定放在使用
 方（``core/agent``）更符合依赖方向。
 """
+
+
+@dataclass(frozen=True)
+class PendingApproval:
+    """等待人工确认的一次工具调用。
+
+    运行在遇到需要确认的工具时暂停，并把这样的调用收集起来交给人。
+    决定之后用 ``AgentRuntime.resume`` 恢复。
+    """
+
+    tool_call: ToolCall
+    """待确认的工具调用。"""
+
+    confirmation_message: str
+    """给人看的确认提示。"""
+
+
+@dataclass(frozen=True)
+class ApprovalDecision:
+    """人工对一次待确认工具调用的决定。
+
+    ``tool_call_id`` 必须与 ``PendingApproval.tool_call.tool_call_id`` 对应。
+    **没有决定的调用按拒绝处理**（fail closed）——见 ADR-0009。
+    """
+
+    tool_call_id: str
+    """对应的工具调用 id。"""
+
+    approved: bool
+    """是否批准执行。"""
+
+    modified_arguments: dict[str, Any] | None = None
+    """修改后的参数。为 None 时用原参数。"""
+
+    reason: str | None = None
+    """决定的理由。会回填给模型，让它知道为什么不能做。"""
 
 
 @dataclass(frozen=True)
@@ -160,7 +200,34 @@ class ExecutionContext:
     """执行历史，按发生顺序排列。"""
 
     current_step: int = 0
-    """已完成的步数。"""
+    """已完成的步数。
+
+    也是**恢复时的起点**：运行在第 N 步暂停时该值仍为 N，恢复后从第 N 步
+    继续。
+    """
+
+    tool_call_count: int = 0
+    """累计执行的工具调用数。
+
+    它是预算的一部分，因此必须住在上下文里——否则「暂停-恢复」可以绕过
+    工具调用数上限。
+    """
+
+    consecutive_errors: int = 0
+    """当前连续工具失败次数。"""
+
+    call_counts: dict[str, int] = field(default_factory=dict)
+    """各次工具调用的累计次数（按 ``工具名:参数`` 归一化后的键）。
+
+    用来发现「原地打转」——模型反复请求同一个动作。
+    """
+
+    pending_approvals: list[PendingApproval] = field(default_factory=list)
+    """等待人工确认的工具调用。
+
+    非空表示这个运行**处于暂停状态**。恢复之前不能再发起模型调用——
+    否则请求里会带着没有结果的 ``tool_call``，厂商 API 会拒绝整个请求。
+    """
 
     state: dict[str, Any] = field(default_factory=dict)
     """运行时草稿本。
@@ -406,7 +473,13 @@ class AgentResult:
     """失败原因。非 ``None`` 时说明运行是失败结束的。
 
     只有 ``stop_reason="llm_error"`` 会填这个字段——其它停止原因要么是预算
-    耗尽（不是错误），要么是模型主动结束。
+    耗尽（不是错误），要么是模型主动结束，要么是暂停等待批准。
+    """
+
+    pending_approvals: tuple[PendingApproval, ...] = ()
+    """等待人工确认的工具调用。
+
+    只有 ``stop_reason="pending_approval"`` 时非空。
     """
 
     @property

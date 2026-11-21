@@ -17,7 +17,7 @@ Context 是给工具看的（决定工具能做什么），Result 是给调用�
 from __future__ import annotations
 
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -61,8 +61,25 @@ class ToolDefinition(BaseModel):
     模型的输入。``ToolSpec`` 只带 name/description/parameters，作用域因此
     不会泄露给模型。
 
-    未声明作用域的工具在任何作用域策略下都放行，因此接入不可信来源的工具
+    未声明作用域的工具在任何作用域策略下放行，因此接入不可信来源的工具
     必须显式声明。
+    """
+
+    requires_confirmation: bool = False
+    """该工具是否需要人工确认后才能执行。
+
+    高风险动作（删除、转账、外发、不可逆写入）应当置为 True。运行时遇到
+    它会**暂停整个运行**，把这次调用交给人决定。
+
+    与 ``scopes`` 一样，这是**运行时**的约束，模型无法绕过——模型只能
+    「请求」，不能「批准」。检查点唯一，因此不存在绕过的执行路径。
+    """
+
+    confirmation_message: str = ""
+    """确认提示模板。
+
+    渲染时可用这次调用的参数做占位符，如 ``"确认要删除 {path} 吗？"``。
+    为空时运行时生成默认提示。
     """
 
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -75,6 +92,42 @@ class ToolDefinition(BaseModel):
             description=self.description,
             parameters=self.parameters,
         )
+
+    def render_confirmation(self, arguments: Mapping[str, Any]) -> str:
+        """渲染确认提示。
+
+        Args:
+            arguments: 这次调用的参数。用于填充模板占位符。
+
+        Returns:
+            确认提示文本。模板为空时返回默认提示。
+        """
+        if not self.confirmation_message:
+            return f"确认要执行工具 {self.name} 吗？"
+        try:
+            return self.confirmation_message.format_map(_MissingAsUnknown(arguments))
+        except Exception:
+            # 模板写坏了不该让运行崩掉——退回默认提示，人照样能看懂要干什么。
+            return f"确认要执行工具 {self.name} 吗？"
+
+
+class _MissingAsUnknown(dict[str, Any]):
+    """缺失键返回 ``"unknown"`` 的字典。
+
+    模板里写了某个参数名，但这次调用没有这个参数——此时不应抛异常中断
+    确认流程，填一个占位值继续即可。
+    """
+
+    def __missing__(self, key: str) -> str:
+        """返回缺失键的占位值。
+
+        Args:
+            key: 缺失的键。
+
+        Returns:
+            占位文本。
+        """
+        return "unknown"
 
 
 @dataclass(frozen=True)

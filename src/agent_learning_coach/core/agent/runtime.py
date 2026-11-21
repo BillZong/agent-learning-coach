@@ -66,11 +66,11 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections import Counter
+from collections.abc import Sequence
 
 from pydantic import BaseModel
 
-from agent_learning_coach.core.agent.errors import AgentConfigError
+from agent_learning_coach.core.agent.errors import AgentConfigError, AgentError
 from agent_learning_coach.core.agent.output import (
     FINAL_ANSWER_TOOL_NAME,
     build_final_answer_tool,
@@ -81,8 +81,10 @@ from agent_learning_coach.core.agent.types import (
     AgentResult,
     AgentStatus,
     AgentStep,
+    ApprovalDecision,
     Event,
     ExecutionContext,
+    PendingApproval,
     StopReason,
 )
 from agent_learning_coach.core.llm.errors import LLMError
@@ -143,25 +145,81 @@ class AgentRuntime:
             运行结果。即使是超时或预算耗尽，也会返回已完成的部分结果——
             调用方能知道「走到了哪一步」以及「为什么停」。
         """
-        config = self.config
         ctx = context if context is not None else ExecutionContext()
+        if ctx.pending_approvals:
+            # 这个运行正等着人工批准。再发起一次模型调用会让请求里带着
+            # 没有结果的 tool_call，厂商 API 会拒绝整个请求。
+            raise AgentError(
+                "这个运行处于暂停状态，等待人工批准；请用 resume() 恢复，而不是再调用 run()"
+            )
         tools_ctx = tool_context or ToolContext(
             caller="agent_runtime",
             metadata={EXECUTION_CONTEXT_KEY: ctx},
         )
 
         ctx.add_event(Event.create(ctx.execution_id, "user", _normalize_prompt(prompt)))
+        return await self._loop(ctx, tools_ctx)
 
+    async def resume(
+        self,
+        context: ExecutionContext,
+        approvals: Sequence[ApprovalDecision],
+        *,
+        tool_context: ToolContext | None = None,
+    ) -> AgentResult:
+        """恢复一个因等待人工批准而暂停的运行。
+
+        待确认的工具调用在这里落地：批准的照常执行（可以用修改过的参数），
+        没批准的回填一条「用户拒绝」的结果——**没有决定的按拒绝处理**
+        （fail closed）。
+
+        Args:
+            context: 被暂停的运行上下文。
+            approvals: 人工决定。``tool_call_id`` 必须与待确认的调用对应。
+            tool_context: 工具执行上下文。为 None 时构造一个只带调用方标识
+                的上下文。
+
+        Returns:
+            运行结果。恢复后的运行从暂停的那一步继续。
+
+        Raises:
+            AgentError: 这个运行没有被暂停。
+        """
+        pending = tuple(context.pending_approvals)
+        if not pending:
+            raise AgentError("这个运行没有被暂停，无需恢复")
+
+        tools_ctx = tool_context or ToolContext(
+            caller="agent_runtime",
+            metadata={EXECUTION_CONTEXT_KEY: context},
+        )
+
+        outcomes = await self._resolve_approvals(context, pending, approvals, tools_ctx)
+        self._observe(context, tuple(item.tool_call for item in pending), outcomes)
+        context.pending_approvals.clear()
+        return await self._loop(context, tools_ctx)
+
+    async def _loop(self, ctx: ExecutionContext, tools_ctx: ToolContext) -> AgentResult:
+        """执行 ReAct 循环。
+
+        从 ``ctx.current_step`` 开始——因此恢复一个暂停的运行时，会从暂停的
+        那一步继续，而不是从头再来。
+
+        Args:
+            ctx: 执行上下文。
+            tools_ctx: 工具执行上下文。
+
+        Returns:
+            运行结果。
+        """
+        config = self.config
         steps: list[AgentStep] = []
-        total_tool_calls = 0
-        consecutive_errors = 0
-        call_counts: Counter[str] = Counter()
         deadline = time.monotonic() + config.timeout if config.timeout is not None else None
 
-        for index in range(config.max_steps):
+        for index in range(ctx.current_step, config.max_steps):
             # 预算在步之间检查：达到上限就不再开始新的一步。当前步内的调用
             # 全部执行完，保证每条 tool_call 都有对应的 tool_result。
-            budget_stop = self._check_budgets(ctx, total_tool_calls)
+            budget_stop = self._check_budgets(ctx, ctx.tool_call_count)
             if budget_stop is not None:
                 return self._result(ctx, steps, budget_stop)
 
@@ -186,6 +244,15 @@ class AgentRuntime:
                 ctx.increment_step()
                 return self._result(ctx, steps, "completed")
 
+            # --- 暂停检查：需要人工确认的工具会让整个运行停下来 ---
+            pending = self._pending_approvals(tool_calls)
+            if pending:
+                # 本步的工具调用**一个都不执行**。要么全执行，要么全暂停——
+                # 部分执行会让转录里出现「有调用没结果」的断裂，厂商 API 会
+                # 拒绝整个请求。
+                ctx.pending_approvals.extend(pending)
+                return self._result(ctx, steps, "pending_approval", pending=tuple(pending))
+
             # --- Action：执行模型请求的工具 ---
             outcomes = await self._act(tool_calls, tools_ctx)
 
@@ -208,13 +275,14 @@ class AgentRuntime:
 
             for outcome in outcomes:
                 if outcome.succeeded:
-                    consecutive_errors = 0
+                    ctx.consecutive_errors = 0
                 else:
-                    consecutive_errors += 1
+                    ctx.consecutive_errors += 1
 
             for call in tool_calls:
-                total_tool_calls += 1
-                call_counts[_call_key(call)] += 1
+                ctx.tool_call_count += 1
+                key = _call_key(call)
+                ctx.call_counts[key] = ctx.call_counts.get(key, 0) + 1
 
             step = AgentStep(
                 index=index,
@@ -225,10 +293,7 @@ class AgentRuntime:
             steps.append(step)
             ctx.increment_step()
 
-            stop = self._check_stop_conditions(
-                consecutive_errors=consecutive_errors,
-                call_counts=call_counts,
-            )
+            stop = self._check_stop_conditions(ctx)
             if stop is not None:
                 return self._result(ctx, steps, stop)
 
@@ -389,25 +454,24 @@ class AgentRuntime:
             return "max_cost"
         return None
 
-    def _check_stop_conditions(
-        self,
-        *,
-        consecutive_errors: int,
-        call_counts: Counter[str],
-    ) -> StopReason | None:
+    def _check_stop_conditions(self, ctx: ExecutionContext) -> StopReason | None:
         """判断是否应当停止。
 
         只检查「模型不再前进」的两类信号：连续失败与原地打转。步数、工具
         调用预算、token 与成本预算在步之间检查。
 
+        计数住在上下文里而不是循环的局部变量里——否则「暂停-恢复」可以
+        重置它们，从而绕过停止条件。
+
         Args:
-            consecutive_errors: 当前连续工具失败次数。
-            call_counts: 各次工具调用的累计次数。
+            ctx: 执行上下文。
 
         Returns:
             停止原因；应继续时返回 None。
         """
         config = self.config
+        consecutive_errors = ctx.consecutive_errors
+        call_counts = ctx.call_counts
 
         if (
             config.max_consecutive_errors is not None
@@ -429,6 +493,7 @@ class AgentRuntime:
         *,
         error: str | None = None,
         structured: BaseModel | None = None,
+        pending: tuple[PendingApproval, ...] = (),
     ) -> AgentResult:
         """打包运行结果。
 
@@ -438,12 +503,18 @@ class AgentRuntime:
             stop_reason: 停止原因。
             error: 失败原因。
             structured: 结构化输出。
+            pending: 等待人工确认的工具调用。
 
         Returns:
             运行结果。
         """
         ctx.final_result = structured if structured is not None else _last_assistant_text(ctx)
-        status: AgentStatus = "complete" if stop_reason == "completed" else "error"
+        if stop_reason == "completed":
+            status: AgentStatus = "complete"
+        elif stop_reason == "pending_approval":
+            status = "pending_approval"
+        else:
+            status = "error"
         return AgentResult(
             context=ctx,
             output=ctx.final_result,
@@ -451,7 +522,89 @@ class AgentRuntime:
             stop_reason=stop_reason,
             steps=tuple(steps),
             error=error,
+            pending_approvals=pending,
         )
+
+    def _pending_approvals(self, tool_calls: tuple[ToolCall, ...]) -> list[PendingApproval]:
+        """找出需要人工确认的工具调用。
+
+        Args:
+            tool_calls: 模型请求的工具调用。
+
+        Returns:
+            待确认的调用；没有时返回空列表。
+        """
+        pending: list[PendingApproval] = []
+        for call in tool_calls:
+            tool = (
+                self.dispatcher.registry.get(call.name)
+                if self.dispatcher.registry.has(call.name)
+                else None
+            )
+            if tool is None:
+                continue
+            definition = tool.definition
+            if not definition.requires_confirmation:
+                continue
+            pending.append(
+                PendingApproval(
+                    tool_call=call,
+                    confirmation_message=definition.render_confirmation(call.arguments),
+                )
+            )
+        return pending
+
+    async def _resolve_approvals(
+        self,
+        ctx: ExecutionContext,
+        pending: tuple[PendingApproval, ...],
+        approvals: Sequence[ApprovalDecision],
+        tools_ctx: ToolContext,
+    ) -> list[ToolOutcome]:
+        """落实人工对待确认工具调用的决定。
+
+        **没有决定的按拒绝处理**（fail closed）：缺少批准就执行，等于让
+        「批准」变成默认开启——那就不是批准机制了。拒绝的理由会回填给模型，
+        让它知道为什么做不成、改用别的方式。
+
+        每次待确认的调用都计入工具调用预算——**包括被拒绝的**。否则「反复
+        请求-反复被拒」可以不消耗任何预算地无限循环。
+
+        Args:
+            ctx: 执行上下文。计数写在这里。
+            pending: 待确认的调用。
+            approvals: 人工决定。
+            tools_ctx: 工具执行上下文。
+
+        Returns:
+            与 ``pending`` 一一对应的执行结果。
+        """
+        decisions = {decision.tool_call_id: decision for decision in approvals}
+        outcomes: list[ToolOutcome] = []
+        for item in pending:
+            call = item.tool_call
+            ctx.tool_call_count += 1
+            key = _call_key(call)
+            ctx.call_counts[key] = ctx.call_counts.get(key, 0) + 1
+
+            decision = decisions.get(call.tool_call_id)
+            if decision is None or not decision.approved:
+                reason = decision.reason if decision is not None else "没有收到该调用的批准"
+                outcomes.append(
+                    ToolOutcome(
+                        tool_name=call.name,
+                        status="error",
+                        content=(
+                            f"用户拒绝执行该工具（{reason}）。"
+                            "不要再尝试这个操作，请改用其它方式回答。"
+                        ),
+                        error=f"approval_denied: {reason}",
+                    )
+                )
+                continue
+            arguments = decision.modified_arguments or call.arguments
+            outcomes.append(await self.dispatcher.dispatch_safe(call.name, arguments, tools_ctx))
+        return outcomes
 
 
 def _compose_dispatcher(

@@ -10,8 +10,17 @@ Day 09「Session 与 HITL」。
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
-from agent_learning_coach.core.agent import AgentConfig, AgentRuntime, SessionContext
+import pytest
+
+from agent_learning_coach.core.agent import (
+    AgentConfig,
+    AgentRuntime,
+    InMemorySessionStore,
+    JsonFileSessionStore,
+    SessionContext,
+)
 from agent_learning_coach.core.llm.types import Message
 from support import ScriptedClient, text_response
 
@@ -148,3 +157,62 @@ def test_failed_turn_still_counts_and_keeps_history() -> None:
     assert session.turns == 1
     texts = [item.content for item in session.contents if isinstance(item, Message)]
     assert "没答上来的问题" in texts
+
+
+def test_session_state_rejects_unknown_content_type() -> None:
+    """反序列化遇到未知的内容类型时明确报错，而不是静默丢掉。"""
+    from agent_learning_coach.core.agent import SessionState
+
+    with pytest.raises(ValueError, match="未知的对话内容类型"):
+        SessionState.from_dict(
+            {
+                "session_id": "s1",
+                "events": [
+                    {
+                        "id": "e1",
+                        "execution_id": "x",
+                        "timestamp": 0.0,
+                        "author": "user",
+                        "contents": [{"type": "unknown_kind"}],
+                    }
+                ],
+            }
+        )
+
+
+def test_in_memory_store_delete_is_forgiving() -> None:
+    """删除不存在的会话不报错。"""
+    store = InMemorySessionStore()
+
+    asyncio.run(store.delete("nope"))
+
+
+def test_json_file_store_delete_is_forgiving(tmp_path: Path) -> None:
+    """删除不存在的会话文件不报错。"""
+    store = JsonFileSessionStore(tmp_path / "sessions")
+
+    asyncio.run(store.delete("nope"))
+
+
+def test_loaded_session_keeps_its_own_user_id(tmp_path: Path) -> None:
+    """读出的会话已有用户标识时，不被传入的标识覆盖。"""
+    store = JsonFileSessionStore(tmp_path / "sessions")
+    session = SessionContext(session_id="s1", user_id="u1")
+    asyncio.run(session.save(store))
+
+    loaded = asyncio.run(SessionContext.load(store, "s1", user_id="u2"))
+
+    assert loaded is not None
+    assert loaded.user_id == "u1"
+
+
+def test_loaded_session_takes_the_given_user_id(tmp_path: Path) -> None:
+    """读出的会话没有用户标识时用传入的补上。"""
+    store = JsonFileSessionStore(tmp_path / "sessions")
+    session = SessionContext(session_id="s1")
+    asyncio.run(session.save(store))
+
+    loaded = asyncio.run(SessionContext.load(store, "s1", user_id="u2"))
+
+    assert loaded is not None
+    assert loaded.user_id == "u2"

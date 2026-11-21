@@ -13,6 +13,9 @@
 - **结构化输出**（``output``）：把最终答案作为一个工具产出（``final_answer``）。
 - **Session Context**（``session.SessionContext``）：跨多次运行持续存在的会话
   ——学习者与教练的多轮对话，累积在同一份执行上下文里。
+- **Session State**（``session.SessionState``）：可持久化的会话快照——恢复一个
+  运行所需的全部状态。
+- **Session Store**（``session``）：会话存储协议与两种实现——内存与 JSON 文件。
 
 职责边界：运行时只管「模型 ↔ 工具」的节奏与状态。模型调用委托给
 ``core.llm.LLMClient``，工具执行委托给 ``core.tools.ToolDispatcher``——
@@ -31,14 +34,22 @@ from agent_learning_coach.core.agent.output import (
     build_output_schema,
 )
 from agent_learning_coach.core.agent.runtime import AgentRuntime
-from agent_learning_coach.core.agent.session import SessionContext
+from agent_learning_coach.core.agent.session import (
+    InMemorySessionStore,
+    JsonFileSessionStore,
+    SessionContext,
+    SessionState,
+    SessionStore,
+)
 from agent_learning_coach.core.agent.types import (
     AgentConfig,
     AgentResult,
     AgentStatus,
     AgentStep,
+    ApprovalDecision,
     Event,
     ExecutionContext,
+    PendingApproval,
     StopReason,
 )
 
@@ -51,9 +62,15 @@ __all__ = [
     "AgentRuntime",
     "AgentStatus",
     "AgentStep",
+    "ApprovalDecision",
     "Event",
     "ExecutionContext",
+    "InMemorySessionStore",
+    "JsonFileSessionStore",
+    "PendingApproval",
     "SessionContext",
+    "SessionState",
+    "SessionStore",
     "StopReason",
     "TokenPrice",
     "build_final_answer_tool",
