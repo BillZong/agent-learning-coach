@@ -169,6 +169,40 @@ ReAct 执行循环 + 运行时状态，位于 `src/agent_learning_coach/core/age
 决策依据：[ADR-0004](decisions/0004-mcp-integration.md)。
 接入说明：[MCP 架构说明](../engineering/mcp.md)。
 
+#### RAG
+
+检索增强生成由 `core/rag` 包提供，与 `core/llm`、`core/tools`、`core/agent` 平级：
+
+- 核心类型：`src/agent_learning_coach/core/rag/types.py`
+  - `Document`：摄取单位（一份材料），带来源与元数据
+  - `Chunk`：检索单位（材料的一段），**必须能回溯到来源**
+  - `ScoredChunk`：切片 + 相关度
+- 文档加载：`src/agent_learning_coach/core/rag/loader.py`（`TextFileLoader` / `DirectoryLoader`）
+- 切片：`src/agent_learning_coach/core/rag/chunking.py`（`FixedSizeChunker` 定长 / `RecursiveChunker` 按结构递归）
+- 嵌入：`src/agent_learning_coach/core/rag/embedding.py`（`HashingEmbedder` 离线 / `OpenAICompatibleEmbedder` 生产）
+- 向量存储：`src/agent_learning_coach/core/rag/store.py`（`InMemoryVectorStore` / `PgVectorStore`）
+- 检索：`src/agent_learning_coach/core/rag/retrieval.py`（`VectorRetriever`）
+
+流水线分四段，每段一个 Protocol，各配两个实现——**一个离线可测，一个能上生产**：
+
+```
+DocumentLoader → Chunker → EmbeddingClient → VectorStore
+   读成文档        切成检索单元    变成向量        存下来
+                                     ↓
+                              VectorRetriever
+```
+
+三条硬约束：
+
+1. **文档与切片 id 必须可复现**——由来源哈希推导，重新摄取不产生重复记录。
+2. **过滤必须下推到存储层**——在应用层过滤等于把全部向量拉回内存再筛，向量库退化成一个 JSON 文件。
+3. **对外统一暴露相似度**——pgvector 的 `<=>` 返回的是距离（方向相反），实现负责换算；两种存储的相对顺序一致，这是可替换的前提。
+
+依赖方向：`core/rag` 只依赖 `core/llm` 的错误类型与 `core/text` 的分词，不认识 `core/agent`。
+
+决策依据：[ADR-0011](decisions/0011-rag-pipeline-and-vector-store.md)。
+接入说明：[RAG 接入说明](../engineering/rag.md)。
+
 ### 3.5 基础设施层（Infrastructure Layer）
 
 负责外部依赖和底层技术基础设施的接入。
@@ -205,15 +239,17 @@ LLM 主要承担理解、推理、生成和辅助评估等概率性任务；关�
 | 数据校验 | Pydantic | 已确定 |
 | LLM 接入 | LiteLLM | 计划采用 |
 | Agent 协议 | MCP | 计划采用 |
-| 向量数据库 | ChromaDB | 计划采用 |
+| 向量数据库 | PostgreSQL + pgvector | 已确定 |
 | 自动化测试 | pytest | 已确定 |
 | 代码检查与格式化 | Ruff | 已确定 |
 | 静态类型检查 | mypy | 已确定 |
 | API 框架 | TBD | 待确定 |
-| 关系型数据库 | TBD | 待确定 |
+| 关系型数据库 | PostgreSQL | 计划采用 |
 | 可观测性 | TBD | 待确定 |
 
 注：技术选型会随着工程实践持续验证和调整。依赖库已经引入，不代表对应技术方案已经成为最终架构决策。
+
+`chromadb` 仍在依赖列表里，但它是早期从参考项目带过来的声明，**本项目的向量存储不基于它**——路线是 PostgreSQL + pgvector（ADR-0011）。`pymupdf`、`e2b-code-interpreter`、`tavily-python` 同样是给后续 Topic 预留的。
 
 ## 6. 架构演进
 

@@ -25,14 +25,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from agent_learning_coach.core.memory.types import Memory
-
-_ASCII_TOKEN = re.compile(r"[a-z0-9_]+")
-_CJK = re.compile(r"[㐀-䶿一-鿿豈-﫿]+")
+from agent_learning_coach.core.text import tokenize
 
 
 @runtime_checkable
@@ -452,30 +449,6 @@ def _rank(
         scored.append((score, memory.updated_at, memory))
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return [memory for _, _, memory in scored[:limit]]
-
-
-def tokenize(text: str) -> set[str]:
-    """把文本切成用于匹配的小块。
-
-    英文与数字按词切；**中文按二元组切**（「闭包」切成「闭」「包」）。中文
-    没有词边界，按空格切会得到整句话；按二元组切既能命中子串，又不至于把
-    单字当成噪声。
-
-    Args:
-        text: 待切分的文本。
-
-    Returns:
-        小块集合。大小写不敏感。
-    """
-    lowered = text.lower()
-    tokens = set(_ASCII_TOKEN.findall(lowered))
-    for run in _CJK.findall(lowered):
-        if len(run) == 1:
-            tokens.add(run)
-            continue
-        for index in range(len(run) - 1):
-            tokens.add(run[index : index + 2])
-    return tokens
 
 
 __all__ = ["InMemoryMemoryStore", "JsonFileMemoryStore", "MemoryStore", "tokenize"]
