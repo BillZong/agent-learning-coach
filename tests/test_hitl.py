@@ -421,8 +421,8 @@ def test_session_state_round_trips_through_dict() -> None:
     session.context.state["level"] = "初级"
     session.context.tool_call_count = 3
 
-    state = session.to_state()
-    restored = SessionContext.from_state(state)
+    state = session.checkpoint()
+    restored = SessionContext.restore(state)
 
     assert restored.session_id == "s1"
     assert restored.user_id == "u1"
@@ -441,8 +441,8 @@ def test_session_state_round_trips_through_json() -> None:
         )
     )
 
-    payload = json.dumps(session.to_state().to_dict(), ensure_ascii=False)
-    restored = SessionContext.from_state(SessionState.from_dict(json.loads(payload)))
+    payload = json.dumps(session.checkpoint().to_dict(), ensure_ascii=False)
+    restored = SessionContext.restore(SessionState.from_dict(json.loads(payload)))
 
     assert restored.session_id == "s1"
     assert len(restored.context.pending_approvals) == 1

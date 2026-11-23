@@ -15,18 +15,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 from agent_learning_coach.core.llm.mock import MockLLMClient
 from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
 from agent_learning_coach.core.memory import (
     ExtractedMemory,
     InMemoryMemoryStore,
+    JsonFileMemoryStore,
     LearnerProfile,
     LLMMemoryExtractor,
     Memory,
     MemoryBatch,
     MemoryManager,
     MemoryPolicy,
+    format_memories,
     format_transcript,
     tokenize,
 )
@@ -599,3 +602,221 @@ def test_long_term_memory_example_runs() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "噪声被挡住" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# 持久化
+# ---------------------------------------------------------------------------
+
+
+def test_json_file_store_round_trips(tmp_path: Path) -> None:
+    """文件存储能存能取，跨「进程」还在。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    memory = _memory()
+
+    asyncio.run(store.add(memory))
+
+    other = JsonFileMemoryStore(tmp_path / "memories")
+    found = asyncio.run(other.get(memory.id))
+    assert found is not None
+    assert found.content == memory.content
+
+
+def test_json_file_store_upserts_by_key(tmp_path: Path) -> None:
+    """文件存储同样按键 upsert。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    asyncio.run(store.add(_memory(kind="level", scope="", content="初级")))
+    asyncio.run(store.add(_memory(kind="level", scope="", content="中级")))
+
+    memories = asyncio.run(store.find(subject=SUBJECT))
+
+    assert len(memories) == 1
+    assert memories[0].content == "中级"
+
+
+def test_json_file_store_isolates_subjects(tmp_path: Path) -> None:
+    """不同主体写进不同文件，互不干扰。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    asyncio.run(store.add(_memory(subject="a", content="A 的弱点")))
+    asyncio.run(store.add(_memory(subject="b", content="B 的弱点")))
+
+    assert len(asyncio.run(store.find(subject="a"))) == 1
+    assert len(asyncio.run(store.find(subject="b"))) == 1
+    assert len(asyncio.run(store.find())) == 2
+
+
+def test_json_file_store_searches(tmp_path: Path) -> None:
+    """文件存储的召回与内存实现一致。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    asyncio.run(store.add(_memory(kind="weakness", scope="闭包", content="闭包掌握不好")))
+    asyncio.run(store.add(_memory(kind="preference", scope="", content="喜欢先看代码")))
+
+    memories = asyncio.run(store.search("闭包", subject=SUBJECT))
+
+    assert len(memories) == 1
+    assert "闭包" in memories[0].content
+
+
+def test_json_file_store_deletes(tmp_path: Path) -> None:
+    """文件存储能删除记忆。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    memory = _memory()
+    asyncio.run(store.add(memory))
+
+    asyncio.run(store.delete(memory.id))
+
+    assert asyncio.run(store.get(memory.id)) is None
+    assert asyncio.run(store.find(subject=SUBJECT)) == []
+
+
+def test_json_file_store_survives_a_manager_restart(tmp_path: Path) -> None:
+    """记忆落盘后，换一个存储对象仍能召回——长期记忆的定义就是跨会话。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    manager = MemoryManager(
+        store,
+        LLMMemoryExtractor(
+            MockLLMClient(
+                text=_batch({"kind": "weakness", "scope": "闭包", "content": "闭包掌握不好"})
+            )
+        ),
+    )
+    asyncio.run(manager.capture([], subject=SUBJECT))
+
+    other_store = JsonFileMemoryStore(tmp_path / "memories")
+    other_manager = MemoryManager(other_store, LLMMemoryExtractor(MockLLMClient(text="{}")))
+
+    memories = asyncio.run(other_manager.recall(subject=SUBJECT))
+
+    assert len(memories) == 1
+
+
+# ---------------------------------------------------------------------------
+# 上下文集成
+# ---------------------------------------------------------------------------
+
+
+def test_build_context_returns_the_profile() -> None:
+    """不带查询时给出学习者画像。"""
+    store = InMemoryMemoryStore()
+    asyncio.run(store.add(_memory(kind="level", scope="", content="初级")))
+    asyncio.run(store.add(_memory(kind="weakness", scope="闭包", content="闭包掌握不好")))
+    manager = MemoryManager(store, LLMMemoryExtractor(MockLLMClient(text="{}")))
+
+    context = asyncio.run(manager.build_context(subject=SUBJECT))
+
+    assert "当前水平：初级" in context
+    assert "闭包掌握不好" in context
+
+
+def test_build_context_with_query_returns_relevant_memories() -> None:
+    """带查询时只给相关的记忆。"""
+    store = InMemoryMemoryStore()
+    asyncio.run(store.add(_memory(kind="weakness", scope="闭包", content="闭包掌握不好")))
+    asyncio.run(store.add(_memory(kind="preference", scope="", content="喜欢先看代码")))
+    manager = MemoryManager(store, LLMMemoryExtractor(MockLLMClient(text="{}")))
+
+    context = asyncio.run(manager.build_context("闭包", subject=SUBJECT))
+
+    assert "闭包掌握不好" in context
+    assert "喜欢先看代码" not in context
+
+
+def test_build_context_is_empty_without_memories() -> None:
+    """没有记忆时不注入任何东西——不给模型塞空话。"""
+    store = InMemoryMemoryStore()
+    manager = MemoryManager(store, LLMMemoryExtractor(MockLLMClient(text="{}")))
+
+    assert asyncio.run(manager.build_context(subject=SUBJECT)) == ""
+
+
+def test_memories_actually_reach_the_model() -> None:
+    """记忆真的进到模型请求里——这是「上下文集成」的可验证形态。"""
+    from agent_learning_coach.core.agent import AgentConfig, AgentRuntime
+    from agent_learning_coach.core.llm.mock import MockLLMClient
+    from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
+
+    store = InMemoryMemoryStore()
+    asyncio.run(store.add(_memory(kind="weakness", scope="闭包", content="闭包掌握不好")))
+    manager = MemoryManager(store, LLMMemoryExtractor(MockLLMClient(text="{}")))
+    context = asyncio.run(manager.build_context(subject=SUBJECT))
+
+    runtime = AgentRuntime(
+        MockLLMClient(text="好的"),
+        ToolDispatcher(ToolRegistry()),
+        config=AgentConfig(model="mock-model", instructions=["你是学习教练。", context]),
+    )
+
+    asyncio.run(runtime.run("我该从哪开始？"))
+
+    request = runtime.client.requests[0]  # type: ignore[attr-defined]
+    assert any("闭包掌握不好" in text for text in request.instructions)
+
+
+def test_format_memories_renders_labels() -> None:
+    """记忆渲染时带类别与作用域。"""
+    text = format_memories([_memory(kind="weakness", scope="闭包", content="闭包掌握不好")])
+
+    assert text == "- [weakness:闭包] 闭包掌握不好"
+
+
+def test_format_memories_is_empty_for_no_memories() -> None:
+    """没有记忆时渲染成空字符串。"""
+    assert format_memories([]) == ""
+
+
+def test_json_file_store_get_scans_all_subjects(tmp_path: Path) -> None:
+    """按 id 读取会扫描各主体——主体是文件维度，id 不是。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    first = _memory(subject="a", content="A 的弱点")
+    second = _memory(subject="b", content="B 的弱点")
+    asyncio.run(store.add(first))
+    asyncio.run(store.add(second))
+
+    assert asyncio.run(store.get(second.id)) is not None
+    assert (await_first := asyncio.run(store.get(second.id))).content == "B 的弱点"
+    assert await_first is not None
+
+
+def test_json_file_store_filters_by_type_and_kind(tmp_path: Path) -> None:
+    """文件存储支持按类型与类别筛选。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    asyncio.run(store.add(_memory(kind="weakness", scope="闭包", content="闭包掌握不好")))
+    asyncio.run(
+        store.add(
+            _memory(
+                kind="schedule",
+                scope="",
+                content="每周三学",
+                memory_type="episodic",
+            )
+        )
+    )
+
+    assert len(asyncio.run(store.find(subject=SUBJECT, kind="weakness"))) == 1
+    assert len(asyncio.run(store.find(subject=SUBJECT, memory_type="episodic"))) == 1
+    assert len(asyncio.run(store.find(subject=SUBJECT, kind="schedule"))) == 1
+
+
+def test_json_file_store_search_with_empty_query(tmp_path: Path) -> None:
+    """空查询不召回任何东西。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    asyncio.run(store.add(_memory()))
+
+    assert asyncio.run(store.search("", subject=SUBJECT)) == []
+
+
+def test_json_file_store_delete_of_a_missing_memory_is_forgiving(tmp_path: Path) -> None:
+    """删除不存在的记忆不报错。"""
+    store = JsonFileMemoryStore(tmp_path / "memories")
+    asyncio.run(store.add(_memory()))
+
+    asyncio.run(store.delete("nope"))
+
+    assert len(asyncio.run(store.find(subject=SUBJECT))) == 1
+
+
+def test_format_memories_omits_empty_scope() -> None:
+    """作用域为空时不加后缀——单例记忆（如水平）渲染成裸类别。"""
+    text = format_memories([_memory(kind="level", scope="", content="初级")])
+
+    assert text == "- [level] 初级"

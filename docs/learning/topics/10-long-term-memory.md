@@ -75,7 +75,8 @@
 
 **2. 存储**（`core/memory/store.py`）
 
-- `MemoryStore` 协议 + `InMemoryMemoryStore`。
+- `MemoryStore` 协议 + `InMemoryMemoryStore` + `JsonFileMemoryStore`
+  （**持久化**：一个主体一个 JSON 文件，写入先写临时文件再改名——改名是原子的）。
 - `add` 按唯一键 upsert：保留原 id 与创建时刻，更新内容与更新时刻。
 - `find` 按主体/类型/类别筛选。
 - `search` 关键词相关度排序——**不需要嵌入服务**，离线可测、结果可解释。
@@ -142,7 +143,7 @@ embedding API，与本项目厂商无关的立场冲突）、完全离线可测�
 
 ### 测试结果如何？
 
-- 新增 `tests/test_memory.py`（37 个用例）。
+- 新增 `tests/test_memory.py`（50 个用例）。
 - 全量：**420 passed**（原 383 + 37）。
 - 覆盖率：`core/memory/` 五个模块均 **100%**（行 + 分支）。
 - **变异验证**：
@@ -218,6 +219,7 @@ embedding API，与本项目厂商无关的立场冲突）、完全离线可测�
 - Tests: `tests/test_memory.py`（37 个用例）
 - ADR: `docs/architecture/decisions/0010-long-term-memory-admission-and-overwrite.md`
 - Article Notes: `docs/articles/memory-and-rag.md`、`docs/engineering/memory.md`
+  （Memory Architecture Notes）
 - Unresolved Questions:
   - 遗忘与时效性怎么设计？衰减权重、有效期字段，还是交给上层？
   - 语义冲突怎么消解？「新的赢」之外，是否需要「两条并存但标注重复」？

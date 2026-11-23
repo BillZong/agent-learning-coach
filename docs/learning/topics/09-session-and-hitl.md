@@ -90,7 +90,14 @@ Session 的持久化边界在哪里？Pause / Resume 时哪些状态必须落盘
 - **没有决定的按拒绝处理**（fail closed）。
 - 暂停的运行**不能再 `run()`**——否则请求里会带着没有结果的 `tool_call`，厂商 API 会拒绝整个请求。
 
-**5. 循环计数上移到上下文**
+**5. 检查点（Checkpoint）**
+
+- `SessionContext.checkpoint()` 打检查点、`SessionContext.restore()` 还原。
+- 检查点 = 「从这一刻起可以被恢复的运行状态」，包含恢复所需的全部东西。
+- 命名用 `checkpoint()` / `restore()` 而不是 `to_state()` / `from_state()`——
+  前者说清这个对象**干什么用**，后者只描述形状。
+
+**6. 循环计数上移到上下文**
 
 `tool_call_count`、`consecutive_errors`、`call_counts` 从循环的局部变量移到
 `ExecutionContext`。否则恢复一次运行就会重置它们——**暂停-恢复会成为绕过预算
@@ -130,7 +137,8 @@ tools or missing approval requirements"。
 
 ### 测试结果如何？
 
-- 新增 `tests/test_hitl.py`（24 个用例），扩展 `tests/test_session.py`（+5 个）。
+- 新增 `tests/test_hitl.py`（24 个用例）、`tests/test_state_transitions.py`
+  （7 个用例，**表驱动的状态转换测试**），扩展 `tests/test_session.py`（+5 个）。
 - 全量：**382 passed**（原 353 + 29）。
 - 覆盖率：`core/agent/session.py`、`core/agent/runtime.py`、`core/agent/types.py`、
   `core/tools/types.py` 均 **100%**（行 + 分支）。
@@ -203,11 +211,13 @@ tools or missing approval requirements"。
     fail closed、恢复时记账）
   - `src/agent_learning_coach/core/agent/session.py`（`SessionState`、`SessionStore`
     协议、`InMemorySessionStore`、`JsonFileSessionStore`、`SessionContext` 的
-    save/load）
+    checkpoint/restore/save/load）
   - `src/agent_learning_coach/core/agent/__init__.py`（导出新符号）
-- Tests: `tests/test_hitl.py`（24 个用例）、`tests/test_session.py`（+5 个）
+- Tests: `tests/test_hitl.py`（24 个用例）、`tests/test_state_transitions.py`
+  （7 个用例）、`tests/test_session.py`（+5 个）
 - ADR: `docs/architecture/decisions/0009-session-persistence-and-hitl.md`
-- Article Notes: `docs/articles/memory-and-rag.md`、`docs/engineering/memory.md`
+- Article Notes: `docs/engineering/session.md`（Session State Notes）、
+  `docs/articles/memory-and-rag.md`、`docs/engineering/memory.md`
 - Unresolved Questions:
   - 并发恢复怎么防？乐观锁（版本号）还是租约（TTL 持有）？
   - 审批要不要过期？过期后恢复时按拒绝处理，还是按「人没答」处理？

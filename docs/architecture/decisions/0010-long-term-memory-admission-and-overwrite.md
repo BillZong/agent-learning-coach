@@ -113,7 +113,28 @@ Memory Extraction？**
 领域内的细分（目标 / 水平 / 弱点……）放在 `kind` 里，与 `memory_type` 分开——
 这样记忆机制本身是领域无关的，Phase 1 换一套类别词表不影响机制。
 
-### 8. 记忆写入不在 Agent 的热路径上
+### 8. 记忆要落盘，也要真的进到模型上下文
+
+两件事容易被混为一谈：
+
+- **持久化**（`JsonFileMemoryStore`）：记忆跨会话存活。一个主体一个 JSON 文件，
+  写入先写临时文件再改名——**改名是原子的**。
+- **上下文集成**（`MemoryManager.build_context`）：记忆真的进到模型请求里。
+  不带查询时给学习者画像，带查询时给相关记忆；**没有内容时返回空字符串**，
+  不给模型塞空话。
+
+集成路径由应用层编排——运行时保持领域无关：
+
+```python
+context = await manager.build_context(subject=learner_id)
+runtime = AgentRuntime(
+    client,
+    dispatcher,
+    config=AgentConfig(model="gpt-4", instructions=[*base, context]),
+)
+```
+
+### 9. 记忆写入不在 Agent 的热路径上
 
 `MemoryManager` 只提供能力，**不决定何时调用**。由应用层决定什么时候抽取
 （会话结束时？每 N 轮？用户主动触发？）。
@@ -149,10 +170,12 @@ LangGraph 文档指出在热路径里写记忆会增加延迟、让 Agent 分心
    不是优化。
 3. **重复 id 会留下陈旧的键映射**。存储同时维护「id → 记忆」和「键 → id」
    两张表；id 复用但键不同时，旧键映射会指向一条已经被换掉的记忆，按键查找
-   会捞出错误的内容。写入时清理指向同一 id 的其它键。
+   会捞出错误的内容。**索引整体重建**而不是增量维护——增量维护要小心翼翼地
+   记得清理，而重建从根上不可能不一致。代价是 O(n)，而这里的 n 是几十到几百。
 
 ## 相关文档
 
 - 接入说明：[`docs/engineering/memory.md`](../../engineering/memory.md)
+- 相关：[`docs/engineering/session.md`](../../engineering/session.md)（会话状态参考）
 - 学习笔记：[`docs/learning/topics/10-long-term-memory.md`](../../learning/topics/10-long-term-memory.md)
 - 相关决策：[ADR-0008](./0008-context-storage-and-presentation.md)（存储与呈现分离）、[ADR-0009](./0009-session-persistence-and-hitl.md)（会话持久化边界）

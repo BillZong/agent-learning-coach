@@ -7,6 +7,10 @@
 因此会话需要一个**跨运行持续存在的存储**。``SessionContext`` 就是它：一个
 持有 ``ExecutionContext`` 的会话，持续累积对话，轮次累加。
 
+**检查点（Checkpoint）**：一个可以从这一刻起被恢复的运行状态。它包含恢复所需的
+全部东西——事件历史、草稿本、用量与成本、步数、循环计数、待确认的审批。少一样，
+恢复出来的就不是原来那个运行（详见 ADR-0009）。
+
 **持久化边界**（详见 ADR-0009）：
 
 - **必须落盘**：事件历史、草稿本、用量与成本、步数、工具调用计数与停止
@@ -426,11 +430,15 @@ class SessionContext:
         """会话的草稿本。跨轮次保留。"""
         return self.context.state
 
-    def to_state(self) -> SessionState:
-        """导出可持久化的状态快照。
+    def checkpoint(self) -> SessionState:
+        """给当前会话打一个**检查点**。
+
+        检查点是「从这一刻起可以被恢复的运行状态」。它包含恢复所需的全部东西
+        ——事件历史、草稿本、用量与成本、步数、循环计数、待确认的审批。少一样，
+        恢复出来的就不是原来那个运行（见 ADR-0009）。
 
         Returns:
-            会话状态。
+            检查点内容。
         """
         import time
 
@@ -453,30 +461,30 @@ class SessionContext:
         )
 
     @classmethod
-    def from_state(cls, state: SessionState) -> SessionContext:
-        """从状态快照还原会话。
+    def restore(cls, checkpoint: SessionState) -> SessionContext:
+        """从检查点还原会话。
 
         Args:
-            state: 会话状态。
+            checkpoint: 检查点内容。
 
         Returns:
             会话。
         """
         ctx = ExecutionContext(
-            events=list(state.events),
-            current_step=state.current_step,
-            state=dict(state.state),
-            usage=state.usage,
-            cost=state.cost,
-            tool_call_count=state.tool_call_count,
-            consecutive_errors=state.consecutive_errors,
-            call_counts=dict(state.call_counts),
-            pending_approvals=list(state.pending_approvals),
+            events=list(checkpoint.events),
+            current_step=checkpoint.current_step,
+            state=dict(checkpoint.state),
+            usage=checkpoint.usage,
+            cost=checkpoint.cost,
+            tool_call_count=checkpoint.tool_call_count,
+            consecutive_errors=checkpoint.consecutive_errors,
+            call_counts=dict(checkpoint.call_counts),
+            pending_approvals=list(checkpoint.pending_approvals),
         )
         return cls(
-            session_id=state.session_id,
+            session_id=checkpoint.session_id,
             context=ctx,
-            user_id=state.user_id,
+            user_id=checkpoint.user_id,
         )
 
     async def save(self, store: SessionStore) -> None:
@@ -485,7 +493,7 @@ class SessionContext:
         Args:
             store: 存储。
         """
-        await store.save(self.to_state())
+        await store.save(self.checkpoint())
 
     @classmethod
     async def load(
@@ -508,7 +516,7 @@ class SessionContext:
         state = await store.load(session_id)
         if state is None:
             return None
-        session = cls.from_state(state)
+        session = cls.restore(state)
         if session.user_id is None:
             session.user_id = user_id
         return session

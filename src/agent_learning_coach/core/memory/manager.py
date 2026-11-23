@@ -25,7 +25,12 @@ from __future__ import annotations
 from agent_learning_coach.core.llm.types import ContentItem
 from agent_learning_coach.core.memory.extraction import MemoryExtractor
 from agent_learning_coach.core.memory.store import MemoryStore
-from agent_learning_coach.core.memory.types import LearnerProfile, Memory, MemoryPolicy
+from agent_learning_coach.core.memory.types import (
+    LearnerProfile,
+    Memory,
+    MemoryPolicy,
+    format_memories,
+)
 
 
 class MemoryManager:
@@ -109,6 +114,37 @@ class MemoryManager:
         if not query.strip():
             return await self.store.find(subject=subject, kind=kind)
         return await self.store.search(query, subject=subject, kind=kind, limit=limit)
+
+    async def build_context(
+        self,
+        query: str = "",
+        *,
+        subject: str,
+        limit: int = 8,
+    ) -> str:
+        """构造可以放进提示词的「记忆上下文」。
+
+        两种形态：
+
+        - **不带查询**：给学习者画像（目标、水平、强项、弱点、偏好……）——
+          每次对话都该带着的那部分。
+        - **带查询**：给与当前话题相关的记忆——只在相关时注入。
+
+        两种形态都不需要嵌入服务，且**没有内容时返回空字符串**——不给模型塞
+        一段空话。
+
+        Args:
+            query: 查询文本。为空时给画像。
+            subject: 归属主体。
+            limit: 带查询时最多取几条。
+
+        Returns:
+            提示词文本。没有可注入的记忆时返回空字符串。
+        """
+        if not query.strip():
+            return (await self.profile(subject=subject)).to_prompt()
+        memories = await self.recall(query, subject=subject, limit=limit)
+        return format_memories(memories)
 
     async def profile(self, *, subject: str) -> LearnerProfile:
         """生成学习者画像。

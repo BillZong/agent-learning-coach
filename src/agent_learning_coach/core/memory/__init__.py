@@ -7,8 +7,8 @@
   按键 upsert，因此新事实**取代**旧事实而不是并存。
 - **Memory Policy**（``types.MemoryPolicy``）：准入策略。确定性地拒绝空内容、
   低置信度、超长与未知类别的候选。
-- **Memory Store**（``store``）：存储协议与内存实现。召回是确定性的关键词
-  相关度，不需要嵌入服务。
+- **Memory Store**（``store``）：存储协议，以及内存与 JSON 文件两种实现。
+  召回是确定性的关键词相关度，不需要嵌入服务。
 - **Memory Extractor**（``extraction``）：抽取器协议与基于结构化输出的实现。
 - **Memory Manager**（``manager``）：把抽取、准入、去重、覆盖、召回串起来。
 - **Learner Profile**（``types.LearnerProfile``）：记忆的一种视图——把散落的
@@ -31,6 +31,7 @@ from agent_learning_coach.core.memory.extraction import (
 from agent_learning_coach.core.memory.manager import MemoryManager
 from agent_learning_coach.core.memory.store import (
     InMemoryMemoryStore,
+    JsonFileMemoryStore,
     MemoryStore,
     tokenize,
 )
@@ -40,6 +41,7 @@ from agent_learning_coach.core.memory.types import (
     Memory,
     MemoryPolicy,
     MemoryType,
+    format_memories,
     now,
 )
 
@@ -48,6 +50,7 @@ __all__ = [
     "LEARNER_MEMORY_KINDS",
     "ExtractedMemory",
     "InMemoryMemoryStore",
+    "JsonFileMemoryStore",
     "LLMMemoryExtractor",
     "LearnerProfile",
     "Memory",
@@ -57,6 +60,7 @@ __all__ = [
     "MemoryPolicy",
     "MemoryStore",
     "MemoryType",
+    "format_memories",
     "format_transcript",
     "now",
     "tokenize",

@@ -155,7 +155,45 @@ async def main() -> None:
     print(f"  无关查询召回: {unrelated}（不召回噪声）")
     assert unrelated == []
 
-    print("\n[PASS] 噪声被挡住，新事实覆盖旧事实，召回不返回无关记忆")
+    print("\n=== 集成：记忆进入模型的上下文 ===")
+    from agent_learning_coach.core.agent import AgentConfig, AgentRuntime
+    from agent_learning_coach.core.llm.mock import MockLLMClient
+    from agent_learning_coach.core.llm.models import LLMResponse
+    from agent_learning_coach.core.llm.types import Message
+    from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
+
+    context_text = await manager.build_context(subject=LEARNER)
+    print("  注入的记忆上下文：")
+    for line in context_text.splitlines():
+        print(f"    {line}")
+
+    seen: list = []
+
+    def handler(request):  # noqa: ANN001, ANN202
+        """记录模型实际收到的请求。"""
+        seen.append(request)
+        return LLMResponse(
+            model="mock-model",
+            contents=[Message(role="assistant", content="好的")],
+        )
+
+    client = MockLLMClient(handler=handler, model="mock-model")
+    runtime = AgentRuntime(
+        client,
+        ToolDispatcher(ToolRegistry()),
+        config=AgentConfig(
+            model="mock-model",
+            instructions=["你是学习教练。", context_text],
+        ),
+    )
+    await runtime.run("我该从哪开始？")
+
+    injected = seen[0].instructions if seen else []
+    print(f"  模型收到的指令条数: {len(injected)}")
+    print(f"  其中包含记忆上下文: {any('闭包' in text for text in injected)}")
+    assert any("闭包掌握不好" in text for text in injected), "记忆没有进入模型请求"
+
+    print("\n[PASS] 噪声被挡住，新事实覆盖旧事实，召回不返回无关记忆，记忆进入模型上下文")
 
 
 if __name__ == "__main__":

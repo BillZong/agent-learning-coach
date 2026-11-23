@@ -45,7 +45,16 @@ Listing 6.11 写法：
 这是 Day 08「存储与呈现分离」在会话层的延续：**分离的是呈现与存储，不是把
 存储拆成两份。**
 
-### 2. 持久化边界
+### 2. 检查点：Checkpoint
+
+**检查点 = 一个可以从这一刻起被恢复的运行状态。**
+
+命名上采用 `checkpoint()` / `restore()` 而不是 `to_state()` / `from_state()`：
+前者说清了**这个对象干什么用**，后者只描述了它的形状。项目的既有惯例
+（ADR-0005 的补充说明 4）也是「命名统一比新增别名更有价值」——因此是一次
+替换，而不是保留两套叫法。
+
+### 3. 持久化边界
 
 **必须落盘**（缺一项，恢复出来的就不是原来那个运行）：
 
@@ -64,7 +73,7 @@ Listing 6.11 写法：
 事件历史里。恢复后的 `AgentResult.steps` 覆盖的是**本次运行段落**，这一点在
 文档里写明。
 
-### 3. 循环计数住在上下文里
+### 4. 循环计数住在上下文里
 
 原实现把 `total_tool_calls`、`consecutive_errors`、`call_counts` 放在循环的
 局部变量里。那意味着**恢复一次运行就会重置它们**——暂停-恢复成了绕过预算与
@@ -73,14 +82,14 @@ Listing 6.11 写法：
 因此这三个计数上移到 `ExecutionContext`。它们本来就是运行状态，住在状态容器
 里才自洽。
 
-### 4. 整步暂停
+### 5. 整步暂停
 
 一步里模型可能请求多个工具。规则是：**要么全执行，要么全暂停**。
 
 部分执行会让转录里出现「有调用没结果」的断裂——主流厂商 API 会**拒绝整个
 请求**，不是降级。整步暂停保证转录在每一个时刻都自洽。
 
-### 5. 没有批准就拒绝（fail closed）
+### 6. 没有批准就拒绝（fail closed）
 
 待确认的调用如果没有对应的批准决定，**按拒绝处理**。
 
@@ -92,7 +101,7 @@ unknown tools or missing approval requirements"，并要求「检查并消费批
 本项目目前的实现是单进程内的，不存在并发复用批准的问题；但「缺失即拒绝」
 这条规则先立住，将来换成有并发或多进程的存储时不必重新设计语义。
 
-### 6. 批准是运行时的约束，模型无法绕过
+### 7. 批准是运行时的约束，模型无法绕过
 
 `requires_confirmation` 声明在 `ToolDefinition` 上——工具的静态契约，序列化
 后随会话一起落盘。检查点在运行时（`_pending_approvals`），不在模型侧。
@@ -100,7 +109,7 @@ unknown tools or missing approval requirements"，并要求「检查并消费批
 模型只能「请求」，不能「批准」。这与 ADR-0007 的权限检查是同一条原则：
 **检查点在唯一的执行边界上。**
 
-### 7. 拒绝的理由回填给模型
+### 8. 拒绝的理由回填给模型
 
 被拒绝的调用会生成一条失败的工具结果，内容是「用户拒绝执行该工具（理由）。
 不要再尝试这个操作，请改用其它方式回答」。
@@ -144,5 +153,6 @@ unknown tools or missing approval requirements"，并要求「检查并消费批
 ## 相关文档
 
 - 接入说明：[`docs/engineering/memory.md`](../../engineering/memory.md)
+- 接入说明：[`docs/engineering/session.md`](../../engineering/session.md)
 - 学习笔记：[`docs/learning/topics/09-session-and-hitl.md`](../../learning/topics/09-session-and-hitl.md)
 - 相关决策：[ADR-0007](./0007-tool-permission-and-sandbox-boundary.md)（权限检查的唯一执行边界）、[ADR-0008](./0008-context-storage-and-presentation.md)（存储与呈现分离）

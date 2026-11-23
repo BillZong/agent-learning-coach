@@ -259,6 +259,29 @@ class LearnerProfile:
         return "关于这个学习者的已知信息：\n" + "\n".join(lines)
 
 
+def format_memories(memories: list[Memory]) -> str:
+    """把一组记忆渲染成可以放进提示词的文本。
+
+    每条一行，带类别与作用域——模型据此能区分「这是关于闭包的薄弱点」与
+    「这是关于递归的薄弱点」。
+
+    Args:
+        memories: 记忆列表。
+
+    Returns:
+        多行文本。没有记忆时返回空字符串。
+    """
+    if not memories:
+        return ""
+    lines = []
+    for memory in memories:
+        label = memory.kind
+        if memory.scope:
+            label = f"{label}:{memory.scope}"
+        lines.append(f"- [{label}] {memory.content}")
+    return "\n".join(lines)
+
+
 def now() -> float:
     """当前时刻。
 
@@ -274,5 +297,6 @@ __all__ = [
     "Memory",
     "MemoryPolicy",
     "MemoryType",
+    "format_memories",
     "now",
 ]
