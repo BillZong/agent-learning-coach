@@ -1,6 +1,6 @@
 # Agent Runtime
 
-> 状态：草稿 ｜ 对应 Topic 05、06
+> 状态：草稿 ｜ 对应 Topic 05、06、07、13
 
 ## 提纲
 
@@ -9,6 +9,7 @@
 3. 上下文窗口的工程约束
 4. 失败处理与恢复
 5. 信任边界与工具权限
+6. 计划：把「做什么」变成有状态的对象
 
 ## 正文
 
@@ -173,9 +174,107 @@ ScopePolicy(granted=frozenset({"fs:read"}))
 完整的威胁清单与攻击路径见 [威胁模型](../engineering/threat-model.md)，沙箱
 方案见 [沙箱隔离设计](../engineering/sandbox.md)。
 
+### 6. 计划：把「做什么」变成有状态的对象
+
+前五节讲的是「运行得对不对、跑不跑得动、安全不安全」。这一节讲一个更早的
+问题：**Agent 知不知道自己要做什么**。
+
+ReAct 一步一决策，每一步都看当前上下文。上下文一长，早期的目标就被挤掉了，
+Agent 开始原地打转——这不是模型笨，是**信息流的形状**决定的：没有全局方向的
+局部决策，步数越多偏得越远。
+
+常见的解法是「让模型先列个计划」。教材的做法是一个 `create_tasks` 工具：
+模型把任务清单**整份重写**一遍，标好每条的状态。
+
+#### 整份重写是问题本身
+
+短任务上没问题。长期任务上它是灾难：
+
+```
+第 1 次：t1 读完定义  t2 写例子  t3 做练习
+第 2 次：t2 写例子  t3 做练习          <- t1 完成了，被漏掉
+第 3 次：t1 读完定义  t2 写例子  t3 做练习  t4 复习
+```
+
+`t1` 不见了——**进度被抹掉**，模型接下来会重做一遍。同一个任务被重复添加，
+清单越滚越长。任务顺序随每次改写漂移，依赖关系不再成立。
+
+关键在于：**这些故障不是模型不稳定造成的**。只要计划是一段可以被整体覆盖的
+文本，「漏掉一个已完成的任务」就是机制性的——每次重写都是从零开始，没有
+「已完成」这个概念可依托。
+
+#### 计划应该是对象
+
+把计划建模成带身份、状态与历史的对象之后，上面的问题从机制上消失：
+
+| 约束 | 挡住了什么 |
+| --- | --- |
+| 任务有稳定 id | 引用靠 id 不靠文字，改写不会让引用失准 |
+| 内容不可改写 | 换说法要显式新建 + 跳过旧的，不做隐式漂移 |
+| 没有删除，只有 `skipped` | 计划只增不减，「这条路走过了」有记录 |
+| 同一时刻只有一个进行中任务 | 「现在在做什么」永远有唯一答案 |
+| 依赖必须闭合且无环 | 计划不会自相矛盾 |
+| 每次修改都要有理由 | 「为什么改成这样」有答案 |
+| 整批原子 | 不会出现「改了一半」的计划 |
+
+最后两条尤其重要。半生效的计划比不改更糟：它既不是模型想的样子，也没有被
+完整记录。没有理由的修改则让「计划为什么变成现在这样」永远答不上来——于是
+每一次重规划都像在赌。
+
+#### 预算只对「改变形状」的修改生效
+
+如果「改一次计划」就消耗一次额度，跑一遍正常的计划就要把额度花光，额度也
+就失去了约束作用。所以要分账：
+
+- **普通推进**（待办 → 进行中 → 完成）不改变计划的形状，**不消耗**额度；
+- **结构性修改**（新增任务、跳过任务、重新打开已完成的任务、改依赖）改变
+  形状，**消耗**一次额度。
+
+预算是兜底，不是目标——和 ADR-0005 里「步数上限只是预算，模型不再请求工具
+才是成功路径」是同一条原则。
+
+#### 反思是数据，不是对话
+
+「反思」这件事很容易被理解成模型的某种天赋：模型会自我怀疑、会改主意。
+把它当成流程里的一个**角色**之后，设计就清楚多了——角色可以被约束、被审计。
+
+于是本项目把反思与改计划**分成两步**：
+
+```
+reflect(verdict="replan")              ->  产生待处理请求 r1
+update_plan(..., reflection_id="r1")   ->  结构性修改被接受
+```
+
+反思只记录判断，**不碰计划**；待处理的重规划请求存在时，下一次结构性修改
+**必须引用它**，否则被拒绝。好处有两个：改计划的理由永远有出处；模型不能
+在没有判断的情况下随手改计划。
+
+再加一条额度——反思有总量上限与单任务上限。同一个任务反复反思不会带来新
+信息，只会烧预算并把模型的轮次耗在原地。
+
+「最新一条反思代表当前意图」这条规则是为了避免死锁：模型请求重规划之后又
+改变了主意，先前的请求必须能作废。
+
+#### 计划要能持久化
+
+计划存在执行上下文的草稿本里，因此随会话快照一起保存，也随会话恢复一起
+回来。这是 ADR-0009 的直接推论——少存一项，恢复出来的就不是原来那个运行。
+
+一个实现细节值得记：**管理器不能缓存计划**。同一个执行上下文上会存在多个
+管理器（应用层一个、工具每次调用一个），缓存副本会让它们各自看到不同的
+计划——那是「计划越改越乱」的另一种形态。执行上下文是唯一权威，每次重读。
+
+#### 这套机制管不到什么
+
+- **计划不进上下文预算**。目前靠应用层把渲染后的计划放进 prompt，没有裁剪；
+  任务多了会挤占上下文。
+- **反思的结论没人验证**。`replan` 判断对不对，程序不知道，只能记录。
+- **拆解质量没有评估**。「先规划再动手」在本项目里表现为「计划可检查」，
+  但「规划提升了效果」没有被验证。
+
 ## 相关文档
 
-- 接入说明：[运行时接入说明](../engineering/runtime.md)
+- 接入说明：[运行时接入说明](../engineering/runtime.md)、[计划与反思接入说明](../engineering/planning.md)
 - 安全说明：[安全（Security）](../engineering/security.md)、[威胁模型](../engineering/threat-model.md)、[沙箱隔离设计](../engineering/sandbox.md)
-- 决策依据：[ADR-0005](../architecture/decisions/0005-agent-loop.md)、[ADR-0006](../architecture/decisions/0006-execution-context-and-cost-control.md)、[ADR-0007](../architecture/decisions/0007-tool-permission-and-sandbox-boundary.md)
-- 学习笔记：[Topic 05 · ReAct 与 Agent Loop](../learning/topics/05-react-and-agent-loop.md)、[Topic 06 · Execution Context 与 Runtime](../learning/topics/06-execution-context-and-runtime.md)、[Topic 07 · Runtime 测试与安全边界](../learning/topics/07-runtime-testing-and-security.md)
+- 决策依据：[ADR-0005](../architecture/decisions/0005-agent-loop.md)、[ADR-0006](../architecture/decisions/0006-execution-context-and-cost-control.md)、[ADR-0007](../architecture/decisions/0007-tool-permission-and-sandbox-boundary.md)、[ADR-0013](../architecture/decisions/0013-planning-and-reflection.md)
+- 学习笔记：[Topic 05 · ReAct 与 Agent Loop](../learning/topics/05-react-and-agent-loop.md)、[Topic 06 · Execution Context 与 Runtime](../learning/topics/06-execution-context-and-runtime.md)、[Topic 07 · Runtime 测试与安全边界](../learning/topics/07-runtime-testing-and-security.md)、[Topic 13 · Planning 与 Reflection](../learning/topics/13-planning-and-reflection.md)

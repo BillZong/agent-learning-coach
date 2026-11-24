@@ -18,6 +18,8 @@
 - **Session Store**（``session``）：会话存储协议与两种实现——内存与 JSON 文件。
 - **Tool Hooks**（``hooks.StateCollector``）：把工具产出的结构化数据收进执行
   上下文的草稿本。通用机制，不认识具体数据格式。
+- **计划与反思**（``planning``）：把目标拆成有状态的任务清单，并把「判断」
+  与「改计划」分成两步。计划是对象，不是可被整体覆盖的文本。
 
 职责边界：运行时只管「模型 ↔ 工具」的节奏与状态。模型调用委托给
 ``core.llm.LLMClient``，工具执行委托给 ``core.tools.ToolDispatcher``——
@@ -35,6 +37,31 @@ from agent_learning_coach.core.agent.output import (
     FINAL_ANSWER_TOOL_NAME,
     build_final_answer_tool,
     build_output_schema,
+)
+from agent_learning_coach.core.agent.planning import (
+    PLAN_STATE_KEY,
+    REFLECT_TOOL_NAME,
+    UPDATE_PLAN_TOOL_NAME,
+    GoalSpec,
+    LLMPlanner,
+    OutcomePlanner,
+    Plan,
+    PlanDraft,
+    PlanError,
+    PlanManager,
+    Planner,
+    PlanPolicy,
+    PlanRevision,
+    PlanTask,
+    Reflection,
+    ReflectionVerdict,
+    TaskChange,
+    TaskDraft,
+    TaskStatus,
+    build_reflect_tool,
+    build_update_plan_tool,
+    render_plan,
+    render_reflection,
 )
 from agent_learning_coach.core.agent.runtime import AgentRuntime
 from agent_learning_coach.core.agent.session import (
@@ -58,6 +85,9 @@ from agent_learning_coach.core.agent.types import (
 
 __all__ = [
     "FINAL_ANSWER_TOOL_NAME",
+    "PLAN_STATE_KEY",
+    "REFLECT_TOOL_NAME",
+    "UPDATE_PLAN_TOOL_NAME",
     "AgentConfig",
     "AgentConfigError",
     "AgentError",
@@ -68,15 +98,35 @@ __all__ = [
     "ApprovalDecision",
     "Event",
     "ExecutionContext",
+    "GoalSpec",
     "InMemorySessionStore",
     "JsonFileSessionStore",
+    "LLMPlanner",
+    "OutcomePlanner",
     "PendingApproval",
+    "Plan",
+    "PlanDraft",
+    "PlanError",
+    "PlanManager",
+    "PlanPolicy",
+    "PlanRevision",
+    "PlanTask",
+    "Planner",
+    "Reflection",
+    "ReflectionVerdict",
     "SessionContext",
     "SessionState",
     "SessionStore",
     "StateCollector",
     "StopReason",
+    "TaskChange",
+    "TaskDraft",
+    "TaskStatus",
     "TokenPrice",
     "build_final_answer_tool",
     "build_output_schema",
+    "build_reflect_tool",
+    "build_update_plan_tool",
+    "render_plan",
+    "render_reflection",
 ]

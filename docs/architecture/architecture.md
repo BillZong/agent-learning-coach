@@ -163,6 +163,26 @@ ReAct 执行循环 + 运行时状态，位于 `src/agent_learning_coach/core/age
 决策依据：[ADR-0005](decisions/0005-agent-loop.md)、[ADR-0006](decisions/0006-execution-context-and-cost-control.md)。
 接入说明：[运行时接入说明](../engineering/runtime.md)。
 
+#### 计划与反思
+
+计划与反思位于 `src/agent_learning_coach/core/agent/planning.py`，与运行时同包：
+
+- 计划类型：`Plan` / `PlanTask` / `PlanRevision` / `Reflection`
+- 写入接口：`PlanManager`——建计划、改计划、记反思
+- 规划器：`Planner` 协议 + `OutcomePlanner`（确定性拆解）/ `LLMPlanner`（模型拆解）
+- 工具：`update_plan`（提交增量修改）/ `reflect`（记录判断）
+
+**计划是带状态与历史的对象，不是一段可被整体覆盖的文本**。任务有稳定 id、内容不可改写、没有删除操作（移除 = 标成 `skipped`）、同一时刻只有一个进行中的任务、依赖必须闭合且无环。每次修改都要有理由，并产生一个修订；结构性修改（新增 / 跳过 / 重开 / 改依赖）消耗重规划预算，普通推进不消耗。
+
+**反思不改计划**：反思只产出判断；改计划是另一步，且必须引用那条反思。于是「为什么改」永远有出处，改的次数也有上限。
+
+计划存在执行上下文的草稿本里，因此随会话快照一起持久化，也随会话恢复一起回来。
+
+领域边界：本模块不认识学习领域的具体概念，只认识 `GoalSpec`。Phase 1 的 `LearningGoal` 领域模型映射成 `GoalSpec` 后交给规划器——**领域模型回答「目标是什么」，运行时回答「目标怎么变成任务」**。
+
+决策依据：[ADR-0013](decisions/0013-planning-and-reflection.md)。
+接入说明：[计划与反思接入说明](../engineering/planning.md)。
+
 #### MCP 协议适配
 
 工具系统与 MCP 协议双向适配，位于 `src/agent_learning_coach/core/tools/mcp.py`：
