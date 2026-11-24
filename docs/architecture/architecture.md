@@ -68,7 +68,25 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 - Learning Progress：学习进度。
 - Mastery Model：知识掌握度模型。
 
+当前已建模（Phase 1，见 [domain.md](../engineering/domain.md) 与
+[ADR-0015](./decisions/0015-learning-domain-boundaries.md)）：
+
+| 概念 | 类型 | 位置 |
+| ---- | ---- | ---- |
+| Learner | 实体（独立聚合） | `core.learning.domain.Learner` |
+| Course / KnowledgePoint | 实体（课程聚合） | `core.learning.domain.Course` |
+| Learning Goal | 实体（关联聚合） | `core.learning.domain.LearningGoal` |
+| 各类 id、目标约束 | 值对象 | `core.learning.domain` |
+
+边界规则：跨聚合只按 id 引用（目标记 `learner_id` / `course_id`，学习者不记
+目标）；实体不可变；不变量在构造时校验；知识顺序是派生视图，不持久化。
+
+**依赖方向**：`core.learning` 不认识模型、工具与运行时；学习目标通过
+`bridge.to_goal_spec` 单向映射成 `GoalSpec` 后交给 `core.agent`。
+
 学习领域层不应依赖特定的 LLM 提供商或 Agent 框架。
+
+尚未建模：学习领域注册表、诊断结果、掌握度、学习进度、持久化。
 
 ### 3.4 Agent 运行时层（Agent Runtime）
 
@@ -330,3 +348,5 @@ LLM 主要承担理解、推理、生成和辅助评估等概率性任务；关�
 - 产品范围：`../product/product-scope.md`
 - 产品路线图：`../product/roadmap.md`
 - 架构决策记录：`./decisions/README.md`
+- 学习领域接入说明：`../engineering/domain.md`
+- 计划与反思接入说明：`../engineering/planning.md`

@@ -16,9 +16,9 @@
 丢掉，新任务可能被重复添加，顺序随改写漂移——**计划越改越乱**。根因不在模型，
 而在于计划是一段可以被整体覆盖的文本。这里把计划做成带状态的对象。
 
-**这个示例里的学习目标模型是临时的**：Phase 1 会把它建成正式的学习领域模型。
-今天要确定的是转换的形状——领域模型负责「目标是什么」，``core.agent`` 负责
-「目标怎么变成任务」。
+**学习目标来自 ``core.learning`` 的正式领域模型**：领域模型负责「目标是什么」，
+``core.agent`` 负责「目标怎么变成任务」，两者通过 ``GoalSpec`` 交接。今天演示的
+是这条转换链路，而不是领域模型的全部规则。
 
 脚本用脚本化的模型客户端，因此**不联网**也能跑。
 """
@@ -26,13 +26,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 
 from agent_learning_coach.core.agent import (
     AgentConfig,
     AgentRuntime,
     ExecutionContext,
-    GoalSpec,
     OutcomePlanner,
     PlanManager,
     PlanPolicy,
@@ -42,47 +40,17 @@ from agent_learning_coach.core.agent import (
     build_update_plan_tool,
     render_plan,
 )
+from agent_learning_coach.core.learning import (
+    CourseId,
+    GoalConstraint,
+    GoalId,
+    LearnerId,
+    LearningGoal,
+    to_goal_spec,
+)
 from agent_learning_coach.core.llm.models import LLMResponse, LLMUsage
 from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
 from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
-
-
-@dataclass(frozen=True)
-class LearningGoal:
-    """最小学习目标模型。
-
-    Phase 1 会把它建成正式的学习领域模型（学习者画像、知识结构、诊断结果都
-    会参与计划的生成）。这里只保留转换需要的字段，用来确定转换的形状。
-
-    **职责分工**：领域模型回答「目标是什么」，``core.agent`` 回答「目标怎么
-    变成任务」。两者通过 ``GoalSpec`` 交接，`core.agent` 因此不需要认识学习
-    领域的任何具体概念。
-    """
-
-    goal_id: str
-    """目标标识。"""
-
-    statement: str
-    """目标陈述。"""
-
-    outcomes: tuple[str, ...]
-    """可验证的学习结果。"""
-
-    constraints: tuple[str, ...] = ()
-    """约束条件。"""
-
-    def to_spec(self) -> GoalSpec:
-        """转换成运行时认识的目标描述。
-
-        Returns:
-            目标描述。
-        """
-        return GoalSpec(
-            goal_id=self.goal_id,
-            statement=self.statement,
-            outcomes=self.outcomes,
-            constraints=self.constraints,
-        )
 
 
 class ScriptedClient:
@@ -223,16 +191,21 @@ async def main() -> None:
     """跑一遍完整闭环。"""
     # --- 1. 转换：学习目标 → 目标描述 → 任务草稿 → 计划 ---
     goal = LearningGoal(
-        goal_id="goal-closures",
+        id=GoalId("goal-closures"),
+        learner_id=LearnerId("learner-1"),
+        course_id=CourseId("course-js-core"),
         statement="掌握 JavaScript 闭包并能独立使用",
         outcomes=(
             "能说清闭包是什么、捕获了什么",
             "能写出三个真实的闭包例子",
             "能用闭包实现一个带私有状态的计数器",
         ),
-        constraints=("每周 3 小时", "先修：函数与作用域"),
+        constraints=(
+            GoalConstraint(kind="time", text="每周 3 小时"),
+            GoalConstraint(kind="prerequisite", text="函数与作用域"),
+        ),
     )
-    spec = goal.to_spec()
+    spec = to_goal_spec(goal)
     draft = await OutcomePlanner().plan(spec)
 
     context = ExecutionContext()

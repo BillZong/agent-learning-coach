@@ -168,14 +168,14 @@
 
 #### 阶段交付物
 
-- [ ] Learning Domain 数据模型。
-- [ ] Knowledge Structure 数据模型。
-- [ ] Learner Profile。
-- [ ] Learning Goal 管理。
+- [x] Learning Domain 数据模型（ADR-0015）。
+- [x] Knowledge Structure 数据模型（知识点 + 依赖 DAG）。
+- [x] Learner Profile。
+- [x] Learning Goal 管理（生命周期 + 到 `GoalSpec` 的映射）。
 - [ ] Learning Diagnosis。
-- [ ] Learning Plan 生成能力。
-- [ ] 学习计划持久化机制。
-- [ ] Learning Domain Architecture 文档。
+- [x] Learning Plan 生成能力（Topic 13，Phase 0 已交付）。
+- [x] 学习计划持久化机制（会话快照，ADR-0009）。
+- [x] Learning Domain Architecture 文档（`docs/engineering/domain.md`）。
 
 #### 阶段验收标准
 
