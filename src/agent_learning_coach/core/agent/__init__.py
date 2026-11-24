@@ -20,19 +20,43 @@
   上下文的草稿本。通用机制，不认识具体数据格式。
 - **计划与反思**（``planning``）：把目标拆成有状态的任务清单，并把「判断」
   与「改计划」分成两步。计划是对象，不是可被整体覆盖的文本。
+- **可观测性**（``observability``）：把一次运行投影成 Trace（不另开事件总线），
+  把多次运行聚合成 Metrics，并按停止原因给出证据化诊断。
+- **评估**（``evaluation``）：脚本化模型 + JSON 数据集，确定性验证运行时
+  **行为**（工具调用、失败归一化、停止原因、输出交付），不做 LLM-as-judge。
 
 职责边界：运行时只管「模型 ↔ 工具」的节奏与状态。模型调用委托给
 ``core.llm.LLMClient``，工具执行委托给 ``core.tools.ToolDispatcher``——
 因此替换模型或替换工具来源都不需要改运行时。上下文的**预算裁剪**委托给
 ``core.context.ContextBuilder``（存储与呈现分离）；记忆、护栏与可观测性是
-同层的其它能力，尚未实现。
+同层的其它能力（记忆、护栏）尚未实现。
 
 导入约定：调用方统一从 ``agent_learning_coach.core.agent`` 导入公开符号。
 """
 
 from agent_learning_coach.core.agent.cost import TokenPrice
 from agent_learning_coach.core.agent.errors import AgentConfigError, AgentError
+from agent_learning_coach.core.agent.evaluation import (
+    EVAL_MODEL,
+    EvalCase,
+    EvalHarness,
+    EvalReport,
+    EvalResult,
+    ScriptedLLMClient,
+    ScriptedTurn,
+    build_eval_tools,
+    load_cases,
+)
 from agent_learning_coach.core.agent.hooks import StateCollector
+from agent_learning_coach.core.agent.observability import (
+    RunMetrics,
+    RunTrace,
+    StepTrace,
+    ToolSpan,
+    build_trace,
+    compute_metrics,
+    diagnose,
+)
 from agent_learning_coach.core.agent.output import (
     FINAL_ANSWER_TOOL_NAME,
     build_final_answer_tool,
@@ -84,6 +108,7 @@ from agent_learning_coach.core.agent.types import (
 )
 
 __all__ = [
+    "EVAL_MODEL",
     "FINAL_ANSWER_TOOL_NAME",
     "PLAN_STATE_KEY",
     "REFLECT_TOOL_NAME",
@@ -96,6 +121,10 @@ __all__ = [
     "AgentStatus",
     "AgentStep",
     "ApprovalDecision",
+    "EvalCase",
+    "EvalHarness",
+    "EvalReport",
+    "EvalResult",
     "Event",
     "ExecutionContext",
     "GoalSpec",
@@ -114,19 +143,30 @@ __all__ = [
     "Planner",
     "Reflection",
     "ReflectionVerdict",
+    "RunMetrics",
+    "RunTrace",
     "SessionContext",
     "SessionState",
+    "ScriptedLLMClient",
+    "ScriptedTurn",
     "SessionStore",
     "StateCollector",
+    "StepTrace",
     "StopReason",
     "TaskChange",
     "TaskDraft",
     "TaskStatus",
     "TokenPrice",
+    "ToolSpan",
+    "build_eval_tools",
     "build_final_answer_tool",
     "build_output_schema",
     "build_reflect_tool",
+    "build_trace",
     "build_update_plan_tool",
+    "compute_metrics",
+    "diagnose",
+    "load_cases",
     "render_plan",
     "render_reflection",
 ]

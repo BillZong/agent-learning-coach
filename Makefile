@@ -2,7 +2,7 @@ UV ?= uv
 UVX ?= uvx
 
 .DEFAULT_GOAL := help
-.PHONY: help install install-dev install-notebook update lock test test-verbose lint fmt fmt-check typecheck check \
+.PHONY: help install install-dev install-notebook update lock test test-verbose lint fmt fmt-check typecheck check eval \
         notebook shell build env clean
 
 help: ## Show this help
@@ -42,7 +42,10 @@ fmt-check: ## Check formatting without writing changes
 typecheck: ## Type-check the code (mypy from the dev dependency group)
 	$(UV) run --group dev mypy
 
-check: fmt-check lint test ## Run formatting check, lint and tests
+eval: ## Run the evaluation suite (behavior acceptance; non-zero on failure)
+	$(UV) run --group dev python examples/reliability_report.py
+
+check: fmt-check lint test eval ## Run formatting check, lint, tests and the evaluation suite
 
 notebook: ## Start JupyterLab
 	$(UV) run --group notebook jupyter lab

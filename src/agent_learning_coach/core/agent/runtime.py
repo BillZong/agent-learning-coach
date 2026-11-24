@@ -224,6 +224,7 @@ class AgentRuntime:
                 return self._result(ctx, steps, budget_stop)
 
             # --- Thought：模型决定下一步要做什么 ---
+            started = time.monotonic()
             try:
                 response = await self._think(ctx, deadline, tools_ctx)
             except TimeoutError:
@@ -232,6 +233,7 @@ class AgentRuntime:
                 # 模型调用失败与超时是同一类运行时失败：都要返回已完成的部分
                 # 结果，而不是丢弃整个运行。调用方据此决定是否重跑。
                 return self._result(ctx, steps, "llm_error", error=f"{type(exc).__name__}: {exc}")
+            think_ms = (time.monotonic() - started) * 1000
 
             ctx.record_usage(response.usage, response.model or config.model, config.prices)
             ctx.add_event(Event.create(ctx.execution_id, self.name, response.contents))
@@ -240,7 +242,7 @@ class AgentRuntime:
 
             if not tool_calls:
                 # 模型不再请求工具——循环自然结束，这是唯一的成功路径。
-                steps.append(AgentStep(index=index, response=response))
+                steps.append(AgentStep(index=index, response=response, think_ms=think_ms))
                 ctx.increment_step()
                 return self._result(ctx, steps, "completed")
 
@@ -268,6 +270,7 @@ class AgentRuntime:
                         response=response,
                         tool_calls=tool_calls,
                         outcomes=tuple(outcomes),
+                        think_ms=think_ms,
                     )
                 )
                 ctx.increment_step()
@@ -289,6 +292,7 @@ class AgentRuntime:
                 response=response,
                 tool_calls=tool_calls,
                 outcomes=tuple(outcomes),
+                think_ms=think_ms,
             )
             steps.append(step)
             ctx.increment_step()

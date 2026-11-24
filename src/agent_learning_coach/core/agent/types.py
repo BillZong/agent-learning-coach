@@ -431,6 +431,14 @@ class AgentStep:
     outcomes: tuple[ToolOutcome, ...] = ()
     """工具执行结果，与 ``tool_calls`` 一一对应。"""
 
+    think_ms: float = 0.0
+    """本步模型调用的耗时（毫秒）。
+
+    记在这里而不是另开一份计时日志：**一次运行的时间去向只有一个答案**。
+    工具耗时在 ``ToolOutcome.duration_ms`` 里，模型耗时在本字段里；两者
+    相加就是这一步的真实耗时。Trace 与 Metrics 从这两处读，不重复计时。
+    """
+
     @property
     def executed_tool_calls(self) -> int:
         """本步实际执行的工具调用数。"""

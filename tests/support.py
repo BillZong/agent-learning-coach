@@ -1,7 +1,9 @@
 """测试共用的替身。
 
 放在这里而不是各自测试文件里，是为了避免两个文件各写一份几乎相同的
-脚本化模型客户端——重复的替身迟早会各自漂移。
+替身——重复的替身迟早会各自漂移。脚本化客户端因此直接复用生产代码里的
+``ScriptedLLMClient``（评估套件也用它），这里只保留「慢客户端」这类
+测试专用的场景。
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from mcp.client.session import ClientSession
 from mcp.server.lowlevel import Server
 from mcp.shared.memory import create_client_server_memory_streams
 
+from agent_learning_coach.core.agent.evaluation import ScriptedLLMClient
 from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse, LLMUsage
 from agent_learning_coach.core.llm.types import Message, ToolCall
 from agent_learning_coach.core.tools.mcp import serve
@@ -37,40 +40,9 @@ async def mcp_client_session(server: Server) -> AsyncIterator[ClientSession]:
             await asyncio.gather(server_task, return_exceptions=True)
 
 
-class ScriptedClient:
-    """按脚本依次返回预设响应的模型客户端。
-
-    ``repeat_last=True`` 时脚本耗尽后重复最后一个响应——用于模拟「模型一直
-    请求工具」的死循环场景。
-    """
-
-    def __init__(self, responses: list[LLMResponse], *, repeat_last: bool = False) -> None:
-        """初始化脚本化客户端。
-
-        Args:
-            responses: 依次返回的响应。
-            repeat_last: 脚本耗尽后是否重复最后一个响应。
-        """
-        self.responses = list(responses)
-        self.repeat_last = repeat_last
-        self.requests: list[LLMRequest] = []
-        self._last_response: LLMResponse | None = None
-
-    async def generate(self, request: LLMRequest) -> LLMResponse:
-        """返回脚本中的下一个响应。"""
-        self.requests.append(request)
-        if not self.responses:
-            if self.repeat_last and self._last_response is not None:
-                return self._last_response
-            raise AssertionError("脚本已耗尽，但循环仍在调用模型")
-        response = self.responses.pop(0)
-        self._last_response = response
-        return response
-
-    async def generate_structured(
-        self, request: LLMRequest, output_model: type[Any]
-    ) -> Any:  # pragma: no cover - Agent Loop 不使用结构化输出
-        raise NotImplementedError
+# 脚本化客户端只有一份实现，住在生产代码里——评估套件与测试共用它，
+# 避免两个替身各自漂移。
+ScriptedClient = ScriptedLLMClient
 
 
 class SlowClient:

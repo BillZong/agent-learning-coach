@@ -90,7 +90,8 @@ Agent Runtime 为应用层提供可复用的 Agent 执行能力。
 
 代码上，`Model Abstraction` 与 `Tool Calling` 分属 `core/llm` 与 `core/tools`
 两个平级包；`Agent Loop` 独立成 `core/agent` 包，与它们平级——循环只负责
-「模型 ↔ 工具」的控制，不寄生在模型客户端或工具系统里。
+「模型 ↔ 工具」的控制，不寄生在模型客户端或工具系统里。可观测性与评估也在
+`core/agent` 内：它们**只读**运行结果，与循环同包不会造成反向依赖。
 
 #### Model Abstraction
 
@@ -182,6 +183,26 @@ ReAct 执行循环 + 运行时状态，位于 `src/agent_learning_coach/core/age
 
 决策依据：[ADR-0013](decisions/0013-planning-and-reflection.md)。
 接入说明：[计划与反思接入说明](../engineering/planning.md)。
+
+#### 可观测性与评估
+
+可观测性与评估位于 `src/agent_learning_coach/core/agent/` 下两个模块，与运行时同包：
+
+- Trace / Metrics / 诊断：`src/agent_learning_coach/core/agent/observability.py`
+  - `RunTrace` / `StepTrace` / `ToolSpan`：从 `AgentResult` **投影**出运行轨迹
+  - `compute_metrics`：成功率、停止原因分布、工具失败率、步数与耗时百分位、token 与成本
+  - `diagnose`：停止原因 → 检查方向 + 证据（失败工具、重复动作）
+- 行为评估：`src/agent_learning_coach/core/agent/evaluation.py`
+  - `EvalCase` / `ScriptedTurn`：用例是数据（JSON 数据集 `evals/phase0.json`）
+  - `EvalHarness` / `EvalReport`：在固定工具集上确定性执行并逐条断言
+  - `ScriptedLLMClient`：确定性驱动器，测试复用同一实现
+
+**Trace 是投影，不是第二套事件系统**：事实只有一份（执行上下文的事件、步记录、工具结果）。唯一新增的插桩是 `AgentStep.think_ms`（模型调用耗时无法从已有事实推导），工具耗时沿用 `ToolOutcome.duration_ms`。
+
+**评估断言行为，不断言措辞**：工具调用序列、失败归一化、停止原因、输出交付都是可精确断言的行为契约；语义质量评估推迟到 Phase 2，因为判官不可回归、不能当门禁。
+
+决策依据：[ADR-0014](decisions/0014-observability-and-evaluation.md)。
+接入说明：[可靠性（Reliability）](../engineering/reliability.md)、[评估（Evaluation）](../engineering/evaluation.md)。
 
 #### MCP 协议适配
 
@@ -287,7 +308,7 @@ LLM 主要承担理解、推理、生成和辅助评估等概率性任务；关�
 | 静态类型检查 | mypy | 已确定 |
 | API 框架 | TBD | 待确定 |
 | 关系型数据库 | PostgreSQL | 计划采用 |
-| 可观测性 | TBD | 待确定 |
+| 可观测性 | 内置 Trace / Metrics，OpenTelemetry 待接入 | 已确定（ADR-0014） |
 
 注：技术选型会随着工程实践持续验证和调整。依赖库已经引入，不代表对应技术方案已经成为最终架构决策。
 

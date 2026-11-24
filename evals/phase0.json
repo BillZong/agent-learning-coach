@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "description": "Phase 0 基础评估集：验证运行时行为（工具调用、失败归一化、停止条件、输出交付），不评答案质量。",
+  "cases": [
+    {
+      "name": "纯文本回答",
+      "prompt": "用一句话介绍你自己。",
+      "turns": [
+        { "text": "我是学习教练，负责把目标拆成能执行的任务。" }
+      ],
+      "expected_output_contains": "学习教练"
+    },
+    {
+      "name": "一次工具调用后回答",
+      "prompt": "用 echo 工具确认收到你的问题，然后回答。",
+      "turns": [
+        { "tool": "echo", "arguments": { "text": "收到问题" } },
+        { "text": "收到：闭包是函数加上它捕获的环境。" }
+      ],
+      "expected_tools": ["echo"],
+      "expected_output_contains": "闭包"
+    },
+    {
+      "name": "工具失败被归一化后自愈",
+      "prompt": "调用 boom 工具；如果它失败，就说明情况并给出替代方案。",
+      "turns": [
+        { "tool": "boom", "arguments": {} },
+        { "text": "工具不可用，我改用讲解的方式回答。" }
+      ],
+      "expected_tools": ["boom"],
+      "expected_tool_errors": ["boom"],
+      "expected_output_contains": "工具不可用"
+    },
+    {
+      "name": "未知工具不炸掉运行",
+      "prompt": "调用一个不存在的工具；失败后换一种方式回答。",
+      "turns": [
+        { "tool": "missing_tool", "arguments": {} },
+        { "text": "这个工具不存在，直接用文字回答。" }
+      ],
+      "expected_tools": ["missing_tool"],
+      "expected_tool_errors": ["missing_tool"],
+      "expected_output_contains": "直接用文字回答"
+    },
+    {
+      "name": "步数上限兜底",
+      "prompt": "一直调用 echo。",
+      "turns": [
+        { "tool": "echo", "arguments": { "text": "1" } },
+        { "tool": "echo", "arguments": { "text": "2" } },
+        { "tool": "echo", "arguments": { "text": "3" } }
+      ],
+      "max_steps": 2,
+      "expected_stop_reason": "max_steps",
+      "expected_tools": ["echo", "echo"]
+    },
+    {
+      "name": "原地打转被识别",
+      "prompt": "反复用同样的参数调用 echo。",
+      "turns": [
+        { "tool": "echo", "arguments": { "text": "同样的参数" } },
+        { "tool": "echo", "arguments": { "text": "同样的参数" } },
+        { "tool": "echo", "arguments": { "text": "同样的参数" } }
+      ],
+      "max_steps": 6,
+      "expected_stop_reason": "repeated_call",
+      "expected_tools": ["echo", "echo", "echo"]
+    },
+    {
+      "name": "连续工具失败被识别",
+      "prompt": "连续调用 boom。",
+      "turns": [
+        { "tool": "boom", "arguments": {} },
+        { "tool": "boom", "arguments": {} },
+        { "tool": "boom", "arguments": {} }
+      ],
+      "max_steps": 6,
+      "expected_stop_reason": "consecutive_errors",
+      "expected_tools": ["boom", "boom", "boom"],
+      "expected_tool_errors": ["boom", "boom", "boom"]
+    }
+  ]
+}

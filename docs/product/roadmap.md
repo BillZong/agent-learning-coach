@@ -105,26 +105,28 @@
 
 #### 阶段交付物
 
-- [ ] 可运行的基础 Agent Runtime。
-- [ ] LLM 调用抽象。
-- [ ] Tool Calling 与工具执行机制。
-- [ ] Agent State 与 Session 管理。
-- [ ] 基础 Memory 与 RAG 能力。
-- [ ] 工具权限与安全策略。
-- [ ] 基础执行追踪能力。
-- [ ] 基础 Agent Evaluation。
-- [ ] Agent Runtime Architecture 文档。
-- [ ] 关键架构决策记录（ADR）。
+- [x] 可运行的基础 Agent Runtime。
+- [x] LLM 调用抽象。
+- [x] Tool Calling 与工具执行机制。
+- [x] Agent State 与 Session 管理。
+- [x] 基础 Memory 与 RAG 能力。
+- [x] 工具权限与安全策略。
+- [x] 基础执行追踪能力。
+- [x] 基础 Agent Evaluation。
+- [x] Agent Runtime Architecture 文档。
+- [x] 关键架构决策记录（ADR）。
 
 #### 阶段验收标准
 
-- [ ] Agent 能够理解用户输入并完成多轮交互。
-- [ ] Agent 能够根据任务选择并调用工具。
-- [ ] Agent 能够管理执行状态和 Session。
-- [ ] 工具执行异常能够得到合理处理。
-- [ ] 关键执行过程能够追踪。
-- [ ] 具备基本的工具安全控制。
-- [ ] 能够通过评估用例验证基础 Agent 行为。
+- [x] Agent 能够理解用户输入并完成多轮交互。
+- [x] Agent 能够根据任务选择并调用工具。
+- [x] Agent 能够管理执行状态和 Session。
+- [x] 工具执行异常能够得到合理处理。
+- [x] 关键执行过程能够追踪。
+- [x] 具备基本的工具安全控制。
+- [x] 能够通过评估用例验证基础 Agent 行为。
+
+阶段验收报告：[phase-0-acceptance.md](phase-0-acceptance.md)（逐条映射到可执行证据）。
 
 ---
 

@@ -83,6 +83,9 @@ jobs:
       - name: Run tests
         run: uv run --frozen --group dev pytest --cov=agent_learning_coach --cov-report=term-missing
 
+      - name: Run evaluation suite
+        run: uv run --frozen --group dev python examples/reliability_report.py
+
   build:
     name: Build
     runs-on: ubuntu-latest

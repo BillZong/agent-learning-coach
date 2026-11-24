@@ -260,7 +260,31 @@ token 预算耗尽             -> max_tokens
 
 ## 可观测性
 
-- TBD
+入口在 `agent_learning_coach.core.agent`：`build_trace` / `compute_metrics` /
+`diagnose`。
+
+```python
+from agent_learning_coach.core.agent import build_trace, compute_metrics, diagnose
+
+trace = build_trace(result)  # 一次运行的轨迹（投影，不新增事实）
+print(trace.stop_reason, trace.duration_ms)
+print(diagnose(trace))  # 失败时的证据化诊断
+
+metrics = compute_metrics([trace])  # 多次运行的聚合
+print(metrics.summary())
+```
+
+三条约定：
+
+- **Trace 是投影**：只读 `AgentResult`，事实仍住在执行上下文里。模型耗时来自
+  `AgentStep.think_ms`，工具耗时来自 `ToolOutcome.duration_ms`。
+- **指标用来比较**，不用来宣称；十次以下的运行，p95 基本等于最大值。
+- **诊断只给证据**（失败工具、重复动作），不给没有依据的建议；成功与
+  `pending_approval` 不诊断。
+
+完整示例见 `examples/reliability_report.py`；失败模式分类与重试策略见
+[可靠性（Reliability）](reliability.md)，决策依据见
+[ADR-0014](../architecture/decisions/0014-observability-and-evaluation.md)。
 
 ## 可运行示例
 
@@ -269,6 +293,7 @@ token 预算耗尽             -> max_tokens
 | `examples/basic_react_agent.py` | 基础 ReAct Agent：纯本地工具、无子进程、无凭证，脚本化模型走完三轮工具调用 |
 | `examples/agent_runtime.py` | 基础 Agent Runtime：演示 Execution Context、Runtime State 与 Cost Control |
 | `examples/agent_loop_with_mcp.py` | 同一个循环驱动远端 MCP 工具与本地工具（真实 MCP 子进程 + 真实协议） |
+| `examples/reliability_report.py` | 可靠性报告：Trace → Metrics → 失败诊断 → 评估套件（7 条行为用例） |
 
 两个示例并列即可看出「换工具来源不改循环」：循环代码完全一样，只有工具注册表
 的填充方式不同。
