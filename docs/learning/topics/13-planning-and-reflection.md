@@ -101,7 +101,7 @@ Planner 与 Reflection 的职责如何切分？如何避免反思循环把学习
     一起保存与恢复。
   - **示例**：`examples/learning_plan.py`——目标 → 任务 → 推进 → 反思 →
     重规划的完整闭环，外加五种被拒绝的修改。
-  - **测试**：`tests/test_planning.py`（45 个）。
+  - **测试**：`tests/test_planning.py`（47 个）。
 - **为什么这样设计？**
   - **增量而不是重写**：整份重写时，「已完成的任务被漏掉」是机制性故障；
     增量提交没有机会漏掉没提到的任务。
@@ -113,8 +113,11 @@ Planner 与 Reflection 的职责如何切分？如何避免反思循环把学习
     情况下随手改计划。
   - **id 先分配、后校验**：这样同一批修改里「新建 t4」与「让 t2 依赖 t4」可以
     一次写完，与两条在清单里的先后无关。
-  - **渲染按依赖排序**：重规划插入的前置任务一定晚于被依赖的任务创建；按创建
-    顺序渲染，计划读起来就是乱的。
+  - **三种顺序各管一件事**：历史看创建顺序（`Plan.tasks` 只追加）、调度看就绪
+    条件（`startable_tasks()` 返回集合，不排序）、展示看依赖拓扑（只服务
+    `render_plan`）。重规划插入的前置任务一定晚于被依赖的任务创建，所以展示
+    需要拓扑排序；但把同一个排序结果拿去调度或记历史，跳过与重开就会让静态
+    顺序脱节、修订记录会说谎。
 - **有哪些替代方案？**
   - **照搬教材的整份重写**：最简单，但把「计划越改越乱」当成模型的错。否决。
   - **计划只放在 prompt 里，不建模**：省一个包，但计划无法持久化、无法校验、
@@ -124,7 +127,7 @@ Planner 与 Reflection 的职责如何切分？如何避免反思循环把学习
   - **允许删除任务**：实现更简单，但历史会出现空洞，「这个任务去哪儿了」答不上
     来。改为 `skipped`。
 - **测试结果如何？**
-  - `tests/test_planning.py`：**45 passed**；全量 **575 passed**；ruff / mypy
+  - `tests/test_planning.py`：**47 passed**；全量 **577 passed**；ruff / mypy
     全绿。
   - `examples/learning_plan.py` 跑通完整闭环，并演示了五种被拒绝的修改及其
     原因。
@@ -168,7 +171,7 @@ Planner 与 Reflection 的职责如何切分？如何避免反思循环把学习
   - `examples/learning_plan.py`
   - `docs/engineering/planning.md`
   - [ADR-0013](../../architecture/decisions/0013-planning-and-reflection.md)
-- Tests: `tests/test_planning.py`（45 个）；全量 575 passed，ruff / mypy 全绿
+- Tests: `tests/test_planning.py`（47 个）；全量 577 passed，ruff / mypy 全绿
 - ADR: [ADR-0013](../../architecture/decisions/0013-planning-and-reflection.md)
   ——计划与反思的职责边界
 - Article Notes: [docs/articles/agent-runtime.md](../../articles/agent-runtime.md)

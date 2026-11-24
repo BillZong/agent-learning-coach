@@ -244,7 +244,12 @@ class Plan:
     """计划要达成的目标。"""
 
     tasks: list[PlanTask] = field(default_factory=list)
-    """任务列表，按创建顺序排列。"""
+    """任务列表，**只追加**，保持创建顺序。
+
+    这是历史顺序：修订历史与「谁先存在」都以它为准。展示顺序由
+    `render_plan` 另行计算，调度由 `startable_tasks()` 另行判断——三者
+    不共用同一个排序结果。
+    """
 
     revision: int = 0
     """当前修订号。"""
@@ -294,6 +299,26 @@ class Plan:
         for item in self.tasks:
             counts[item.status] = counts.get(item.status, 0) + 1
         return counts
+
+    def startable_tasks(self) -> list[PlanTask]:
+        """可以现在开始的任务——**调度问的是就绪，不是顺序**。
+
+        一个任务可以开始，当且仅当它还没开始过（``pending``）且前置全部
+        ``completed``。返回列表沿用创建顺序，只是为了遍历稳定；这个顺序没有
+        语义，不要拿它当执行计划。
+
+        与展示顺序无关：展示回答「从哪读到哪」，这里回答「现在能动手做什么」。
+        两者不一致是正常的——跳过、重开、重规划都会改变就绪集合。
+
+        Returns:
+            可以开始的任务；没有时返回空列表。
+        """
+        statuses = {item.task_id: item.status for item in self.tasks}
+        return [
+            item
+            for item in self.tasks
+            if item.status == "pending" and not _unmet_dependencies(item, statuses)
+        ]
 
     def to_dict(self) -> dict[str, Any]:
         """序列化成可 JSON 化的字典。
@@ -1214,7 +1239,7 @@ class PlanManager:
 
         statuses = {task.task_id: task.status for task in working}
         for task in active:
-            unmet = [dep for dep in task.depends_on if statuses.get(dep) != "completed"]
+            unmet = _unmet_dependencies(task, statuses)
             if unmet:
                 raise PlanError(
                     f"任务 {task.task_id} 的前置任务 {', '.join(unmet)} 尚未完成，不能开始；"
@@ -1269,6 +1294,23 @@ class PlanManager:
         self.context.state[PLAN_STATE_KEY] = plan.to_dict()
 
 
+def _unmet_dependencies(task: PlanTask, statuses: Mapping[str, str]) -> list[str]:
+    """列出任务尚未完成的前置。
+
+    这是**唯一的就绪谓词**：`Plan.startable_tasks`（调度）与
+    `PlanManager._check_consistency`（进行中的任务前置必须已完成）共用它，
+    避免两处各写一遍、慢慢走偏。
+
+    Args:
+        task: 任务。
+        statuses: 任务 id 到状态的映射。
+
+    Returns:
+        尚未完成的前置任务 id；全部完成时为空列表。
+    """
+    return [dep for dep in task.depends_on if statuses.get(dep) != "completed"]
+
+
 def _find_cycle(tasks: Sequence[PlanTask]) -> list[str] | None:
     """在任务依赖图里找环。
 
@@ -1312,12 +1354,19 @@ def _find_cycle(tasks: Sequence[PlanTask]) -> list[str] | None:
     return None
 
 
-def _display_order(tasks: Sequence[PlanTask]) -> list[PlanTask]:
-    """按依赖关系排出展示顺序。
+def _presentation_order(tasks: Sequence[PlanTask]) -> list[PlanTask]:
+    """按依赖排出**展示**顺序。
 
-    **计划的逻辑顺序由依赖决定，不由创建顺序决定。** 重规划插入的前置任务
-    一定晚于依赖它的任务被创建——若按创建顺序展示，前置任务会排在后面，
-    计划读起来就是乱的。
+    这里只回答一个问题：「计划该从哪读到哪」。它**不是调度，也不是历史**：
+
+    - 调度看就绪条件（`Plan.startable_tasks`），不看「列表里的下一个」。
+      跳过、重开、重规划都会改变就绪集合，静态顺序跟不上。
+    - 历史看创建顺序（`Plan.tasks` 本身）。按拓扑排序记历史，新插入的前置
+      任务会排到旧任务之前，修订记录就开始说谎。
+
+    重规划插入的前置任务一定晚于依赖它的任务被创建——若按创建顺序展示，
+    前置任务会排在后面，计划读起来就是乱的，所以展示需要拓扑排序。并列的
+    任务按创建顺序排，保证同一份计划每次渲染结果一致。
 
     拓扑排序无法完成时（理论上不会：成环的依赖在写入时就被拒绝）退回创建
     顺序，保证渲染永远有结果。
@@ -1360,7 +1409,8 @@ def _display_order(tasks: Sequence[PlanTask]) -> list[PlanTask]:
 def render_plan(plan: Plan) -> str:
     """把计划渲染成给模型看的文本。
 
-    任务按**依赖顺序**展示——逻辑顺序由依赖决定，不由创建顺序决定。
+    任务按**依赖顺序**展示——那只是阅读顺序（见 `_presentation_order`），
+    不代表执行顺序；能做什么由「可以开始」那一行回答。
 
     Args:
         plan: 计划。
@@ -1369,13 +1419,16 @@ def render_plan(plan: Plan) -> str:
         文本。
     """
     lines = [f"学习计划：{plan.goal}（修订 {plan.revision}，重规划 {plan.replan_count} 次）"]
-    for task in _display_order(plan.tasks):
+    for task in _presentation_order(plan.tasks):
         marker = _STATUS_MARKERS.get(task.status, "[?]")
         label = _STATUS_LABELS.get(task.status, task.status)
         line = f"{marker} {task.task_id} {task.content}（{label}）"
         if task.depends_on:
             line += f" ← 依赖 {', '.join(task.depends_on)}"
         lines.append(line)
+    startable = plan.startable_tasks()
+    if startable:
+        lines.append("可以开始：" + "、".join(task.task_id for task in startable))
     counts = plan.status_counts()
     if counts:
         summary = "，".join(
@@ -1425,6 +1478,9 @@ _UPDATE_PLAN_DESCRIPTION = """\
 - 新增 / 跳过 / 重开 / 改依赖属于结构性修改，受重规划预算限制。
 - 若此前有一条 verdict="replan" 的反思尚未处理，本次结构性修改必须带上它的
   reflection_id。
+
+计划里的任务按依赖排成阅读顺序，**那只是阅读顺序**；「可以开始」一行才是
+当前能动手的任务，不要按列表顺序依次执行。
 """
 
 _REFLECT_DESCRIPTION = """\

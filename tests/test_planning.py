@@ -447,6 +447,39 @@ def test_plan_renders_in_dependency_order() -> None:
     assert rendered.index("t0") < rendered.index("t2")
 
 
+def test_creation_order_is_the_history_order() -> None:
+    """历史看创建顺序，展示看依赖——两者不能互相顶替。"""
+    _, manager = make_manager()
+    seed_plan(manager)
+    manager.apply(
+        [
+            TaskChange(new_task_id="t0", content="动手写一个闭包例子"),
+            TaskChange(task_id="t2", depends_on=("t0",)),
+        ],
+        "插入前置任务",
+    )
+    plan = manager.require_plan()
+
+    assert [task.task_id for task in plan.tasks] == ["t1", "t2", "t3", "t0"]
+    assert [item["task_id"] for item in plan.to_dict()["tasks"]] == ["t1", "t2", "t3", "t0"]
+    assert render_plan(plan).index("t0") < render_plan(plan).index("t2")
+
+
+def test_startable_tasks_is_readiness_not_display_order() -> None:
+    """调度看就绪条件：可开始的集合与展示顺序无关。"""
+    _, manager = make_manager()
+    seed_plan(manager)
+    assert [task.task_id for task in manager.require_plan().startable_tasks()] == ["t1"]
+
+    manager.apply([TaskChange(task_id="t1", status="in_progress")], "开始")
+    assert manager.require_plan().startable_tasks() == []
+
+    manager.apply([TaskChange(task_id="t1", status="completed")], "做完了")
+    plan = manager.require_plan()
+    assert [task.task_id for task in plan.startable_tasks()] == ["t2"]
+    assert "可以开始：t2" in render_plan(plan)
+
+
 # --------------------------------------------------------------------------
 # 持久化
 # --------------------------------------------------------------------------
