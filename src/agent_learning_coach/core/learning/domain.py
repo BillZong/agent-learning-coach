@@ -2,9 +2,9 @@
 
 Topic 15 的问题是：Learner、Course、Learning Goal 三个概念的边界在哪里？哪些是
 实体，哪些是值对象？Topic 16 继续问：知识点与知识点关系怎么建模，才能同时支撑
-**路径计算**与**薄弱点归因**？
+**路径计算**与**薄弱点归因**？Topic 17 再问：目标的状态机与约束该怎么建模。
 
-分类（论证见 ADR-0015、ADR-0016）：
+分类（论证见 ADR-0015、ADR-0016、ADR-0017）：
 
 | 概念 | 分类 | 身份 | 归属 |
 | ---- | ---- | ---- | ---- |
@@ -13,8 +13,8 @@ Topic 15 的问题是：Learner、Course、Learning Goal 三个概念的边界�
 | `KnowledgeStructure` | 值对象 | 无 | `Course` 聚合内部 |
 | `KnowledgePoint` | 实体 | `KnowledgePointId` | 结构内部 |
 | `KnowledgeRelation` | 值对象 | 无 | 结构内部 |
-| `LearningGoal` | 实体 | `GoalId` | 独立聚合：Learner 与 Course 的**关联** |
-| 四类标识、`GoalConstraint` | 值对象 | 无身份，按值相等 | 不单独存在 |
+| `LearningGoal` | 实体 | `GoalId` | 独立聚合：Learner 与 Course 的**关联**（见 `goal.py`） |
+| 四类标识 | 值对象 | 无身份，按值相等 | 不单独存在 |
 
 四条边界规则：
 
@@ -24,8 +24,9 @@ Topic 15 的问题是：Learner、Course、Learning Goal 三个概念的边界�
 2. **身份来自 id，不来自对象。** 实体不可变（`frozen`）：改名、达成目标都返回
    新实例。历史与审计因此不会被原地修改掉，对象可以在任意地方安全传递。
 3. **不变量在构造时校验，不交给调用方自觉。** 知识点 id 唯一、关系端点存在、
-   `requires` 无环、`part_of` 是树、同一终态不可回退——违反时抛 `DomainError`，
-   错误信息说明「哪里不对、怎么改」。
+   `requires` 无环、`part_of` 是树——违反时抛 `DomainError`，错误信息说明
+   「哪里不对、怎么改」。目标自身的规则在 `goal.py`，跨目标的规则在
+   `consistency.py`。
 4. **关系是结构的事实，不是知识点的字段。** 前置不是 `KnowledgePoint` 的属性，
    而是 `KnowledgeStructure` 里的一条 `requires` 关系：同一个点可以被多条关系
    引用，把列表塞进点里会让「改一处、另一处过期」成为可能。
@@ -49,16 +50,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
-GoalStatus = Literal["active", "achieved", "abandoned"]
-"""学习目标生命周期。
-
-``active`` 是唯一可迁移的状态；``achieved`` 与 ``abandoned`` 都是终态——目标
-一旦达成或放弃就不能回到进行中，要重新学习就新建目标。
-"""
-
-ConstraintKind = Literal["time", "prerequisite", "preference"]
-"""目标约束的种类。"""
-
 RelationKind = Literal["requires", "part_of"]
 """知识点关系的种类。
 
@@ -73,18 +64,6 @@ RelationKind = Literal["requires", "part_of"]
 复杂（见 ADR-0016）。
 """
 
-_STATUS_LABELS: dict[GoalStatus, str] = {
-    "active": "进行中",
-    "achieved": "已达成",
-    "abandoned": "已放弃",
-}
-
-_CONSTRAINT_LABELS: dict[ConstraintKind, str] = {
-    "time": "时间",
-    "prerequisite": "先修",
-    "preference": "偏好",
-}
-
 
 class DomainError(Exception):
     """领域规则被违反。
@@ -93,7 +72,7 @@ class DomainError(Exception):
     """
 
 
-def _require_text(field: str, value: str) -> None:
+def require_text(field: str, value: str) -> None:
     """校验文本字段非空且没有首尾空白。"""
     if not value or not value.strip():
         raise DomainError(f"{field}不能为空")
@@ -112,7 +91,7 @@ class _Identifier:
     value: str
 
     def __post_init__(self) -> None:
-        _require_text("标识", self.value)
+        require_text("标识", self.value)
 
     def __str__(self) -> str:
         """返回标识文本。"""
@@ -140,33 +119,6 @@ class KnowledgePointId(_Identifier):
 
 
 @dataclass(frozen=True)
-class GoalConstraint:
-    """学习目标的约束条件——**值对象**。
-
-    没有 id：两条内容相同的约束是同一个约束，替换其中一条不产生新身份。
-    """
-
-    kind: ConstraintKind
-    """约束种类。"""
-
-    text: str
-    """约束内容，例如「每周 3 小时」。"""
-
-    def __post_init__(self) -> None:
-        """校验约束内容。"""
-        _require_text("约束内容", self.text)
-
-    @property
-    def label(self) -> str:
-        """约束种类的中文标签。"""
-        return _CONSTRAINT_LABELS[self.kind]
-
-    def render(self) -> str:
-        """渲染成给模型与用户看的文本。"""
-        return f"{self.label}：{self.text}"
-
-
-@dataclass(frozen=True)
 class Learner:
     """学习者——**实体**。
 
@@ -191,9 +143,9 @@ class Learner:
 
     def __post_init__(self) -> None:
         """校验名称与描述条目。"""
-        _require_text("学习者名称", self.name)
+        require_text("学习者名称", self.name)
         for item in (*self.background, *self.preferences):
-            _require_text("学习者描述条目", item)
+            require_text("学习者描述条目", item)
 
     def rename(self, name: str) -> Learner:
         """改名并返回新实例——实体不可变。
@@ -207,7 +159,7 @@ class Learner:
         Raises:
             DomainError: 新名称为空。
         """
-        _require_text("学习者名称", name)
+        require_text("学习者名称", name)
         return replace(self, name=name)
 
 
@@ -230,9 +182,9 @@ class KnowledgePoint:
 
     def __post_init__(self) -> None:
         """校验名称与摘要。"""
-        _require_text("知识点名称", self.title)
+        require_text("知识点名称", self.title)
         if self.summary:
-            _require_text("知识点摘要", self.summary)
+            require_text("知识点摘要", self.summary)
 
 
 @dataclass(frozen=True)
@@ -528,85 +480,7 @@ class Course:
         Raises:
             DomainError: 名称为空或含首尾空白。
         """
-        _require_text("课程名称", self.title)
-
-
-@dataclass(frozen=True)
-class LearningGoal:
-    """学习目标——**实体**，也是 Learner 与 Course 之间的关联聚合。
-
-    目标不是学习者的子对象，也不是课程的子对象：它引用两个 id，自己是一个
-    独立的生命周期（进行中 → 已达成 / 已放弃）。
-    """
-
-    id: GoalId
-    """目标标识。"""
-
-    learner_id: LearnerId
-    """目标所属的学习者。"""
-
-    course_id: CourseId
-    """目标对应的课程。"""
-
-    statement: str
-    """目标陈述。"""
-
-    outcomes: tuple[str, ...]
-    """可验证的学习结果——至少一条。"""
-
-    constraints: tuple[GoalConstraint, ...] = ()
-    """约束条件。"""
-
-    status: GoalStatus = "active"
-    """生命周期状态。"""
-
-    def __post_init__(self) -> None:
-        """校验目标内容。
-
-        Raises:
-            DomainError: 陈述为空，或没有任何学习结果。
-        """
-        _require_text("目标陈述", self.statement)
-        if not self.outcomes:
-            raise DomainError(f"目标「{self.statement}」至少要有一条可验证的学习结果")
-        for outcome in self.outcomes:
-            _require_text("学习结果", outcome)
-
-    @property
-    def is_open(self) -> bool:
-        """目标是否仍在进行中。"""
-        return self.status == "active"
-
-    def achieve(self) -> LearningGoal:
-        """把目标标记为已达成并返回新实例。
-
-        Returns:
-            已达成的新实例。
-
-        Raises:
-            DomainError: 目标已不处于进行中。
-        """
-        return self._transition("achieved")
-
-    def abandon(self) -> LearningGoal:
-        """放弃目标并返回新实例。
-
-        Returns:
-            已放弃的新实例。
-
-        Raises:
-            DomainError: 目标已不处于进行中。
-        """
-        return self._transition("abandoned")
-
-    def _transition(self, target: GoalStatus) -> LearningGoal:
-        """校验状态迁移并返回新实例。"""
-        if self.status != "active":
-            raise DomainError(
-                f"目标 {self.id} 状态为{_STATUS_LABELS[self.status]}，"
-                f"不能再变更为{_STATUS_LABELS[target]}",
-            )
-        return replace(self, status=target)
+        require_text("课程名称", self.title)
 
 
 def _topological_order(
@@ -666,19 +540,16 @@ def _describe_cycle(
 
 
 __all__ = [
-    "ConstraintKind",
     "Course",
     "CourseId",
     "DomainError",
-    "GoalConstraint",
     "GoalId",
-    "GoalStatus",
     "KnowledgePoint",
     "KnowledgePointId",
     "KnowledgeRelation",
     "KnowledgeStructure",
     "Learner",
     "LearnerId",
-    "LearningGoal",
     "RelationKind",
+    "require_text",
 ]

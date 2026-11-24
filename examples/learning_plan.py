@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 
 from agent_learning_coach.core.agent import (
     AgentConfig,
@@ -41,11 +42,14 @@ from agent_learning_coach.core.agent import (
     render_plan,
 )
 from agent_learning_coach.core.learning import (
+    CapabilityRequirement,
     CourseId,
-    GoalConstraint,
+    DailyEffort,
     GoalId,
+    KnowledgePointId,
     LearnerId,
     LearningGoal,
+    TimeWindow,
     to_goal_spec,
 )
 from agent_learning_coach.core.llm.models import LLMResponse, LLMUsage
@@ -200,10 +204,15 @@ async def main() -> None:
             "能写出三个真实的闭包例子",
             "能用闭包实现一个带私有状态的计数器",
         ),
-        constraints=(
-            GoalConstraint(kind="time", text="每周 3 小时"),
-            GoalConstraint(kind="prerequisite", text="函数与作用域"),
+        requirements=(
+            CapabilityRequirement(
+                point_id=KnowledgePointId("k2"),
+                outcome="能用闭包实现一个带私有状态的计数器",
+            ),
         ),
+        time_window=TimeWindow(start=date(2026, 11, 24), end=date(2027, 1, 24)),
+        daily_effort=DailyEffort(minutes_per_day=90),
+        prerequisites=(KnowledgePointId("k1"),),
     )
     spec = to_goal_spec(goal)
     draft = await OutcomePlanner().plan(spec)

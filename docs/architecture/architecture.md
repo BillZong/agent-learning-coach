@@ -69,23 +69,34 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 - Mastery Model：知识掌握度模型。
 
 当前已建模（Phase 1，见 [domain.md](../engineering/domain.md) 与
-[ADR-0015](./decisions/0015-learning-domain-boundaries.md)）：
+[ADR-0015](./decisions/0015-learning-domain-boundaries.md)、
+[ADR-0016](./decisions/0016-knowledge-representation.md)、
+[ADR-0017](./decisions/0017-learning-goal-modeling.md)）：
 
 | 概念 | 类型 | 位置 |
 | ---- | ---- | ---- |
 | Learner | 实体（独立聚合） | `core.learning.domain.Learner` |
 | Course / KnowledgePoint | 实体（课程聚合） | `core.learning.domain.Course` |
 | Knowledge Structure / Relation | 值对象（课程内部） | `core.learning.domain.KnowledgeStructure` |
-| Learning Goal | 实体（关联聚合） | `core.learning.domain.LearningGoal` |
-| 各类 id、目标约束 | 值对象 | `core.learning.domain` |
+| Learning Goal | 实体（关联聚合） | `core.learning.goal.LearningGoal` |
+| 目标状态机与约束 | 值对象 | `core.learning.goal`（`TimeWindow` / `DailyEffort` / `CapabilityRequirement` / `GoalTransition`） |
+| 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` |
+| 各类 id | 值对象 | `core.learning.domain` |
 
 边界规则：跨聚合只按 id 引用（目标记 `learner_id` / `course_id`，学习者不记
 目标）；实体不可变；不变量在构造时校验；关系外置在结构里（`requires` 决定
-顺序，`part_of` 决定归属）；顺序与闭包都是派生视图，不持久化。
+顺序，`part_of` 决定归属）；顺序与闭包都是派生视图，不持久化；目标状态由迁移
+历史派生，历史是唯一事实来源。
 
 知识结构查询：`order()`（先学什么）、`prerequisite_closure()`（补课顺序）、
 `dependent_closure()`（影响范围）、`parent_of()` / `children_of()`（主题层级）。
 见 [ADR-0016](./decisions/0016-knowledge-representation.md)。
+
+目标建模：状态机（草稿 → 进行中 ⇄ 已暂停 → 已达成 / 已放弃 / 已过期）、
+结构化约束（时间范围、每日投入、前置知识点）、按 id 绑定知识点。**保证责任按
+「判断需要什么数据」分三档**：聚合内自洽由领域层构造时校验；跨聚合一致由领域
+服务检查；依赖时钟、掌握度、学习证据的判断留给应用层。见
+[ADR-0017](./decisions/0017-learning-goal-modeling.md)。
 
 **依赖方向**：`core.learning` 不认识模型、工具与运行时；学习目标通过
 `bridge.to_goal_spec` 单向映射成 `GoalSpec` 后交给 `core.agent`。

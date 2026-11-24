@@ -4,16 +4,21 @@ Phase 1 的业务核心：学习者、课程与知识点、学习目标。
 
 - **实体**（身份来自 id）：``Learner``、``Course``、``KnowledgePoint``、
   ``LearningGoal``。
-- **值对象**（按值相等）：四类 id、``GoalConstraint``、``KnowledgeStructure``、
-  ``KnowledgeRelation``。
+- **值对象**（按值相等）：四类 id、``KnowledgeStructure``、
+  ``KnowledgeRelation``、``TimeWindow``、``DailyEffort``、
+  ``CapabilityRequirement``、``GoalTransition``。
 - **聚合边界**：``Course`` 拥有知识结构（知识点 + 关系）；``LearningGoal`` 用
   id 引用学习者与课程，是三者之间的关联，而不是任何一方的子对象。
 - **知识表示**：``KnowledgeStructure`` 提供派生查询——学习顺序 ``order()``、
   前置闭包 ``prerequisite_closure()``、影响范围 ``dependent_closure()``、
   主题层级 ``parent_of()`` / ``children_of()``。
+- **目标状态机**：``LearningGoal`` 的状态由迁移历史派生；合法迁移表在
+  ``goal.py``，每次迁移都留理由与时间。
+- **跨聚合一致**：``consistency.check_goal_against_course`` 检查目标引用的
+  知识点是否真实存在。
 - **不变量**：知识点 id 唯一、关系端点存在且不重复、``requires`` 无环、
-  ``part_of`` 是树、目标至少一条学习结果、终态不可回退。违反时抛
-  ``DomainError``。
+  ``part_of`` 是树、目标至少一条学习结果、能力要求与前置条件不重复、迁移历史
+  不断链。违反时抛 ``DomainError``。
 
 它与 Agent 运行时的关系是单向的：``to_goal_spec`` 把 ``LearningGoal`` 映射成
 ``GoalSpec``，运行时因此不需要认识学习领域（ADR-0013 §10、ADR-0015）。
@@ -22,32 +27,44 @@ Phase 1 的业务核心：学习者、课程与知识点、学习目标。
 """
 
 from agent_learning_coach.core.learning.bridge import to_goal_spec
+from agent_learning_coach.core.learning.consistency import (
+    GoalIssue,
+    GoalIssueCode,
+    check_goal_against_course,
+)
 from agent_learning_coach.core.learning.domain import (
-    ConstraintKind,
     Course,
     CourseId,
     DomainError,
-    GoalConstraint,
     GoalId,
-    GoalStatus,
     KnowledgePoint,
     KnowledgePointId,
     KnowledgeRelation,
     KnowledgeStructure,
     Learner,
     LearnerId,
-    LearningGoal,
     RelationKind,
+)
+from agent_learning_coach.core.learning.goal import (
+    CapabilityRequirement,
+    DailyEffort,
+    GoalStatus,
+    GoalTransition,
+    LearningGoal,
+    TimeWindow,
 )
 
 __all__ = [
-    "ConstraintKind",
+    "CapabilityRequirement",
     "Course",
     "CourseId",
+    "DailyEffort",
     "DomainError",
-    "GoalConstraint",
     "GoalId",
+    "GoalIssue",
+    "GoalIssueCode",
     "GoalStatus",
+    "GoalTransition",
     "KnowledgePoint",
     "KnowledgePointId",
     "KnowledgeRelation",
@@ -56,5 +73,7 @@ __all__ = [
     "LearnerId",
     "LearningGoal",
     "RelationKind",
+    "TimeWindow",
+    "check_goal_against_course",
     "to_goal_spec",
 ]

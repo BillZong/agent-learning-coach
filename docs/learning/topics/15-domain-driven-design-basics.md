@@ -25,7 +25,7 @@ Learner、Course、Learning Goal 三个概念的边界是什么？哪些是实�
 
 | 来源 | 核心观点 | 与主教材的关系 |
 |---|---|---|
-| Eric Evans, *Domain-Driven Design*（2003） | 实体由身份定义；值对象描述特征、无身份、应不可变；聚合是一致性边界 | 本主题没有主教材章节，这条是本项目的分类依据：`Learner` / `Course` / `LearningGoal` 有身份 → 实体；四类 id 与 `GoalConstraint` 无身份 → 值对象 |
+| Eric Evans, *Domain-Driven Design*（2003） | 实体由身份定义；值对象描述特征、无身份、应不可变；聚合是一致性边界 | 本主题没有主教材章节，这条是本项目的分类依据：`Learner` / `Course` / `LearningGoal` 有身份 → 实体；四类 id 无身份 → 值对象（Topic 17 起，目标的时间范围 / 每日投入 / 能力要求也是值对象） |
 | Vaughn Vernon, *Implementing Domain-Driven Design*（2013）；*Effective Aggregate Design* | **设计小聚合**；用不变量确定边界；引用其他聚合用 id；一次事务只改一个聚合 | 决定了本项目不把 `LearningGoal` 塞进 `Learner`：目标的生命周期是它自己的不变量，不需要学习者的整份状态参与 |
 | Martin Fowler, bliki: *ValueObject* | 值对象是「相等性不基于身份」的小对象；不可变使其可以安全共享 | 支撑「id 用值对象而不是裸 `str`」：`CourseId` 与 `LearnerId` 相等性不同，传错类型立刻暴露 |
 | 本项目 ADR-0013 / ADR-0015 | 领域模型与运行时单向解耦：`GoalSpec` 是交接形状；顺序是派生视图，不持久化 | 领域模型不认识 `core.agent`；映射只发生在 `bridge.to_goal_spec`。`structure.order()` 与计划的「展示顺序」同一个原则：派生、可重算、不落库 |
@@ -68,13 +68,13 @@ Learner、Course、Learning Goal 三个概念的边界是什么？哪些是实�
 - **实现了什么？**
   - `core/learning/domain.py`：
     - 值对象：`LearnerId` / `CourseId` / `GoalId` / `KnowledgePointId`（共享
-      `_Identifier` 基类，类型不同即不等）、`GoalConstraint`（`render()` 产出
-      `时间：每周 3 小时`）。
+      `_Identifier` 基类，类型不同即不等）。
     - 实体：`Learner`（`rename()` 返回新实例）、`KnowledgePoint`、`Course`
-      （构造时校验唯一性/前置/无环）、`LearningGoal`（`achieve()` /
-      `abandon()`，终态不可回退）。
+      （构造时校验唯一性/前置/无环）。
     - 派生视图：`Course.structure.order()` 拓扑序、`structure.point(id)`。
     - `DomainError`：错误信息面向调用方，成环时给出环路径。
+  - `core/learning/goal.py`：`LearningGoal`（Topic 15 的 `achieve()` /
+    `abandon()` 已在 Topic 17 扩展为六状态状态机，状态由迁移历史派生）。
   - `core/learning/bridge.py`：`to_goal_spec()` 单向映射到 `GoalSpec`。
   - `core/learning/__init__.py`：统一导出。
 - **为什么这样设计？**
@@ -118,7 +118,9 @@ Learner、Course、Learning Goal 三个概念的边界是什么？哪些是实�
 2. **哪个观点改变或修正了原来的理解？**
    原以为「值对象只是不可变的小类」。实际上它的价值在**相等性语义**：四类 id
    变成不同值对象之后，「把学习者 id 当课程 id 传」从运行时故障变成类型错误；
-   而 `GoalConstraint` 不设 id，是因为同一条约束出现两次不该有两个身份。
+   值对象不需要 id，是因为同一条描述出现两次不该有两个身份（Topic 17 起目标
+   的约束不再用自由文本，而是 `TimeWindow` / `DailyEffort` 这类有结构的值
+   对象）。
 3. **当前实现还有哪些局限？**
    引用完整性（目标引用的学习者/课程是否存在）在内存里无法校验；没有持久化
    与版本号，接数据库时写入路径必须复用同一套不变量；知识点跨课程共享、
@@ -134,7 +136,8 @@ Learner、Course、Learning Goal 三个概念的边界是什么？哪些是实�
   [architecture.md](../../architecture/architecture.md) 学习领域层一节
 - Unresolved Questions:
   - 知识点是否跨课程共享（Topic 16 已决定：仍在课程内，见 ADR-0016）
-  - 学习目标是否需要绑定知识点集合（Topic 17）
+  - 学习目标是否需要绑定知识点集合（Topic 17 已决定：按 id 绑定，见 ADR-0017）
   - 已有知识/掌握度的模型（Topic 18、Topic 20）
-  - 持久化与引用完整性校验放在哪一层（Phase 1 后段）
+  - 持久化与引用完整性校验放在哪一层（Phase 1 后段；Topic 17 已细化三档边界，
+    见 ADR-0017）
   - 聚合粒度与小聚合查询成本的量化比较（尚无实验）

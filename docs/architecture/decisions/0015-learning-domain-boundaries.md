@@ -172,3 +172,30 @@ Topic 16 重构了知识结构的形状，本 ADR 的聚合边界不变，具体
    全局知识地图留给 Topic 22。
 
 知识点仍然是 `Course` 聚合内部的实体，`LearningGoal` 仍然只按 id 引用课程。
+
+## 补充说明（2026-11-24，Topic 17）
+
+Topic 17 深化了目标这个聚合，本 ADR 的聚合边界不变，具体接口有四处演进：
+
+1. **目标模型独立成 `core/learning/goal.py`**：`LearningGoal` 与它的值对象
+   （`TimeWindow` / `DailyEffort` / `CapabilityRequirement` / `GoalTransition`）
+   从 `domain.py` 拆出，`domain.py` 保留学习者、课程与知识结构。
+2. **状态机取代单一 `status` 字段**：六状态（草稿 / 进行中 / 已暂停 / 已达成 /
+   已放弃 / 已过期），状态**由迁移历史派生**；每次迁移留理由与时间
+   （ADR-0017）。
+3. **约束从自由文本升级为结构化值对象**：`GoalConstraint(kind, text)` 移除。
+   自由文本无法校验、无法计算，只能给模型看。
+4. **目标按 id 绑定知识点**：本 ADR 留下的「`LearningGoal` 没有
+   `knowledge_point_ids`」在本主题决定——绑定用 `CapabilityRequirement`，
+   仍然**只按 id 引用**，不嵌入 `Course`。
+
+同时，本 ADR 把「引用完整性归应用层或存储层」这句话细化为三档（ADR-0017）：
+
+| 判断依据 | 落在哪里 |
+| -------- | -------- |
+| 只看目标自己的数据 | 领域层构造时校验 |
+| 需要另一个聚合的已有数据 | 领域服务（`consistency.check_goal_against_course`） |
+| 需要时钟、掌握度、学习证据 | 应用层 |
+
+原话「在内存里无法校验」混淆了「需要外部事实」与「需要别的聚合」：后者是纯
+函数，可以留在领域层并脱离基础设施测试。
