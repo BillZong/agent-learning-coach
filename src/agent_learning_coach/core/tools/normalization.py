@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 from pydantic import BaseModel
@@ -102,15 +103,25 @@ def normalize_outcome(
 ) -> ToolOutcome:
     """把工具的返回值归一化成 ``ToolOutcome``。
 
+    **工具可以直接返回 ``ToolOutcome``**，此时原样采用（只补上耗时与元数据）。
+    这解决了「既要给模型看的文本，又要给程序用的结构」的需求——纯文本返回拿不
+    到结构化数据，纯字典返回给模型的又是 JSON 而不是可读文本。
+
     Args:
         tool_name: 工具名。
         value: 工具的原始返回值。
-        duration_ms: 执行耗时（毫秒）。
+        duration_ms: 执行耗时。
         metadata: 附加元数据。
 
     Returns:
         状态为 ``"success"`` 的归一化结果。
     """
+    if isinstance(value, ToolOutcome):
+        return replace(
+            value,
+            duration_ms=duration_ms,
+            metadata={**value.metadata, **(metadata or {})},
+        )
     return ToolOutcome(
         tool_name=tool_name,
         status="success",

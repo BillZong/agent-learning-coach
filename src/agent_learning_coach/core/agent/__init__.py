@@ -16,6 +16,8 @@
 - **Session State**（``session.SessionState``）：可持久化的会话快照——恢复一个
   运行所需的全部状态。
 - **Session Store**（``session``）：会话存储协议与两种实现——内存与 JSON 文件。
+- **Tool Hooks**（``hooks.StateCollector``）：把工具产出的结构化数据收进执行
+  上下文的草稿本。通用机制，不认识具体数据格式。
 
 职责边界：运行时只管「模型 ↔ 工具」的节奏与状态。模型调用委托给
 ``core.llm.LLMClient``，工具执行委托给 ``core.tools.ToolDispatcher``——
@@ -28,6 +30,7 @@
 
 from agent_learning_coach.core.agent.cost import TokenPrice
 from agent_learning_coach.core.agent.errors import AgentConfigError, AgentError
+from agent_learning_coach.core.agent.hooks import StateCollector
 from agent_learning_coach.core.agent.output import (
     FINAL_ANSWER_TOOL_NAME,
     build_final_answer_tool,
@@ -71,6 +74,7 @@ __all__ = [
     "SessionContext",
     "SessionState",
     "SessionStore",
+    "StateCollector",
     "StopReason",
     "TokenPrice",
     "build_final_answer_tool",

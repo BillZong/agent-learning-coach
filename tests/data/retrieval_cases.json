@@ -1,0 +1,113 @@
+{
+  "description": "检索评估数据集。每条用例给出查询与期望命中的来源文件名（不含目录）。相关性的粒度取「来源」而不是「切片」——切片 id 会随切分参数变化，来源不会。",
+  "evaluation_config": {
+    "chunker": "RecursiveChunker(size=200, overlap=30)",
+    "embedder": "HashingEmbedder(dimension=256)",
+    "top_k": 5,
+    "note": "嵌入是占位级的（词面哈希），因此 semantic 类别明显低于 lexical。换成语义嵌入后，semantic 类别应当显著上升——这正是这套数据集要暴露的差别。"
+  },
+  "categories": {
+    "lexical": "词面用例：查询与目标共享实词。任何嵌入模型都应当命中——这是基线，掉了说明流水线坏了（不是模型坏了）。",
+    "semantic": "语义用例：查询用不同的话描述同一件事。只有真正理解语义的嵌入才命得中——这正是占位级的哈希嵌入做不到的部分。",
+    "distractor": "干扰用例：多个文档提到同一个词，只有文档级别相关才算命中。它考察排序，不是召回。"
+  },
+  "cases": [
+    {
+      "query": "闭包 外部变量",
+      "expected_sources": [
+        "closures.md"
+      ],
+      "category": "lexical",
+      "note": "同名概念——词面高度重叠，应当稳定命中"
+    },
+    {
+      "query": "递归 终止条件 栈溢出",
+      "expected_sources": [
+        "recursion.md"
+      ],
+      "category": "lexical",
+      "note": "三个实词都在目标文档里"
+    },
+    {
+      "query": "向量 维度 pgvector",
+      "expected_sources": [
+        "embedding.md"
+      ],
+      "category": "lexical",
+      "note": "术语 + 工具名"
+    },
+    {
+      "query": "命中率 平均倒数排名",
+      "expected_sources": [
+        "retrieval.md"
+      ],
+      "category": "lexical",
+      "note": "两个指标名"
+    },
+    {
+      "query": "猫 呼噜声 赫兹",
+      "expected_sources": [
+        "pets.md"
+      ],
+      "category": "lexical",
+      "note": "细节词——只有 pets.md 有"
+    },
+    {
+      "query": "函数怎么记住自己出生时的环境",
+      "expected_sources": [
+        "closures.md"
+      ],
+      "category": "semantic",
+      "note": "换词提问：没有「闭包」二字，考验语义匹配"
+    },
+    {
+      "query": "为什么递归会把自己算爆",
+      "expected_sources": [
+        "recursion.md"
+      ],
+      "category": "semantic",
+      "note": "换词提问：把「栈溢出」说成「算爆」"
+    },
+    {
+      "query": "怎样判断一个人真的学会了",
+      "expected_sources": [
+        "learning.md"
+      ],
+      "category": "semantic",
+      "note": "换词提问：把「掌握度」说成「真的学会了」"
+    },
+    {
+      "query": "为什么不能把想到的都放进去",
+      "expected_sources": [
+        "context.md"
+      ],
+      "category": "semantic",
+      "note": "换词提问：把「上下文」说成「想到的都放进去」"
+    },
+    {
+      "query": "精确找函数名时向量检索不灵",
+      "expected_sources": [
+        "retrieval.md"
+      ],
+      "category": "distractor",
+      "note": "干扰项：embedding.md 也讲检索的缺点"
+    },
+    {
+      "query": "栈 局部变量 弹栈",
+      "expected_sources": [
+        "memory.md",
+        "recursion.md"
+      ],
+      "category": "distractor",
+      "note": "干扰项：两个文档都讲栈，任一命中即可"
+    },
+    {
+      "query": "重复阅读还是主动回忆更有效",
+      "expected_sources": [
+        "learning.md"
+      ],
+      "category": "semantic",
+      "note": "换词提问：认知心理学结论"
+    }
+  ]
+}

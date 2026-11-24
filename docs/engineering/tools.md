@@ -117,6 +117,7 @@ dispatcher = ToolDispatcher(registry, default_timeout=30.0)
 | `str` | 原样 | None |
 | `dict` / `list` / `tuple` | JSON | dict 时为原值，否则 None |
 | Pydantic 模型 | JSON | `model_dump()` |
+| **`ToolOutcome`** | 原样 | 原样 |
 | `None` | 空字符串 | None |
 | 其它对象 | `repr(value)` | None |
 | 异常 | 错误描述 | None |
@@ -124,9 +125,84 @@ dispatcher = ToolDispatcher(registry, default_timeout=30.0)
 **归一化本身不得抛出异常**：归一化失败会让原始错误信息丢失，反而更难排查。
 因此不可序列化的对象降级为 `repr`，`repr` 自身失败时返回 `<unserializable>`。
 
-## 6. 在 Agent Loop 中使用
+**工具可以直接返回 `ToolOutcome`**，此时原样采用（只补上耗时与元数据）。这解决
+了「既要给模型看的可读文本，又要给程序用的结构」的需求——纯文本返回拿不到
+结构化数据，纯字典返回给模型的又是 JSON 而不是可读文本。检索工具就是这么做的
+（见 [RAG 接入说明](rag.md)）。
 
-### 6.1 把工具清单交给模型
+## 6. Tool Callbacks
+
+回调挂在 **Dispatcher** 上——它是唯一的执行边界，因此本地工具、MCP 工具、
+结构化输出的 `final_answer` 全部受同一套回调约束。
+
+```python
+dispatcher = ToolDispatcher(
+    registry,
+    before_hooks=[cache],  # 可以短路执行
+    after_hooks=[collector],  # 可以替换结果
+)
+```
+
+### 6.1 执行顺序
+
+```
+权限检查 → 参数校验 → 执行前钩子 → 工具执行 → 执行后钩子 → 结果
+```
+
+- **权限检查在钩子之前**：钩子不能绕过权限。被拒绝的工具不进入校验，也不触发
+  任何钩子。
+- **参数校验在钩子之前**：钩子拿到的是已通过校验的参数。
+
+### 6.2 签名
+
+```python
+BeforeToolHook = Callable[[ToolContext, str, Mapping[str, Any]], Any]
+AfterToolHook = Callable[[ToolContext, ToolOutcome, Mapping[str, Any]], Any]
+```
+
+- 执行前的钩子返回 `ToolOutcome` 表示**短路**（工具不执行），返回 `None` 放行。
+- 执行后的钩子返回 `ToolOutcome` 表示**替换**结果，返回 `None` 保持原样。
+- **执行后的钩子也拿到参数**：钩子常要按「这次调用的是什么」做事——把检索
+  结果写进缓存，键就得包含查询与过滤条件。
+- 同步与异步钩子都支持。
+
+### 6.3 事务语义
+
+**一条 tool_call 恰好对应一条 tool_result**——这是运行时最硬的不变量。厂商 API
+会拒绝「有调用没结果」的请求，而且报错完全指不到真正的原因。
+
+| 情况 | 工具是否执行 | 产出几条结果 |
+|---|---|---|
+| 执行前钩子返回 None | 是 | 1（工具的） |
+| 执行前钩子短路 | 否 | 1（钩子的） |
+| 执行前钩子抛异常 | 否 | 1（错误结果） |
+| 执行后钩子替换结果 | 是 | 1（替换后的） |
+| 执行后钩子抛异常 | 是 | 1（工具的，错误记进 metadata） |
+
+**执行后的钩子失败不丢弃工具的结果**：工具已经把事情做完了，丢掉它的输出等于
+白跑一趟。失败被记进 `outcome.metadata["callback_errors"]`。
+
+代价：**转录里看不到回调错误**（转录只存 `ToolResult` 的文本），应用层要主动
+查 `AgentResult.steps[*].outcomes[*].metadata`。
+
+### 6.4 与 HITL 审批的关系
+
+**审批在回调之前**。需要确认的工具会让整个步骤暂停（`stop_reason=
+"pending_approval"`），恢复时只有被批准的调用才进入调度器。因此：
+
+- 被拒绝的调用**不触发任何回调**；
+- 回调**无法放行**一个未获批准的调用；
+- 批准时**修改过的参数**会经过回调与校验。
+
+**不要用执行前的钩子再实现一套审批**：阻塞式审批与运行时的暂停—恢复并存时，
+拒绝路径会被绕过（钩子先短路，运行时根本没机会看到这次调用）。本项目只保留
+运行时的暂停—恢复，回调只做审批之外的事。
+
+决策依据：[ADR-0012](../architecture/decisions/0012-tool-callbacks-citation-and-hitl.md)。
+
+## 7. 在 Agent Loop 中使用
+
+### 7.1 把工具清单交给模型
 
 ```python
 request = LLMRequest(
@@ -136,7 +212,7 @@ request = LLMRequest(
 response = await client.generate(request)
 ```
 
-### 6.2 执行模型请求的工具调用
+### 7.2 执行模型请求的工具调用
 
 ```python
 for item in response.contents:
@@ -144,7 +220,7 @@ for item in response.contents:
         outcome = await dispatcher.dispatch(item.name, item.arguments, context)
 ```
 
-### 6.3 回填结果（**必须成对**）
+### 7.3 回填结果（**必须成对**）
 
 ```python
 outcome = await dispatcher.dispatch(item.name, item.arguments, context)
@@ -163,7 +239,7 @@ next_request = LLMRequest(
 > 只回填结果会得到 `400 invalid params, tool result's tool id not found`。
 > `ToolOutcome` 只负责结果侧，原始 `ToolCall` 必须由调用方保留并一起回填。
 
-## 7. 错误处理
+## 8. 错误处理
 
 | 异常 | 含义 | 建议处理 |
 | ---- | ---- | -------- |
@@ -184,7 +260,7 @@ Dispatcher 提供两种入口：
 
 批量执行用 `dispatch_all`（顺序执行，任一失败不中断整批）。
 
-## 8. 测试替身
+## 9. 测试替身
 
 单元测试不需要网络、不消耗额度。用 `FunctionTool` 包裹替身函数即可：
 
@@ -211,7 +287,7 @@ class _Recorder:
         return "ok"
 ```
 
-## 9. 使用约束
+## 10. 使用约束
 
 1. **不要在业务层直接调用工具**。所有工具执行经由 `ToolDispatcher`，
    否则校验与超时会被绕过。
@@ -225,7 +301,7 @@ class _Recorder:
 7. **单元测试一律用 `FunctionTool` 打桩**，不要 monkeypatch 第三方模块，
    也不要读写被测对象的私有字段。
 
-## 10. 当前未覆盖范围
+## 11. 当前未覆盖范围
 
 | 能力 | 状态 | 备注 |
 | ---- | ---- | ---- |

@@ -21,7 +21,10 @@ Dispatcher 是工具系统的**执行边界**，负责一次调用的完整生�
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
+from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 from agent_learning_coach.core.llm.models import ToolSpec
@@ -41,7 +44,12 @@ from agent_learning_coach.core.tools.permissions import (
 )
 from agent_learning_coach.core.tools.registry import ToolRegistry
 from agent_learning_coach.core.tools.schema import validate_arguments
-from agent_learning_coach.core.tools.types import ToolContext, ToolOutcome
+from agent_learning_coach.core.tools.types import (
+    AfterToolHook,
+    BeforeToolHook,
+    ToolContext,
+    ToolOutcome,
+)
 
 
 class ToolDispatcher:
@@ -60,6 +68,8 @@ class ToolDispatcher:
         *,
         default_timeout: float | None = None,
         policy: PermissionPolicy | None = None,
+        before_hooks: Sequence[BeforeToolHook] = (),
+        after_hooks: Sequence[AfterToolHook] = (),
     ) -> None:
         """初始化调度器。
 
@@ -68,10 +78,14 @@ class ToolDispatcher:
             default_timeout: 默认超时（秒）。工具自身定义了 ``timeout`` 时以工具的
                 为准；两者都未设置则不限制执行时长。
             policy: 权限策略。为 None 时放行一切（``AllowAllPolicy``）。
+            before_hooks: 工具执行前的钩子。可短路执行。
+            after_hooks: 工具执行后的钩子。可替换结果。
         """
         self.registry = registry
         self.default_timeout = default_timeout
         self.policy: PermissionPolicy = policy if policy is not None else AllowAllPolicy()
+        self.before_hooks = tuple(before_hooks)
+        self.after_hooks = tuple(after_hooks)
 
     def allowed_specs(self, *, caller: str | None = None) -> list[ToolSpec]:
         """导出当前策略允许的工具清单。
@@ -151,6 +165,20 @@ class ToolDispatcher:
                 duration_ms=_elapsed_ms(started),
             )
 
+        # 执行前钩子：可以短路（返回结果），也可以放行（返回 None）。
+        # 钩子失败 = 这次调用失败，但**仍然产出一条结果**——一条 tool_call 必须
+        # 恰好对应一条 tool_result，这是转录完整性的硬要求。
+        try:
+            short_circuit = await self._run_before_hooks(context, tool_name, arguments)
+        except Exception as exc:
+            return normalize_error(
+                tool_name,
+                ToolExecutionError(f"工具 {tool_name} 的执行前钩子失败：{exc}", cause=exc),
+                duration_ms=_elapsed_ms(started),
+            )
+        if short_circuit is not None:
+            return short_circuit
+
         timeout = self.resolve_timeout(tool_name)
         try:
             value = await self._execute(tool, context, arguments, timeout)
@@ -167,11 +195,85 @@ class ToolDispatcher:
                 duration_ms=_elapsed_ms(started),
             )
 
-        return normalize_outcome(
+        outcome = normalize_outcome(
             tool_name,
             value,
             duration_ms=_elapsed_ms(started),
         )
+        return await self._run_after_hooks(context, outcome, arguments)
+
+    async def _run_before_hooks(
+        self,
+        context: ToolContext,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> ToolOutcome | None:
+        """依次执行执行前钩子。
+
+        第一个返回非 None 的钩子短路这次调用，后续钩子不再执行。
+
+        Args:
+            context: 运行时上下文。
+            tool_name: 工具名。
+            arguments: 已通过校验的参数。
+
+        Returns:
+            短路结果；没有钩子短路时返回 None。
+
+        Raises:
+            Exception: 钩子自身抛出的异常。
+        """
+        for hook in self.before_hooks:
+            result = hook(context, tool_name, arguments)
+            if inspect.isawaitable(result):
+                result = await result
+            if result is None:
+                continue
+            return normalize_outcome(tool_name, result, duration_ms=0.0)
+        return None
+
+    async def _run_after_hooks(
+        self,
+        context: ToolContext,
+        outcome: ToolOutcome,
+        arguments: dict[str, Any],
+    ) -> ToolOutcome:
+        """依次执行执行后钩子。
+
+        每个钩子都可以返回替换后的结果；返回 None 表示保持原样。
+
+        **钩子失败不丢弃工具的结果**：工具已经把事情做完了，丢掉它的输出等于
+        白跑一趟。失败被记进 ``metadata["callback_errors"]``——可观测，而不是
+        被吞掉。
+
+        Args:
+            context: 运行时上下文。
+            outcome: 归一化后的工具结果。
+            arguments: 这次调用的参数。
+
+        Returns:
+            最终结果。
+
+        Raises:
+            Exception: 钩子自身抛出的异常（由调用方处理）。
+        """
+        errors: list[str] = []
+        for hook in self.after_hooks:
+            try:
+                result = hook(context, outcome, arguments)
+                if inspect.isawaitable(result):
+                    result = await result
+            except Exception as exc:
+                errors.append(f"{type(exc).__name__}: {exc}")
+                continue
+            if result is not None:
+                outcome = result
+        if errors:
+            outcome = replace(
+                outcome,
+                metadata={**outcome.metadata, "callback_errors": errors},
+            )
+        return outcome
 
     async def dispatch_safe(
         self,

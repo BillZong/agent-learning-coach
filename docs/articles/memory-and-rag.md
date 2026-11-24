@@ -1,6 +1,6 @@
 # 记忆与 RAG
 
-> 状态：草稿 ｜ 对应 Topic 08（上下文）、Day 10（长期记忆）、Day 11（RAG 基础）
+> 状态：草稿 ｜ 对应 Topic 08（上下文）、Day 10（长期记忆）、Day 11（RAG 基础）、Day 12（RAG 与工具扩展）
 
 ## 提纲
 
@@ -272,12 +272,10 @@ DocumentLoader → Chunker → EmbeddingClient → VectorStore
 
 ### 5. 评估检索而非只评估生成
 
-> 本节属 Day 11–12 与 Day 28（`28-retrieval-evaluation`），此处仅留提纲。
-
 端到端评估（「最终答案对不对」）无法定位问题出在哪一环。要能改进，就必须
 **分层评估**：
 
-1. **检索层**：该召回的召回了吗？排名对吗？（recall@k、MRR）
+1. **检索层**：该召回的召回了吗？排名对吗？（hit@k、MRR）
 2. **上下文层**：召回的内容进了窗口吗？被裁剪误伤了吗？
 3. **生成层**：拿到正确上下文后，答案对吗？
 
@@ -286,9 +284,37 @@ DocumentLoader → Chunker → EmbeddingClient → VectorStore
 「裁剪前」和「裁剪后」都看才能发现，因此 `ContextView` 记录原始与最终 token
 数与丢弃条目数不是装饰。
 
+#### 用例要分类，否则指标说明不了任何事
+
+Day 12 建了第一套检索评估数据集（12 条用例，8 份材料）。真正有用的不是总
+体数字，而是**分类之后的差别**：
+
+```
+词面用例  ：hit@1 1.00   ← 查询与目标共享实词
+语义用例  ：hit@1 0.80   ← 换词提问
+干扰用例  ：hit@1 0.50   ← 多个文档提到同一个词
+```
+
+**词面用例是流水线的基线**，不是模型的成绩。它掉了说明切分错了、过滤错了、
+排序反了——是流水线坏了。语义用例才暴露**嵌入模型的能力边界**：占位级的
+哈希嵌入在这一栏明显落后，因为它是词面重合，不是语义相似。
+
+**两栏之间的差值就是「换嵌入模型值不值」的判据**。如果没有分类，一个总体
+的 hit@1 会把「流水线坏了」和「模型不够好」混在一起——而这两件事的处理
+方式完全不同。
+
+#### 指标的粒度要选稳定的东西
+
+相关性以**来源**（文件）为单位，而不是切片。因为切片 id 会随切分参数变化：
+改一次块大小，整个数据集的期望就全失效了。来源不会——它回答的是「这份查询
+应该命中哪份材料」，而这正是切分策略要影响的东西。
+
+同理，**指标只用来比较，不用来宣称**。命中率高不代表切分策略好，也可能是
+语料太简单。它回答的是「这次改动有没有让检索变好」。
+
 ## 相关文档
 
 - 接入说明：[记忆与上下文](../engineering/memory.md)、[RAG](../engineering/rag.md)
-- 决策依据：[ADR-0008](../architecture/decisions/0008-context-storage-and-presentation.md)、[ADR-0011](../architecture/decisions/0011-rag-pipeline-and-vector-store.md)
-- 学习笔记：[Topic 08 · Memory 与 Context Engineering](../learning/topics/08-memory-and-context-engineering.md)、[Topic 11 · RAG 基础](../learning/topics/11-rag-basics.md)
+- 决策依据：[ADR-0008](../architecture/decisions/0008-context-storage-and-presentation.md)、[ADR-0011](../architecture/decisions/0011-rag-pipeline-and-vector-store.md)、[ADR-0012](../architecture/decisions/0012-tool-callbacks-citation-and-hitl.md)
+- 学习笔记：[Topic 08 · Memory 与 Context Engineering](../learning/topics/08-memory-and-context-engineering.md)、[Topic 11 · RAG 基础](../learning/topics/11-rag-basics.md)、[Topic 12 · RAG 与 Tool Extension](../learning/topics/12-rag-and-tool-extension.md)
 - 参考：[ADR-0005](../architecture/decisions/0005-agent-loop.md)、[ADR-0006](../architecture/decisions/0006-execution-context-and-cost-control.md)

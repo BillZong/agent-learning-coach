@@ -128,7 +128,17 @@ Provider 用命名空间（厂商名 + 区域，如 `minimax`（国际）、`min
 
 调用级失败（参数不合法、超时、执行异常）一律归一化成 `ToolOutcome(status="error")` 回填给模型，让模型能读懂错误并调整下一步；工具未注册属配置错误，抛 `ToolNotFoundError`。超时优先级为工具定义 > 调度器默认值，用 `asyncio.timeout` 实现，保证取消信号送达被调用协程。
 
-决策依据：[ADR-0003](decisions/0003-tool-system.md)。
+**工具回调**（`before_hooks` / `after_hooks`）挂在 Dispatcher 上——它是唯一的
+执行边界，因此本地工具、MCP 工具、结构化输出的 `final_answer` 全部受同一套回
+调约束。执行前钩子可短路，执行后钩子可替换结果。**权限检查在钩子之前**，
+因此钩子不能绕过权限。
+
+**与 HITL 的组合**：审批在运行时（暂停—恢复，可持久化），**在回调之前**。
+被拒绝的调用不触发任何回调；回调无法放行一个未获批准的调用。不要再用执行前
+的钩子实现第二套审批——两套并存会让拒绝路径被绕过。
+
+决策依据：[ADR-0003](decisions/0003-tool-system.md)、
+[ADR-0012](decisions/0012-tool-callbacks-citation-and-hitl.md)。
 接入说明：[工具系统接入说明](../engineering/tools.md)。
 
 #### Agent Runtime
@@ -182,6 +192,17 @@ ReAct 执行循环 + 运行时状态，位于 `src/agent_learning_coach/core/age
 - 嵌入：`src/agent_learning_coach/core/rag/embedding.py`（`HashingEmbedder` 离线 / `OpenAICompatibleEmbedder` 生产）
 - 向量存储：`src/agent_learning_coach/core/rag/store.py`（`InMemoryVectorStore` / `PgVectorStore`）
 - 检索：`src/agent_learning_coach/core/rag/retrieval.py`（`VectorRetriever`）
+- 摄取：`src/agent_learning_coach/core/rag/ingestion.py`（`ingest_directory`，幂等）
+- 检索工具：`src/agent_learning_coach/core/rag/tools.py`
+  - `SearchCourseMaterialTool`：语义检索——「哪些内容与问题相关」
+  - `RetrieveKnowledgeTool`：结构化检索——「这份材料里有什么」
+- 引用：`src/agent_learning_coach/core/rag/citation.py`（`Citation` /
+  `CitationSet` / `CitationValidator`）——引用绑定到**具体切片**，标记稳定，
+  且**可校验**（编造的引用被判为错误）
+- 检索评估：`src/agent_learning_coach/core/rag/evaluation.py`（命中率@k、MRR，
+  按类别分组）
+- 工具回调：`src/agent_learning_coach/core/rag/callbacks.py`（检索缓存、结果
+  压缩）
 
 流水线分四段，每段一个 Protocol，各配两个实现——**一个离线可测，一个能上生产**：
 
@@ -200,7 +221,8 @@ DocumentLoader → Chunker → EmbeddingClient → VectorStore
 
 依赖方向：`core/rag` 只依赖 `core/llm` 的错误类型与 `core/text` 的分词，不认识 `core/agent`。
 
-决策依据：[ADR-0011](decisions/0011-rag-pipeline-and-vector-store.md)。
+决策依据：[ADR-0011](decisions/0011-rag-pipeline-and-vector-store.md)、
+[ADR-0012](decisions/0012-tool-callbacks-citation-and-hitl.md)。
 接入说明：[RAG 接入说明](../engineering/rag.md)。
 
 ### 3.5 基础设施层（Infrastructure Layer）

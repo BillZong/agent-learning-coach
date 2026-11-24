@@ -23,6 +23,14 @@ DocumentLoader  →  Chunker  →  EmbeddingClient  →  VectorStore
 - **Vector Store**（``store``）：``InMemoryVectorStore``（测试与演示）与
   ``PgVectorStore``（PostgreSQL + pgvector，生产）。
 - **Vector Retriever**（``retrieval``）：嵌入 → 检索，过滤下推到存储层。
+- **Ingestion**（``ingestion``）：把一个目录摄取进向量库。幂等——重复摄取是
+  覆盖而不是追加。
+- **Retrieval Tools**（``tools``）：``SearchCourseMaterialTool``（语义检索）
+  与 ``RetrieveKnowledgeTool``（按来源取回）。两者都产出可校验的引用。
+- **Citation**（``citation``）：引用对象与校验器——引用必须指向真实存在的
+  切片，编造的引用比没有引用更危险。
+- **Retrieval Evaluation**（``evaluation``）：命中率@k 与 MRR。
+- **Tool Callbacks**（``callbacks``）：检索缓存（执行前）与结果压缩（执行后）。
 
 依赖方向：本模块只依赖 ``core/llm`` 的错误类型与 ``core/text`` 的分词，不认识
 ``core/agent``。
@@ -30,6 +38,10 @@ DocumentLoader  →  Chunker  →  EmbeddingClient  →  VectorStore
 导入约定：调用方统一从 ``agent_learning_coach.core.rag`` 导入公开符号。
 """
 
+from agent_learning_coach.core.rag.callbacks import (
+    RetrievalCache,
+    SearchResultCompressor,
+)
 from agent_learning_coach.core.rag.chunking import (
     DEFAULT_SEPARATORS,
     Chunker,
@@ -37,11 +49,25 @@ from agent_learning_coach.core.rag.chunking import (
     RecursiveChunker,
     chunk_id,
 )
+from agent_learning_coach.core.rag.citation import (
+    Citation,
+    CitationIssue,
+    CitationRegistry,
+    CitationReport,
+    CitationSet,
+    CitationValidator,
+)
 from agent_learning_coach.core.rag.embedding import (
     EmbeddingClient,
     HashingEmbedder,
     OpenAICompatibleEmbedder,
 )
+from agent_learning_coach.core.rag.evaluation import (
+    RetrievalCase,
+    RetrievalMetrics,
+    evaluate_retrieval,
+)
+from agent_learning_coach.core.rag.ingestion import IngestResult, ingest_directory
 from agent_learning_coach.core.rag.loader import (
     DirectoryLoader,
     DocumentLoader,
@@ -55,12 +81,22 @@ from agent_learning_coach.core.rag.store import (
     PgVectorStore,
     VectorStore,
 )
+from agent_learning_coach.core.rag.tools import (
+    RetrieveKnowledgeTool,
+    SearchCourseMaterialTool,
+)
 from agent_learning_coach.core.rag.types import Chunk, Document, ScoredChunk
 
 __all__ = [
     "DEFAULT_SEPARATORS",
     "PGVECTOR_SCHEMA_TEMPLATE",
     "Chunk",
+    "Citation",
+    "CitationIssue",
+    "CitationRegistry",
+    "CitationReport",
+    "CitationSet",
+    "CitationValidator",
     "Chunker",
     "DirectoryLoader",
     "Document",
@@ -69,13 +105,22 @@ __all__ = [
     "FixedSizeChunker",
     "HashingEmbedder",
     "InMemoryVectorStore",
+    "IngestResult",
     "OpenAICompatibleEmbedder",
     "PgVectorStore",
     "RecursiveChunker",
+    "RetrieveKnowledgeTool",
+    "RetrievalCache",
+    "RetrievalCase",
+    "RetrievalMetrics",
     "ScoredChunk",
+    "SearchCourseMaterialTool",
+    "SearchResultCompressor",
     "TextFileLoader",
     "VectorRetriever",
     "VectorStore",
     "chunk_id",
     "document_id",
+    "evaluate_retrieval",
+    "ingest_directory",
 ]

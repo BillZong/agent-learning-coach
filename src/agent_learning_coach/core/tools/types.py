@@ -29,6 +29,31 @@ from agent_learning_coach.core.llm.types import ToolResult
 ToolHandler = Callable[["ToolContext", dict[str, Any]], Awaitable[Any]]
 """工具执行入口：接收上下文与已校验的参数，返回任意类型的执行结果。"""
 
+BeforeToolHook = Callable[["ToolContext", str, Mapping[str, Any]], Any]
+"""工具执行前的钩子。
+
+接收工具上下文、工具名与**已通过校验**的参数，返回 ``ToolOutcome`` 表示
+**短路**——工具本身不再执行，直接用这个结果回填；返回 ``None`` 表示放行。
+
+同步与异步都可以：调度器会判断返回值是否可等待。
+
+注意：钩子拿到的是**工具名与参数**，不是完整的 ``ToolCall``——调用 id 属于
+转录，调度器并不掌握。它属于「这次调用是谁发起的」，那在运行上下文里。
+"""
+
+AfterToolHook = Callable[["ToolContext", "ToolOutcome", Mapping[str, Any]], Any]
+"""工具执行后的钩子。
+
+接收工具上下文、归一化后的结果与**这次调用的参数**，返回新的 ``ToolOutcome``
+表示**替换**结果；返回 ``None`` 表示保持原样。
+
+带上参数是有原因的：钩子常常要按「这次调用的是什么」来做事——把检索结果写进
+缓存，键就得包含查询与过滤条件。只有结果的话，键只能从结果里反推，那是把
+工具的数据格式泄漏给钩子。
+
+同步与异步都可以：调度器会判断返回值是否可等待。
+"""
+
 
 class ToolDefinition(BaseModel):
     """工具的静态契约。
@@ -264,6 +289,8 @@ class FunctionTool:
 
 
 __all__ = [
+    "AfterToolHook",
+    "BeforeToolHook",
     "FunctionTool",
     "Tool",
     "ToolContext",

@@ -76,6 +76,29 @@ class VectorStore(Protocol):
         """
         ...
 
+    async def fetch(self, source: str, *, limit: int = 50) -> list[Chunk]:
+        """按来源取回切片（结构化检索）。
+
+        **与语义检索互补**：语义检索回答「哪些内容与问题相关」，结构化检索
+        回答「这份材料里有什么」。后者不需要查询向量，因此不受嵌入质量影响。
+
+        Args:
+            source: 来源路径的片段，大小写不敏感。
+            limit: 最多返回几条。
+
+        Returns:
+            切片，按（文档、序号）排序——即材料的自然阅读顺序。
+        """
+        ...
+
+    async def sources(self) -> list[str]:
+        """列出已入库的来源。
+
+        Returns:
+            来源路径，去重并排序。
+        """
+        ...
+
     async def count(self) -> int:
         """当前存储的切片总数。
 
@@ -118,6 +141,21 @@ def _normalize(vector: Sequence[float]) -> np.ndarray:
     if norm == 0.0:
         return array
     return array / norm
+
+
+def _escape_like(text: str) -> str:
+    """转义 ``LIKE`` / ``ILIKE`` 模式里的通配符。
+
+    来源片段来自用户输入，因此 ``%`` 与 ``_`` 必须转义——否则「100%」会被
+    当成「以 100 开头」的模式。
+
+    Args:
+        text: 原始文本。
+
+    Returns:
+        转义后的文本。
+    """
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class InMemoryVectorStore:
@@ -225,6 +263,33 @@ class InMemoryVectorStore:
             del self._chunks[chunk_id]
             self._vectors.pop(chunk_id, None)
         return len(removed)
+
+    async def fetch(self, source: str, *, limit: int = 50) -> list[Chunk]:
+        """按来源取回切片。
+
+        Args:
+            source: 来源路径的片段，大小写不敏感。
+            limit: 最多返回几条。
+
+        Returns:
+            切片，按（文档、序号）排序。
+        """
+        needle = source.lower()
+        matched = [
+            self._chunks[chunk_id]
+            for chunk_id in self._order
+            if needle in self._chunks[chunk_id].source.lower()
+        ]
+        matched.sort(key=lambda chunk: (chunk.document_id, chunk.index))
+        return matched[:limit]
+
+    async def sources(self) -> list[str]:
+        """列出已入库的来源。
+
+        Returns:
+            来源路径，去重并排序。
+        """
+        return sorted({self._chunks[chunk_id].source for chunk_id in self._order})
 
     async def count(self) -> int:
         """当前存储的切片总数。
@@ -486,6 +551,70 @@ class PgVectorStore:
         except Exception as exc:
             raise LLMError(f"删除文档失败：{exc}") from exc
         return int(deleted)
+
+    async def fetch(self, source: str, *, limit: int = 50) -> list[Chunk]:
+        """按来源取回切片。
+
+        Args:
+            source: 来源路径的片段，大小写不敏感。
+            limit: 最多返回几条。
+
+        Returns:
+            切片，按（文档、序号）排序。
+
+        Raises:
+            LLMError: 数据库操作失败。
+        """
+        from agent_learning_coach.core.llm.errors import LLMError
+
+        try:
+            async with self._connect() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        f"""
+                        SELECT id, document_id, chunk_index, text, source, metadata
+                        FROM {self.table}
+                        WHERE source ILIKE %s
+                        ORDER BY document_id, chunk_index
+                        LIMIT %s
+                        """,
+                        (f"%{_escape_like(source)}%", limit),
+                    )
+                    rows = await cur.fetchall()
+        except Exception as exc:
+            raise LLMError(f"按来源取回切片失败：{exc}") from exc
+
+        return [
+            Chunk(
+                id=row[0],
+                document_id=row[1],
+                index=row[2],
+                text=row[3],
+                source=row[4],
+                metadata=dict(row[5]),
+            )
+            for row in rows
+        ]
+
+    async def sources(self) -> list[str]:
+        """列出已入库的来源。
+
+        Returns:
+            来源路径，去重并排序。
+
+        Raises:
+            LLMError: 数据库操作失败。
+        """
+        from agent_learning_coach.core.llm.errors import LLMError
+
+        try:
+            async with self._connect() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(f"SELECT DISTINCT source FROM {self.table} ORDER BY source")
+                    rows = await cur.fetchall()
+        except Exception as exc:
+            raise LLMError(f"列出来源失败：{exc}") from exc
+        return [row[0] for row in rows]
 
     async def count(self) -> int:
         """当前存储的切片总数。

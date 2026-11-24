@@ -22,6 +22,9 @@
   级为工具定义 > Dispatcher 默认值。
 - **Tool Result Normalization**（``normalization``）：把任意返回值收敛成统一
   的文本与结构。
+- **Tool Callbacks**（``types.BeforeToolHook`` / ``types.AfterToolHook``）：
+  执行前可短路、执行后可替换结果。挂在 Dispatcher 上，因此**所有**工具来源
+  都受同一套回调约束。
 - **MCP 协议适配**（``mcp``）：双向适配——把工具注册表暴露为 MCP Server，
   或把远端 MCP 工具接入本项目的注册表。
 
@@ -66,6 +69,8 @@ from agent_learning_coach.core.tools.permissions import (
 from agent_learning_coach.core.tools.registry import ToolRegistry
 from agent_learning_coach.core.tools.schema import describe_schema, validate_arguments
 from agent_learning_coach.core.tools.types import (
+    AfterToolHook,
+    BeforeToolHook,
     FunctionTool,
     Tool,
     ToolContext,
@@ -75,7 +80,9 @@ from agent_learning_coach.core.tools.types import (
 )
 
 __all__ = [
+    "AfterToolHook",
     "AllowAllPolicy",
+    "BeforeToolHook",
     "DenyAllPolicy",
     "FunctionTool",
     "MCPConnectionError",
