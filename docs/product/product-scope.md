@@ -308,16 +308,12 @@ Agent 不能只是一个能够调用工具的 LLM 循环。
 | `prd.md` | 定义产品愿景、定位、用户需求和长期产品能力 |
 | `product-scope.md` | 定义当前项目范围、阶段边界和明确不做的事情 |
 | `mvp.md` | 定义 MVP、四条判断标准与「新增功能是否属于 MVP」的评审流程 |
-| `OKR.md` | 定义阶段性目标与可衡量成果 |
-| `PLAN.md` | 定义具体学习任务、开发任务和执行计划 |
 | `architecture/` | 记录系统架构与技术设计 |
 | `ADR/` | 记录重要架构决策及其取舍 |
 
 ## 8. 相关文档（Related Documents）
 
 - [`prd.md`](./prd.md)：产品需求文档。
-- [`OKR.md`](./OKR.md)：项目目标与关键结果。
-- [`PLAN.md`](./PLAN.md)：学习与开发执行计划。
 - [`roadmap.md`](./roadmap.md): 项目里程碑。
 - [`mvp.md`](./mvp.md)：MVP 定义与判断标准。
 - `architecture/`：系统架构设计。

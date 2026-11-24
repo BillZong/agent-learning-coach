@@ -63,3 +63,6 @@ scratch/
 docs/learning/daily/*.md
 !docs/learning/daily/README.md
 
+# execution-layer reference docs (kept outside the repo; never commit)
+docs/product/OKR.md
+docs/product/PLAN.md
