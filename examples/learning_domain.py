@@ -29,6 +29,8 @@ from agent_learning_coach.core.learning import (
     GoalId,
     KnowledgePoint,
     KnowledgePointId,
+    KnowledgeRelation,
+    KnowledgeStructure,
     Learner,
     LearnerId,
     LearningGoal,
@@ -36,12 +38,17 @@ from agent_learning_coach.core.learning import (
 )
 
 
-def _point(point_id: str, title: str, prerequisites: tuple[str, ...] = ()) -> KnowledgePoint:
+def _point(point_id: str, title: str) -> KnowledgePoint:
     """构造一个知识点。"""
-    return KnowledgePoint(
-        id=KnowledgePointId(point_id),
-        title=title,
-        prerequisites=tuple(KnowledgePointId(item) for item in prerequisites),
+    return KnowledgePoint(id=KnowledgePointId(point_id), title=title)
+
+
+def _requires(source: str, target: str) -> KnowledgeRelation:
+    """构造一条前置关系。"""
+    return KnowledgeRelation(
+        kind="requires",
+        source=KnowledgePointId(source),
+        target=KnowledgePointId(target),
     )
 
 
@@ -50,9 +57,11 @@ def show_classification() -> None:
     print("=== 1. 实体与值对象 ===\n")
     rows = [
         ("Learner", "实体", "LearnerId", "独立聚合"),
-        ("Course", "实体", "CourseId", "独立聚合，拥有知识点"),
-        ("KnowledgePoint", "实体", "KnowledgePointId", "Course 聚合内部"),
+        ("Course", "实体", "CourseId", "独立聚合，拥有知识结构"),
+        ("KnowledgePoint", "实体", "KnowledgePointId", "知识结构内部"),
         ("LearningGoal", "实体", "GoalId", "独立聚合：Learner × Course 的关联"),
+        ("KnowledgeStructure", "值对象", "无身份", "Course 聚合内部"),
+        ("KnowledgeRelation", "值对象", "无身份", "结构内部：requires / part_of"),
         ("四类 id + GoalConstraint", "值对象", "无身份", "按值相等"),
     ]
     for name, kind, identity, scope in rows:
@@ -69,16 +78,19 @@ def show_course() -> None:
     course = Course(
         id=CourseId("course-js-core"),
         title="JavaScript 核心",
-        knowledge_points=(
-            _point("k3", "高阶函数", ("k2",)),
-            _point("k2", "闭包", ("k1",)),
-            _point("k1", "函数与作用域"),
-            _point("k4", "模块化"),
+        structure=KnowledgeStructure(
+            points=(
+                _point("k3", "高阶函数"),
+                _point("k2", "闭包"),
+                _point("k1", "函数与作用域"),
+                _point("k4", "模块化"),
+            ),
+            relations=(_requires("k3", "k2"), _requires("k2", "k1")),
         ),
     )
-    for point in course.knowledge_order():
-        requires = "，".join(str(item) for item in point.prerequisites) or "无"
-        print(f"{point.id}: {point.title}（前置：{requires}）")
+    for point in course.structure.order():
+        required = "，".join(str(item.id) for item in course.structure.prerequisites_of(point.id))
+        print(f"{point.id}: {point.title}（前置：{required or '无'}）")
     print("\n顺序由依赖决定；没有依赖的知识点保持声明顺序，因此结果确定。\n")
 
 
@@ -88,26 +100,22 @@ def show_rejections() -> None:
     attempts = [
         (
             "知识点 id 重复",
-            lambda: Course(
-                id=CourseId("c1"),
-                title="A",
-                knowledge_points=(_point("k1", "函数"), _point("k1", "作用域")),
+            lambda: KnowledgeStructure(
+                points=(_point("k1", "函数"), _point("k1", "作用域")),
             ),
         ),
         (
-            "前置不在课程内",
-            lambda: Course(
-                id=CourseId("c1"),
-                title="A",
-                knowledge_points=(_point("k1", "闭包", ("k0",)),),
+            "前置不在结构内",
+            lambda: KnowledgeStructure(
+                points=(_point("k1", "闭包"),),
+                relations=(_requires("k1", "k0"),),
             ),
         ),
         (
             "依赖成环",
-            lambda: Course(
-                id=CourseId("c1"),
-                title="A",
-                knowledge_points=(_point("k1", "A", ("k2",)), _point("k2", "B", ("k1",))),
+            lambda: KnowledgeStructure(
+                points=(_point("k1", "A"), _point("k2", "B")),
+                relations=(_requires("k1", "k2"), _requires("k2", "k1")),
             ),
         ),
         (

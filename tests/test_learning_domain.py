@@ -1,4 +1,4 @@
-"""学习领域模型的测试（Topic 15）。
+"""学习领域聚合的测试（Topic 15）。
 
 覆盖四组关注点：
 
@@ -6,10 +6,11 @@
 
 **身份与不可变**——实体改属性返回新实例，原实例不变；改名不改变身份。
 
-**聚合不变量**——课程的知识点 id 唯一、前置存在、无自指、无重复、无环；
-目标至少一条学习结果；终态不可回退。
+**聚合不变量**——课程名合法、目标至少一条学习结果、终态不可回退。
 
 **边界**——领域模型映射成运行时的 ``GoalSpec``；课程绑定不进入 ``GoalSpec``。
+
+知识点与关系的建模规则见 ``test_knowledge_structure.py``（Topic 16）。
 """
 
 from __future__ import annotations
@@ -22,31 +23,11 @@ from agent_learning_coach.core.learning import (
     DomainError,
     GoalConstraint,
     GoalId,
-    KnowledgePoint,
-    KnowledgePointId,
     Learner,
     LearnerId,
     LearningGoal,
     to_goal_spec,
 )
-
-
-def _point(
-    point_id: str,
-    title: str,
-    prerequisites: tuple[str, ...] = (),
-) -> KnowledgePoint:
-    """构造一个知识点。"""
-    return KnowledgePoint(
-        id=KnowledgePointId(point_id),
-        title=title,
-        prerequisites=tuple(KnowledgePointId(item) for item in prerequisites),
-    )
-
-
-def _course(*points: KnowledgePoint) -> Course:
-    """构造一门包含给定知识点的课程。"""
-    return Course(id=CourseId("course-js"), title="JavaScript 基础", knowledge_points=points)
 
 
 def _goal(**overrides: object) -> LearningGoal:
@@ -122,57 +103,21 @@ def test_learner_rejects_blank_fields() -> None:
         Learner(id=LearnerId("l1"), name="小王", preferences=("",))
 
 
-# --- 课程聚合的不变量 -----------------------------------------------------
+# --- 课程聚合 -------------------------------------------------------------
 
 
-def test_course_orders_knowledge_points_by_dependency() -> None:
-    """学习顺序由依赖决定；无依赖时保持声明顺序。"""
-    course = _course(
-        _point("k3", "高阶函数", ("k2",)),
-        _point("k2", "闭包", ("k1",)),
-        _point("k1", "函数与作用域"),
-        _point("k4", "模块化"),
-    )
-
-    assert [point.id.value for point in course.knowledge_order()] == ["k1", "k4", "k2", "k3"]
+def test_course_rejects_blank_title() -> None:
+    """课程名称不能为空。"""
+    with pytest.raises(DomainError, match="课程名称不能包含首尾空白"):
+        Course(id=CourseId("c1"), title=" JS ")
 
 
-def test_course_rejects_duplicate_knowledge_point_ids() -> None:
-    """知识点 id 在课程内唯一。"""
-    with pytest.raises(DomainError, match="知识点 id 重复：k1"):
-        _course(_point("k1", "函数"), _point("k1", "作用域"))
+def test_course_defaults_to_empty_structure() -> None:
+    """课程可以暂时没有知识结构（Phase 1 先建骨架）。"""
+    course = Course(id=CourseId("c1"), title="JavaScript 基础")
 
-
-def test_course_rejects_self_dependency() -> None:
-    """知识点不能把自己列为前置。"""
-    with pytest.raises(DomainError, match="不能依赖自身"):
-        _course(_point("k1", "函数", ("k1",)))
-
-
-def test_course_rejects_missing_prerequisite() -> None:
-    """前置必须存在于同一门课程内。"""
-    with pytest.raises(DomainError, match="前置 k0 不在课程内"):
-        _course(_point("k1", "闭包", ("k0",)))
-
-
-def test_course_rejects_duplicate_prerequisite() -> None:
-    """同一前置重复声明是建模错误，不静默去重。"""
-    with pytest.raises(DomainError, match="前置 k1 重复声明"):
-        _course(_point("k1", "函数"), _point("k2", "闭包", ("k1", "k1")))
-
-
-def test_course_reports_cycle_path() -> None:
-    """成环时错误信息给出环本身，而不是只说「有环」。"""
-    with pytest.raises(DomainError, match="依赖成环：k1 -> k2 -> k1"):
-        _course(_point("k1", "A", ("k2",)), _point("k2", "B", ("k1",)))
-
-
-def test_course_lookup_rejects_unknown_point() -> None:
-    """按 id 取不存在的知识点会失败，而不是返回 None 让调用方猜。"""
-    course = _course(_point("k1", "函数"))
-    assert course.knowledge_point(KnowledgePointId("k1")).title == "函数"
-    with pytest.raises(DomainError, match="没有知识点 k9"):
-        course.knowledge_point(KnowledgePointId("k9"))
+    assert course.structure.order() == ()
+    assert course.structure.entry_points() == ()
 
 
 # --- 学习目标的生命周期 ---------------------------------------------------

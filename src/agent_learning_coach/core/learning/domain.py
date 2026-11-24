@@ -1,38 +1,52 @@
 """学习领域：实体、值对象与聚合边界。
 
 Topic 15 的问题是：Learner、Course、Learning Goal 三个概念的边界在哪里？哪些是
-实体，哪些是值对象？本模块的回答（论证见 ADR-0015）：
+实体，哪些是值对象？Topic 16 继续问：知识点与知识点关系怎么建模，才能同时支撑
+**路径计算**与**薄弱点归因**？
+
+分类（论证见 ADR-0015、ADR-0016）：
 
 | 概念 | 分类 | 身份 | 归属 |
 | ---- | ---- | ---- | ---- |
 | `Learner` | 实体 | `LearnerId` | 独立聚合 |
-| `Course` | 实体 | `CourseId` | 独立聚合（内含知识点） |
-| `KnowledgePoint` | 实体 | `KnowledgePointId` | `Course` 聚合内部 |
+| `Course` | 实体 | `CourseId` | 独立聚合（聚合根） |
+| `KnowledgeStructure` | 值对象 | 无 | `Course` 聚合内部 |
+| `KnowledgePoint` | 实体 | `KnowledgePointId` | 结构内部 |
+| `KnowledgeRelation` | 值对象 | 无 | 结构内部 |
 | `LearningGoal` | 实体 | `GoalId` | 独立聚合：Learner 与 Course 的**关联** |
 | 四类标识、`GoalConstraint` | 值对象 | 无身份，按值相等 | 不单独存在 |
 
-三条边界规则：
+四条边界规则：
 
 1. **跨聚合只按 id 引用，不嵌入对方对象。** `LearningGoal` 记住 `LearnerId` 与
    `CourseId`，而不是持有 `Learner` / `Course`；`Learner` 也不持有目标列表。
    单向引用避免了「两个对象各自保存对方」带来的双写与不一致。
 2. **身份来自 id，不来自对象。** 实体不可变（`frozen`）：改名、达成目标都返回
    新实例。历史与审计因此不会被原地修改掉，对象可以在任意地方安全传递。
-3. **不变量在构造时校验，不交给调用方自觉。** 知识点 id 唯一、前置存在且无环、
-   同一终态不可回退——违反时抛 `DomainError`，错误信息说明「哪里不对、怎么改」。
+3. **不变量在构造时校验，不交给调用方自觉。** 知识点 id 唯一、关系端点存在、
+   `requires` 无环、`part_of` 是树、同一终态不可回退——违反时抛 `DomainError`，
+   错误信息说明「哪里不对、怎么改」。
+4. **关系是结构的事实，不是知识点的字段。** 前置不是 `KnowledgePoint` 的属性，
+   而是 `KnowledgeStructure` 里的一条 `requires` 关系：同一个点可以被多条关系
+   引用，把列表塞进点里会让「改一处、另一处过期」成为可能。
+
+**路径与归因都是派生查询**，不落库：`order()` 回答「先学什么」，
+`prerequisite_closure()` 回答「这一点没掌握，先补哪些」，`dependent_closure()`
+回答「这一点没掌握，后续哪些受影响」，`parent_of()` / `children_of()` 提供主题
+层级。它们每次重算——派生视图不应有独立状态。
 
 职责边界：本模块**不认识模型、工具与运行时**。学习目标交给 Agent 规划时，通过
 ``bridge.to_goal_spec`` 单向映射成 ``GoalSpec``；反方向不允许——领域模型不能
 依赖 ``core.agent``。
 
-尚未覆盖：知识点是否跨课程共享、已有知识（掌握度）、学习领域注册表、持久化。
-它们在后续主题里定，本模块刻意不预留字段。
+尚未覆盖：知识点跨课程共享（留给 Topic 22 的全局知识地图）、已有知识/掌握度
+（Topic 18、20）、持久化。
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 GoalStatus = Literal["active", "achieved", "abandoned"]
@@ -44,6 +58,20 @@ GoalStatus = Literal["active", "achieved", "abandoned"]
 
 ConstraintKind = Literal["time", "prerequisite", "preference"]
 """目标约束的种类。"""
+
+RelationKind = Literal["requires", "part_of"]
+"""知识点关系的种类。
+
+- ``requires``：**前置依赖**。``source`` 必须先掌握 ``target``。有向、必须无环，
+  决定学习顺序。
+- ``part_of``：**归属层级**。``source`` 属于 ``target`` 这个更大的主题。有向、
+  必须无环，且每个知识点至多一个父节点（树）。
+
+两种关系语义不同，因此分开校验：``requires`` 决定「能不能开始」，
+``part_of`` 决定「归到哪个主题」。把它们合成一种「关联」会让查询与校验都失去
+判据。``related``（无向关联）暂时不做——没有消费者，且无向边的去重与语义都更
+复杂（见 ADR-0016）。
+"""
 
 _STATUS_LABELS: dict[GoalStatus, str] = {
     "active": "进行中",
@@ -185,10 +213,10 @@ class Learner:
 
 @dataclass(frozen=True)
 class KnowledgePoint:
-    """知识点——**实体**，位于 ``Course`` 聚合内部。
+    """知识点——**实体**，位于 ``KnowledgeStructure`` 内部。
 
-    它的身份在课程内被引用（前置依赖、后续的掌握度与诊断）。前置只允许指向
-    同一门课的知识点；跨课程共享的问题留给 Topic 16，本模块不预设。
+    只承载「这一点是什么」：标识、名称、可选摘要。**前置与归属不在这里**——
+    它们是结构里的关系，见 ``KnowledgeRelation``。
     """
 
     id: KnowledgePointId
@@ -197,63 +225,88 @@ class KnowledgePoint:
     title: str
     """知识点名称。"""
 
-    prerequisites: tuple[KnowledgePointId, ...] = ()
-    """前置知识点——必须先掌握。"""
+    summary: str = ""
+    """一句话说明，供 prompt 与展示使用。"""
 
     def __post_init__(self) -> None:
-        """校验名称。"""
+        """校验名称与摘要。"""
         _require_text("知识点名称", self.title)
+        if self.summary:
+            _require_text("知识点摘要", self.summary)
 
 
 @dataclass(frozen=True)
-class Course:
-    """课程——**实体**，也是知识点聚合的根。
+class KnowledgeRelation:
+    """知识点之间的关系——**值对象**。
 
-    课程拥有自己的知识点与依赖关系；构造时校验完整性，因此拿出来用的
-    ``Course`` 一定是自洽的：知识点 id 唯一、前置存在、依赖无环。
+    没有 id：同一 ``(kind, source, target)`` 出现两次就是同一条关系，重复声明
+    是建模错误而不是新事实。
     """
 
-    id: CourseId
-    """课程标识。"""
+    kind: RelationKind
+    """关系种类。"""
 
-    title: str
-    """课程名称。"""
+    source: KnowledgePointId
+    """关系起点。"""
 
-    knowledge_points: tuple[KnowledgePoint, ...] = ()
-    """课程包含的知识点，按作者声明的顺序保存。"""
+    target: KnowledgePointId
+    """关系终点。"""
 
     def __post_init__(self) -> None:
-        """校验课程内部一致性。
+        """拒绝自指。"""
+        if self.source == self.target:
+            raise DomainError(
+                f"知识点 {self.source} 的 {self.kind} 关系不能指向自身",
+            )
+
+
+@dataclass(frozen=True)
+class KnowledgeStructure:
+    """知识结构——**值对象**：知识点集合 + 它们之间的关系。
+
+    构造时完整校验，因此拿到手的结构一定自洽；所有查询都是派生视图，每次重算。
+
+    ``requires`` 与 ``part_of`` 各自成 DAG：前者决定学习顺序，后者是归属树。
+    两种关系不互相约束——一个点可以既依赖另一个点，又属于第三个主题。
+    """
+
+    points: tuple[KnowledgePoint, ...] = ()
+    """知识点，按作者声明的顺序保存（决定并列时的稳定顺序）。"""
+
+    relations: tuple[KnowledgeRelation, ...] = ()
+    """关系，按声明顺序保存。"""
+
+    def __post_init__(self) -> None:
+        """校验结构一致性。
 
         Raises:
-            DomainError: 名称不合法、知识点 id 重复、前置缺失/自指/重复，或
-                依赖成环。
+            DomainError: 知识点 id 重复、关系端点缺失、关系重复、``requires``
+                成环、``part_of`` 一子多父或成环。
         """
-        _require_text("课程名称", self.title)
         index: dict[KnowledgePointId, KnowledgePoint] = {}
-        for point in self.knowledge_points:
+        for point in self.points:
             if point.id in index:
-                raise DomainError(
-                    f"课程「{self.title}」中知识点 id 重复：{point.id}",
-                )
+                raise DomainError(f"知识点 id 重复：{point.id}")
             index[point.id] = point
-        for point in self.knowledge_points:
-            seen: set[KnowledgePointId] = set()
-            for required in point.prerequisites:
-                if required == point.id:
-                    raise DomainError(f"知识点「{point.title}」不能依赖自身")
-                if required in seen:
-                    raise DomainError(
-                        f"知识点「{point.title}」的前置 {required} 重复声明",
-                    )
-                seen.add(required)
-                if required not in index:
-                    raise DomainError(
-                        f"知识点「{point.title}」的前置 {required} 不在课程内",
-                    )
-        _knowledge_order(self.knowledge_points)
 
-    def knowledge_point(self, point_id: KnowledgePointId) -> KnowledgePoint:
+        seen: set[tuple[RelationKind, KnowledgePointId, KnowledgePointId]] = set()
+        for relation in self.relations:
+            for endpoint in (relation.source, relation.target):
+                if endpoint not in index:
+                    raise DomainError(
+                        f"{relation.kind} 关系引用了不存在的知识点：{endpoint}",
+                    )
+            key = (relation.kind, relation.source, relation.target)
+            if key in seen:
+                raise DomainError(
+                    f"重复的关系：{relation.kind} {relation.source} -> {relation.target}",
+                )
+            seen.add(key)
+
+        _topological_order(self.points, self._requires_edges())
+        self._validate_hierarchy()
+
+    def point(self, point_id: KnowledgePointId) -> KnowledgePoint:
         """按 id 取知识点。
 
         Args:
@@ -263,24 +316,219 @@ class Course:
             知识点。
 
         Raises:
-            DomainError: 课程中不存在该知识点。
+            DomainError: 结构中不存在该知识点。
         """
-        for point in self.knowledge_points:
+        for point in self.points:
             if point.id == point_id:
                 return point
-        raise DomainError(f"课程「{self.title}」中没有知识点 {point_id}")
+        raise DomainError(f"知识结构中没有知识点 {point_id}")
 
-    def knowledge_order(self) -> tuple[KnowledgePoint, ...]:
-        """按依赖关系给出学习顺序。
+    def order(self) -> tuple[KnowledgePoint, ...]:
+        """按 ``requires`` 给出学习顺序。
 
-        没有依赖的知识点保持声明顺序，因此结果是确定的。**这只是派生视图**：
-        它服务「先学什么」的展示，不承担调度与历史——与计划模块的三序分离
-        （ADR-0013）同一个原则。
+        并列知识点保持声明顺序，因此结果确定。**这只是派生视图**：它服务「先学
+        什么」的展示，不承担调度与历史——与计划模块的三序分离（ADR-0013）同一个
+        原则。
 
         Returns:
             拓扑序的知识点。
         """
-        return _knowledge_order(self.knowledge_points)
+        return _topological_order(self.points, self._requires_edges())
+
+    def prerequisites_of(self, point_id: KnowledgePointId) -> tuple[KnowledgePoint, ...]:
+        """直接前置知识点，按声明顺序。
+
+        Args:
+            point_id: 知识点标识。
+
+        Returns:
+            直接前置；没有则为空元组。
+
+        Raises:
+            DomainError: 结构中不存在该知识点。
+        """
+        self.point(point_id)
+        edges = self._requires_edges()
+        index = {point.id: point for point in self.points}
+        return tuple(index[item] for item in edges[point_id])
+
+    def prerequisite_closure(
+        self,
+        point_id: KnowledgePointId,
+    ) -> tuple[KnowledgePoint, ...]:
+        """全部（传递）前置，按学习顺序返回，**不含自身**。
+
+        这是薄弱点归因的原语：某一点没掌握时，它依赖的所有点都有嫌疑；返回顺序
+        就是补课顺序。
+
+        Args:
+            point_id: 知识点标识。
+
+        Returns:
+            传递前置，按 ``order()`` 的顺序。
+
+        Raises:
+            DomainError: 结构中不存在该知识点。
+        """
+        self.point(point_id)
+        return self._closure(point_id, self._requires_edges())
+
+    def dependent_closure(self, point_id: KnowledgePointId) -> tuple[KnowledgePoint, ...]:
+        """直接或间接依赖该点的所有知识点，按学习顺序返回，**不含自身**。
+
+        用于影响分析：某点没掌握时，后续哪些点会受影响。
+
+        Args:
+            point_id: 知识点标识。
+
+        Returns:
+            传递后继，按 ``order()`` 的顺序。
+
+        Raises:
+            DomainError: 结构中不存在该知识点。
+        """
+        self.point(point_id)
+        reverse: dict[KnowledgePointId, list[KnowledgePointId]] = {
+            point.id: [] for point in self.points
+        }
+        for source, targets in self._requires_edges().items():
+            for target in targets:
+                reverse[target].append(source)
+        return self._closure(point_id, reverse)
+
+    def parent_of(self, point_id: KnowledgePointId) -> KnowledgePoint | None:
+        """归属父节点（``part_of``），没有则为 ``None``。
+
+        Args:
+            point_id: 知识点标识。
+
+        Returns:
+            父节点或 ``None``。
+
+        Raises:
+            DomainError: 结构中不存在该知识点。
+        """
+        self.point(point_id)
+        parent_id = self._parent_map().get(point_id)
+        if parent_id is None:
+            return None
+        return self.point(parent_id)
+
+    def children_of(self, point_id: KnowledgePointId) -> tuple[KnowledgePoint, ...]:
+        """直接子节点（``part_of``），按声明顺序。
+
+        Args:
+            point_id: 知识点标识。
+
+        Returns:
+            直接子节点；没有则为空元组。
+
+        Raises:
+            DomainError: 结构中不存在该知识点。
+        """
+        self.point(point_id)
+        parents = self._parent_map()
+        return tuple(point for point in self.points if parents.get(point.id) == point_id)
+
+    def entry_points(self) -> tuple[KnowledgePoint, ...]:
+        """没有前置的知识点——学习的起点。
+
+        Returns:
+            起点知识点，按声明顺序。
+        """
+        edges = self._requires_edges()
+        return tuple(point for point in self.points if not edges[point.id])
+
+    def _requires_edges(self) -> dict[KnowledgePointId, tuple[KnowledgePointId, ...]]:
+        """``requires`` 邻接表：知识点 → 它的直接前置，按声明顺序。"""
+        index = {point.id: position for position, point in enumerate(self.points)}
+        edges: dict[KnowledgePointId, list[KnowledgePointId]] = {
+            point.id: [] for point in self.points
+        }
+        for relation in self.relations:
+            if relation.kind == "requires":
+                edges[relation.source].append(relation.target)
+        return {
+            source: tuple(sorted(targets, key=index.__getitem__))
+            for source, targets in edges.items()
+        }
+
+    def _parent_map(self) -> dict[KnowledgePointId, KnowledgePointId]:
+        """``part_of`` 单父映射：知识点 → 父节点。"""
+        parents: dict[KnowledgePointId, KnowledgePointId] = {}
+        for relation in self.relations:
+            if relation.kind == "part_of":
+                parents[relation.source] = relation.target
+        return parents
+
+    def _closure(
+        self,
+        point_id: KnowledgePointId,
+        edges: Mapping[KnowledgePointId, Sequence[KnowledgePointId]],
+    ) -> tuple[KnowledgePoint, ...]:
+        """沿 ``edges`` 求传递闭包，并按学习顺序返回。"""
+        collected: set[KnowledgePointId] = set()
+        stack = list(edges[point_id])
+        while stack:
+            current = stack.pop()
+            if current in collected:
+                continue
+            collected.add(current)
+            stack.extend(edges[current])
+        return tuple(point for point in self.order() if point.id in collected)
+
+    def _validate_hierarchy(self) -> None:
+        """校验 ``part_of``：一子至多一父，且层级无环。"""
+        parents: dict[KnowledgePointId, KnowledgePointId] = {}
+        for relation in self.relations:
+            if relation.kind != "part_of":
+                continue
+            existing = parents.get(relation.source)
+            if existing is not None:
+                raise DomainError(
+                    f"知识点 {relation.source} 有多个 part_of 父节点："
+                    f"{existing}、{relation.target}",
+                )
+            parents[relation.source] = relation.target
+
+        for point in self.points:
+            path: list[KnowledgePointId] = []
+            seen: dict[KnowledgePointId, int] = {}
+            current = point.id
+            while current in parents:
+                if current in seen:
+                    cycle = [*path[seen[current] :], current]
+                    rendered = " -> ".join(str(item) for item in cycle)
+                    raise DomainError(f"part_of 层级成环：{rendered}")
+                seen[current] = len(path)
+                path.append(current)
+                current = parents[current]
+
+
+@dataclass(frozen=True)
+class Course:
+    """课程——**实体**，也是知识结构的聚合根。
+
+    课程只负责「是哪门课」与「包含什么结构」；学习顺序、前置闭包、主题层级
+    都由 ``structure`` 回答。
+    """
+
+    id: CourseId
+    """课程标识。"""
+
+    title: str
+    """课程名称。"""
+
+    structure: KnowledgeStructure = field(default_factory=KnowledgeStructure)
+    """课程的知识结构。"""
+
+    def __post_init__(self) -> None:
+        """校验课程名称。
+
+        Raises:
+            DomainError: 名称为空或含首尾空白。
+        """
+        _require_text("课程名称", self.title)
 
 
 @dataclass(frozen=True)
@@ -361,8 +609,9 @@ class LearningGoal:
         return replace(self, status=target)
 
 
-def _knowledge_order(
+def _topological_order(
     points: Sequence[KnowledgePoint],
+    edges: Mapping[KnowledgePointId, Sequence[KnowledgePointId]],
 ) -> tuple[KnowledgePoint, ...]:
     """按依赖给出稳定的拓扑序；成环时抛 ``DomainError``。"""
     remaining = list(points)
@@ -372,27 +621,30 @@ def _knowledge_order(
         ready = [
             point
             for point in remaining
-            if all(required in finished for required in point.prerequisites)
+            if all(required in finished for required in edges[point.id])
         ]
         if not ready:
-            raise DomainError(f"课程知识点依赖成环：{_describe_cycle(remaining)}")
+            raise DomainError(f"requires 依赖成环：{_describe_cycle(points, edges)}")
         ordered.extend(ready)
         finished.update(point.id for point in ready)
         remaining = [point for point in remaining if point.id not in finished]
     return tuple(ordered)
 
 
-def _describe_cycle(points: Sequence[KnowledgePoint]) -> str:
+def _describe_cycle(
+    points: Sequence[KnowledgePoint],
+    edges: Mapping[KnowledgePointId, Sequence[KnowledgePointId]],
+) -> str:
     """从无法排序的知识点里找出一条环，用于错误信息。"""
-    by_id = {point.id: point for point in points}
+    known = {point.id for point in points}
     path: list[KnowledgePointId] = []
     on_path: set[KnowledgePointId] = set()
 
     def walk(point_id: KnowledgePointId) -> list[KnowledgePointId] | None:
         path.append(point_id)
         on_path.add(point_id)
-        for required in by_id[point_id].prerequisites:
-            if required not in by_id:
+        for required in edges[point_id]:
+            if required not in known:
                 continue
             if required in on_path:
                 start = path.index(required)
@@ -404,8 +656,8 @@ def _describe_cycle(points: Sequence[KnowledgePoint]) -> str:
         on_path.discard(point_id)
         return None
 
-    for point_id in by_id:
-        cycle = walk(point_id)
+    for point in points:
+        cycle = walk(point.id)
         if cycle is not None:
             return " -> ".join(str(item) for item in cycle)
         path.clear()
@@ -423,7 +675,10 @@ __all__ = [
     "GoalStatus",
     "KnowledgePoint",
     "KnowledgePointId",
+    "KnowledgeRelation",
+    "KnowledgeStructure",
     "Learner",
     "LearnerId",
     "LearningGoal",
+    "RelationKind",
 ]

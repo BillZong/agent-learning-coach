@@ -157,3 +157,18 @@ core.learning.bridge   →  GoalSpec  →  core.agent
 
 接入说明见 [`docs/engineering/domain.md`](../../engineering/domain.md)。
 学习笔记见 [`docs/learning/topics/15-domain-driven-design-basics.md`](../../learning/topics/15-domain-driven-design-basics.md)。
+
+## 补充说明（2026-11-24，Topic 16）
+
+Topic 16 重构了知识结构的形状，本 ADR 的聚合边界不变，具体接口有三处演进：
+
+1. **关系外置**：`KnowledgePoint.prerequisites` 移除，前置与归属成为
+   `KnowledgeStructure` 里的 `KnowledgeRelation`（ADR-0016）。理由：关系是结构的
+   事实，不是点的属性；改一条边不应复制知识点。
+2. **`Course` 持有结构**：`Course.knowledge_points` 与 `Course.knowledge_order()`
+   被 `Course.structure` 与 `structure.order()` 取代；查询（顺序、闭包、层级）
+   都由结构回答。
+3. **跨课程共享**：本 ADR 留给 Topic 16 的问题已决定——知识点仍以课程为边界，
+   全局知识地图留给 Topic 22。
+
+知识点仍然是 `Course` 聚合内部的实体，`LearningGoal` 仍然只按 id 引用课程。

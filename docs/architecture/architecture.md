@@ -75,18 +75,24 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | ---- | ---- | ---- |
 | Learner | 实体（独立聚合） | `core.learning.domain.Learner` |
 | Course / KnowledgePoint | 实体（课程聚合） | `core.learning.domain.Course` |
+| Knowledge Structure / Relation | 值对象（课程内部） | `core.learning.domain.KnowledgeStructure` |
 | Learning Goal | 实体（关联聚合） | `core.learning.domain.LearningGoal` |
 | 各类 id、目标约束 | 值对象 | `core.learning.domain` |
 
 边界规则：跨聚合只按 id 引用（目标记 `learner_id` / `course_id`，学习者不记
-目标）；实体不可变；不变量在构造时校验；知识顺序是派生视图，不持久化。
+目标）；实体不可变；不变量在构造时校验；关系外置在结构里（`requires` 决定
+顺序，`part_of` 决定归属）；顺序与闭包都是派生视图，不持久化。
+
+知识结构查询：`order()`（先学什么）、`prerequisite_closure()`（补课顺序）、
+`dependent_closure()`（影响范围）、`parent_of()` / `children_of()`（主题层级）。
+见 [ADR-0016](./decisions/0016-knowledge-representation.md)。
 
 **依赖方向**：`core.learning` 不认识模型、工具与运行时；学习目标通过
 `bridge.to_goal_spec` 单向映射成 `GoalSpec` 后交给 `core.agent`。
 
 学习领域层不应依赖特定的 LLM 提供商或 Agent 框架。
 
-尚未建模：学习领域注册表、诊断结果、掌握度、学习进度、持久化。
+尚未建模：学习领域注册表、诊断结果、掌握度、学习进度、跨课程知识地图、持久化。
 
 ### 3.4 Agent 运行时层（Agent Runtime）
 

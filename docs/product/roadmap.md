@@ -169,7 +169,7 @@
 #### 阶段交付物
 
 - [x] Learning Domain 数据模型（ADR-0015）。
-- [x] Knowledge Structure 数据模型（知识点 + 依赖 DAG）。
+- [x] Knowledge Structure 数据模型（知识点 + requires / part_of 关系，含闭包查询）。
 - [x] Learner Profile。
 - [x] Learning Goal 管理（生命周期 + 到 `GoalSpec` 的映射）。
 - [ ] Learning Diagnosis。
