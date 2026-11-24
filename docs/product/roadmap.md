@@ -473,6 +473,9 @@
 | M5：Adaptive Learning | Week 10 | 自适应学习能力 | 知识状态、计划调整、可解释性 |
 | M6：Project Delivery | Week 12 | 完整项目交付 | 端到端闭环、可靠性、评估和 Demo |
 
+**M1 + M2 共同构成 MVP**；MVP 的定义与四条判断标准见
+[`mvp.md`](./mvp.md)。M3 之后（Tutor、练习评估、自适应）不属于 MVP 范围。
+
 ## 5. 跨阶段工程建设（Cross-Phase Engineering）
 
 以下工程能力不是某一个阶段的独立功能，而是需要贯穿整个项目。
