@@ -30,7 +30,10 @@ from agent_learning_coach.core.learning.bridge import to_goal_spec
 from agent_learning_coach.core.learning.consistency import (
     GoalIssue,
     GoalIssueCode,
+    ProgressIssue,
+    ProgressIssueCode,
     check_goal_against_course,
+    check_progress_against_course,
 )
 from agent_learning_coach.core.learning.domain import (
     Course,
@@ -53,6 +56,17 @@ from agent_learning_coach.core.learning.goal import (
     LearningGoal,
     TimeWindow,
 )
+from agent_learning_coach.core.learning.progress import (
+    GoalCompletion,
+    LearningProgress,
+    LearningState,
+    PointProgress,
+    PointSource,
+    PointTransition,
+    blocked_points,
+    goal_completion,
+    ready_points,
+)
 
 __all__ = [
     "CapabilityRequirement",
@@ -60,6 +74,7 @@ __all__ = [
     "CourseId",
     "DailyEffort",
     "DomainError",
+    "GoalCompletion",
     "GoalId",
     "GoalIssue",
     "GoalIssueCode",
@@ -72,8 +87,19 @@ __all__ = [
     "Learner",
     "LearnerId",
     "LearningGoal",
+    "LearningProgress",
+    "LearningState",
+    "PointProgress",
+    "PointSource",
+    "PointTransition",
+    "ProgressIssue",
+    "ProgressIssueCode",
     "RelationKind",
     "TimeWindow",
+    "blocked_points",
     "check_goal_against_course",
+    "check_progress_against_course",
+    "goal_completion",
+    "ready_points",
     "to_goal_spec",
 ]

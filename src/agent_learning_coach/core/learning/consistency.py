@@ -37,6 +37,7 @@ from typing import Literal
 
 from agent_learning_coach.core.learning.domain import Course
 from agent_learning_coach.core.learning.goal import LearningGoal
+from agent_learning_coach.core.learning.progress import LearningProgress
 
 GoalIssueCode = Literal[
     "course_mismatch",
@@ -44,6 +45,13 @@ GoalIssueCode = Literal[
     "unknown_prerequisite_point",
 ]
 """跨聚合一致性问题的种类。"""
+
+ProgressIssueCode = Literal[
+    "course_mismatch",
+    "unknown_point",
+    "prerequisite_not_learned",
+]
+"""学习进度跨聚合一致性问题的种类。"""
 
 
 @dataclass(frozen=True)
@@ -113,8 +121,86 @@ def check_goal_against_course(goal: LearningGoal, course: Course) -> tuple[GoalI
     return tuple(issues)
 
 
+@dataclass(frozen=True)
+class ProgressIssue:
+    """一条学习进度的跨聚合不一致——**值对象**。
+
+    只报告事实，不抛异常：一次检查可能同时发现多个问题，逐个抛异常会让调用方
+    只能看到第一个。
+    """
+
+    code: ProgressIssueCode
+    """问题种类。"""
+
+    message: str
+    """面向用户与调用方的说明。"""
+
+
+def check_progress_against_course(
+    progress: LearningProgress,
+    course: Course,
+) -> tuple[ProgressIssue, ...]:
+    """检查学习进度与它所引用课程之间的一致性。
+
+    检查三件事：
+
+    1. 进度所属的课程就是给定的这门课。
+    2. 进度里的每个知识点存在于课程的知识结构中。
+    3. **前置封闭性**：一个知识点被判为「已学会」时，它的直接前置也必须已学会。
+
+    第 3 条来自 Knowledge Space Theory 的「知识状态对先修封闭」性质
+    （ADR-0016 已引用）：掌握了 ``p`` 就应当已经掌握 ``p`` 的全部先修。它是
+    **一致性检查而不是构造期校验**，因为进度是逐次更新的，一次更新看不到全部
+    先修。
+
+    Args:
+        progress: 学习进度。
+        course: 进度引用的课程。
+
+    Returns:
+        发现的问题；一致时为空元组。
+    """
+    issues: list[ProgressIssue] = []
+    if progress.course_id != course.id:
+        issues.append(
+            ProgressIssue(
+                code="course_mismatch",
+                message=(f"进度属于课程 {progress.course_id}，与课程 {course.id} 不一致"),
+            ),
+        )
+        return tuple(issues)
+
+    known = {point.id for point in course.structure.points}
+    for point in progress.points:
+        if point.point_id not in known:
+            issues.append(
+                ProgressIssue(
+                    code="unknown_point",
+                    message=(f"进度引用了课程 {course.id} 中不存在的知识点：{point.point_id}"),
+                ),
+            )
+            continue
+        if point.state != "learned":
+            continue
+        for prerequisite in course.structure.prerequisites_of(point.point_id):
+            if progress.state_of(prerequisite.id) != "learned":
+                issues.append(
+                    ProgressIssue(
+                        code="prerequisite_not_learned",
+                        message=(
+                            f"知识点 {point.point_id} 判为已学会，"
+                            f"但它的前置 {prerequisite.id} 尚未学会"
+                        ),
+                    ),
+                )
+    return tuple(issues)
+
+
 __all__ = [
     "GoalIssue",
     "GoalIssueCode",
+    "ProgressIssue",
+    "ProgressIssueCode",
     "check_goal_against_course",
+    "check_progress_against_course",
 ]

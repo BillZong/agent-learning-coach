@@ -36,3 +36,4 @@
 | [0015](0015-learning-domain-boundaries.md) | 学习领域三聚合边界 | 已接受 |
 | [0016](0016-knowledge-representation.md) | 知识表示 | 已接受 |
 | [0017](0017-learning-goal-modeling.md) | 学习目标的建模 | 已接受 |
+| [0018](0018-learning-progress.md) | 学习进度 | 已接受 |

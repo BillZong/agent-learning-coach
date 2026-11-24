@@ -172,6 +172,7 @@
 - [x] Knowledge Structure 数据模型（知识点 + requires / part_of 关系，含闭包查询）。
 - [x] Learner Profile。
 - [x] Learning Goal 管理（状态机 + 结构化约束 + 知识点绑定 + 到 `GoalSpec` 的映射，ADR-0017）。
+- [x] Learning Progress 数据模型（知识点级学习状态 + 归属与派生查询，ADR-0018）。
 - [ ] Learning Diagnosis。
 - [x] Learning Plan 生成能力（Topic 13，Phase 0 已交付）。
 - [x] 学习计划持久化机制（会话快照，ADR-0009）。
