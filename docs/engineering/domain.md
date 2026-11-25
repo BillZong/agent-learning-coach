@@ -5,7 +5,8 @@
 > 决策依据：[ADR-0015](../architecture/decisions/0015-learning-domain-boundaries.md)、
 > [ADR-0016](../architecture/decisions/0016-knowledge-representation.md)、
 > [ADR-0017](../architecture/decisions/0017-learning-goal-modeling.md)、
-> [ADR-0018](../architecture/decisions/0018-learning-progress.md)
+> [ADR-0018](../architecture/decisions/0018-learning-progress.md)、
+> [ADR-0019](../architecture/decisions/0019-domain-review.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -87,6 +88,10 @@
 | `ready_points(progress, structure)` | 现在可以开始学哪些点 |
 | `blocked_points(progress, structure)` | 哪些点还动不了（前置没学会） |
 | `check_progress_against_course(progress, course)` | 跨聚合一致性检查：课程一致、知识点存在、**前置封闭性** |
+
+**进度与目标必须配对**：`goal_completion` 要求两者属于**同一学习者**且**同一
+门课**，否则抛 `DomainError`——别人的进度算不出这个目标的完成度（ADR-0019
+§2）。
 
 **学习状态与任务状态是两套东西**：`LearningState`（`not_started` /
 `in_progress` / `learned`）描述学习者对概念的认知；运行时的 `TaskStatus` 描述
@@ -312,10 +317,15 @@ for issue in issues:
 
 ```bash
 uv run --group dev pytest -q tests/test_learning_domain.py tests/test_knowledge_structure.py \
-  tests/test_learning_goal.py tests/test_learning_progress.py
+  tests/test_learning_goal.py tests/test_learning_progress.py tests/test_learning_workflow.py
 uv run python examples/learning_domain.py    # 聚合边界与拒绝演示
 uv run python examples/knowledge_structure.py # 路径、补课顺序、影响范围
 uv run python examples/learning_goal.py      # 状态机、约束、绑定与交接
 uv run python examples/learning_progress.py  # 进度归属、状态机、派生查询
+uv run python examples/learning_review.py    # 四个聚合协同走一遍
 uv run python examples/learning_plan.py      # 领域目标 → 计划闭环
 ```
+
+`tests/test_learning_workflow.py` 是**集成测试**：它让四个聚合一起动，验证协作
+（一致性检查真的被调用、完成度算对、终态行为正确、进度与目标必须配对），不重复
+单聚合测试已覆盖的不变量（ADR-0019 §5）。

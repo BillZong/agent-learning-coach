@@ -37,3 +37,4 @@
 | [0016](0016-knowledge-representation.md) | 知识表示 | 已接受 |
 | [0017](0017-learning-goal-modeling.md) | 学习目标的建模 | 已接受 |
 | [0018](0018-learning-progress.md) | 学习进度 | 已接受 |
+| [0019](0019-domain-review.md) | 领域模型评审（Phase 1 收口） | 已接受 |

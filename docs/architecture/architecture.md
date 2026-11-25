@@ -108,6 +108,12 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 （现在能学什么）、`blocked_points()`（哪些还动不了）。见
 [ADR-0018](./decisions/0018-learning-progress.md)。
 
+**Phase 1 建模阶段已评审收口**（ADR-0019）：四个聚合的边界与 PRD Stage 1～2 的
+建模部分匹配，不变量均有 ADR 出处；评审补上「进度与目标必须同一学习者」的
+跨聚合校验，并新增四个聚合协同的集成测试。阶段验收 5/7 条达标，其余落在策略层
+（诊断、缺口判定）与持久化。持久化目标定为 PostgreSQL，但仓储层留待后续——
+不可变实体与迁移历史的存储形态尚未决策。
+
 **依赖方向**：`core.learning` 不认识模型、工具与运行时；学习目标通过
 `bridge.to_goal_spec` 单向映射成 `GoalSpec` 后交给 `core.agent`。
 

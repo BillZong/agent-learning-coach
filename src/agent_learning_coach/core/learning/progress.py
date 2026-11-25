@@ -516,6 +516,9 @@ def goal_completion(progress: LearningProgress, goal: LearningGoal) -> GoalCompl
     这是**跨聚合查询**：需要同时看到进度与目标，因此是模块级函数而不是方法
     （与 ADR-0017 的 ``check_goal_against_course`` 同一形状）。
 
+    进度与目标必须属于**同一个学习者**且**同一门课**才算数：别人的进度算不出
+    这个目标的完成度。
+
     Args:
         progress: 学习进度。
         goal: 学习目标。
@@ -524,8 +527,12 @@ def goal_completion(progress: LearningProgress, goal: LearningGoal) -> GoalCompl
         完成度。
 
     Raises:
-        DomainError: 进度与目标不属于同一门课——比较它们没有意义。
+        DomainError: 进度与目标不属于同一学习者，或不属于同一门课。
     """
+    if progress.learner_id != goal.learner_id:
+        raise DomainError(
+            f"进度属于学习者 {progress.learner_id}，目标属于学习者 {goal.learner_id}，无法比较",
+        )
     if progress.course_id != goal.course_id:
         raise DomainError(
             f"进度属于课程 {progress.course_id}，目标属于课程 {goal.course_id}，无法比较",
