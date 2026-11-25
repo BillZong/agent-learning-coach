@@ -42,3 +42,4 @@
 | [0021](0021-structured-generation.md) | 诊断题生成——两层校验、拦截与重试 | 已接受 |
 | [0022](0022-structured-errors.md) | 结构化错误——原始错误是事实依据，摘要是理解入口 | 已接受 |
 | [0023](0023-diagnostic-assessment.md) | 诊断评估——映射、汇总与降级 | 已接受 |
+| [0024](0024-learning-planning.md) | 学习计划——粒度、范围与时间约束 | 已接受 |

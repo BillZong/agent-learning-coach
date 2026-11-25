@@ -9,7 +9,8 @@
 > [ADR-0019](../architecture/decisions/0019-domain-review.md)、
 > [ADR-0020](../architecture/decisions/0020-diagnostic-assessment.md)、
 > [ADR-0021](../architecture/decisions/0021-structured-generation.md)、
-> [ADR-0023](../architecture/decisions/0023-diagnostic-assessment.md)
+> [ADR-0023](../architecture/decisions/0023-diagnostic-assessment.md)、
+> [ADR-0024](../architecture/decisions/0024-learning-planning.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -35,6 +36,9 @@
 | `ExerciseGenerator` | 生成适配器 | 调用模型、校验、产出 `DiagnosticExercise` |
 | `Grader` / `ExactMatchGrader` | 判官协议与实现 | 判定一次作答对错 |
 | `AssessmentResult` / `DegradationReport` | 值对象 | 评估结果与降级报告 |
+| `LearningUnit` | 值对象 | 一个学习单元——一个知识点 |
+| `LearningPlan` / `DailyLoad` / `PlanOverload` | 值对象 | 学习计划、每天负载、超载报告 |
+| `EffortEstimator` / `UniformEffort` | 估时协议与实现 | 估算一个知识点要学多久 |
 
 知识结构的查询：
 
@@ -117,6 +121,7 @@
 | ---- | ---- |
 | `diagnosis_plan(diagnosis, goal)` | 准入结论：`is_sufficient`、`teachable`（要教的内容）、`undecided`（不知道的内容）、`coverage_ratio` |
 | `assess_diagnosis(exercises, submissions, grader)` | 评估结果：判定、证据与降级报告 |
+| `generate_plan(goal, structure, progress)` | 学习计划：单元、每天负载、超载报告 |
 
 **判定与证据必须一致**：判定 k2 不能拿 k1 的证据当依据——构造期就拒绝
 （ADR-0023）。
@@ -135,6 +140,18 @@
 | 题目标识重复 | **错误**：拒绝 |
 
 前者是「信息不全」（正常结果），后者是「信息矛盾」（数据坏了）。
+
+**计划范围** = （目标要求的知识点 ∪ 它们的前置闭包）− 已经学会的知识点。
+
+**计划顺序** = 知识结构的拓扑序限制到计划范围内——依赖是硬约束，前置一定排在
+后继之前。
+
+**排不下要报告，不能少排**：超载时计划仍包含全部单元，并给出 `PlanOverload`。
+
+**目标的前置（`goal.prerequisites`）不进计划范围**，只被报告——它是「开始这个
+目标前必须已经会」的前提条件，不是学习内容。
+
+**单元与知识点一一对应**：完成一个单元就能直接回写一个知识点的进度。
 
 **判定是三态**（`known` / `gap` / `unknown`）：「测了不会」与「根本没测」在计划
 生成上完全不同——前者是要教的内容，后者是不知道的内容。混为一谈会让计划重复教
@@ -218,6 +235,7 @@ from agent_learning_coach.core.learning import (
     blocked_points,
     check_goal_against_course,
     diagnosis_plan,
+    generate_plan,
     goal_completion,
     ready_points,
     to_goal_spec,
@@ -309,6 +327,12 @@ diagnosis_plan(diagnosis, goal).teachable  # 要教的内容
 result = assess_diagnosis(exercises, submissions, ExactMatchGrader())
 result.verdict_for(KnowledgePointId("k1"))  # 会 / 不会 / 未判定
 result.degradation.unmapped_evidence  # 映射缺失的证据（保留但不判定）
+
+# 计划：目标 + 知识结构 + 进度 → 学习计划
+plan = generate_plan(goal, structure, progress)
+plan.units  # 学习单元，按依赖顺序
+plan.days  # 每天的负载
+plan.overload  # 时间超载报告（装得下时为空）
 ```
 
 完整可运行示例：
@@ -319,6 +343,7 @@ result.degradation.unmapped_evidence  # 映射缺失的证据（保留但不判�
 - `uv run python examples/learning_progress.py`——进度归属、状态机、派生查询
 - `uv run python examples/learning_diagnosis.py`——三态判定、准入条件、与进度的衔接
 - `uv run python examples/learning_assessment.py`——映射、汇总、降级、判官
+- `uv run python examples/learning_planning.py`——范围、依赖顺序、时间约束、超载
 - `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
@@ -366,6 +391,11 @@ result.degradation.unmapped_evidence  # 映射缺失的证据（保留但不判�
 | `DiagnosticVerdict` | 判定与证据一致 | `知识点 k2 的判定引用了指向 k1 的依据，判定与依据不一致` |
 | `assess_diagnosis` | 作答引用存在的题目 | `作答引用了不存在的诊断题：e9` |
 | `assess_diagnosis` | 题目标识唯一 | `诊断题标识重复：e1` |
+| `LearningUnit` | 标题与理由非空 | `学习单元在计划里的理由不能为空` |
+| `LearningUnit` | 估时为正整数 | `学习单元的预计时长必须是正整数分钟：0` |
+| `LearningPlan` | 一个知识点一个单元 | `学习计划里知识点 k1 出现了多个单元` |
+| `LearningPlan` | 依赖在计划内 | `学习单元 k3 依赖的知识点 k9 不在计划内` |
+| `LearningPlan` | 后继不排在前置之前 | `学习单元 k3 排在了它的前置 k2 之前` |
 
 ## 4. 边界
 
@@ -410,6 +440,14 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 汇总从严（全对才算会） | 诊断的目的是找出要补的地方；宽松汇总会跳过真正没学会的知识点，而知识点有先修依赖 |
 | 「判不了」是一等状态 | 算作答错会凭空制造知识缺口，算作答对会掩盖缺口 |
 | 降级不抛异常 | 映射缺失是诊断的**正常结果**，不是失败；矛盾才是失败 |
+| 单元与知识点一一对齐 | 进度、判定、依赖都以知识点为单位；粒度不对齐，进度就写不回去 |
+| 范围带上前置闭包 | 不带闭包的计划**执行不了**——目标要求 k3，而 k3 依赖 k1、k2 |
+| 目标的前置只报告 | 它是「开始这个目标前必须已经会」的前提，不是学习内容 |
+| 范围由目标与进度决定 | 诊断是判断不是事实；两份事实之间的选边是应用层的事（ADR-0020） |
+| 依赖顺序是硬约束 | 知识点有先修依赖，跳过一处会让后面全部塌掉 |
+| 排不下要报告 | 悄悄丢掉内容会让「要补的地方」凭空消失——同 ADR-0023 的宽松汇总 |
+| 没有每日投入就不排期 | 硬排「第 0 天装下全部内容」是假精度 |
+| 估时可替换 | 领域层定义「需要估什么」，不规定「怎么估」（同 `Grader`） |
 | 关系外置在结构里 | 关系是结构的事实；放在点上会让改一条边复制一个点 |
 | `requires` 与 `part_of` 分开 | 一个决定「能不能开始」，一个决定「归到哪个主题」 |
 | 实体不可变 | 历史与审计不能被原地改掉；对象可安全传递 |
@@ -445,7 +483,7 @@ for issue in issues:
 | 一个「时间」约束同时含范围与投入 | 两者独立变化：范围决定还剩多久，投入决定每天能学多少 |
 | 目标级「难度」字段 | 难度是知识点的属性（课程侧）；复制到目标会让同一知识点在不同目标下难度不同 |
 | 能力要求另立学习结果 | 同一件事两份说法，映射给规划器会变成重复任务 |
-| 绑定知识点进 `GoalSpec` | `GoalSpec` 是领域无关契约；任务粒度对齐是 Topic 23 的问题 |
+| 绑定知识点进 `GoalSpec` | `GoalSpec` 是领域无关契约；单元与知识点的对齐由领域侧按单元映射完成（ADR-0024） |
 | 引用完整性交给应用层 | 它只需要另一个聚合对象，是纯函数，可以留在领域层；真正要上移的是「是否过期」「是否已掌握」 |
 | 一致性问题抛异常 | 一次检查可能发现多个问题，逐个抛异常只让调用方看到第一个 |
 | 目标与知识点合并成一个聚合 | 知识点属于课程；合并会让加载一门课拉起所有目标 |
@@ -461,6 +499,13 @@ for issue in issues:
 | 诊断自动同步进度 | 跨聚合写会破坏「一次事务只改一个聚合」；衔接是应用层的动作 |
 | 准入条件交给应用层判断 | 「覆盖完整」是**集合问题**，可由领域层判定；「精度够不够」才需实证 |
 | 诊断持有进度 | 同一事实两份副本；本项目已因此吃过三次亏 |
+| 计划单元覆盖多个知识点 | 回写进度时无法确定「这个单元算掌握了哪个点」——粒度不对齐，进度就写不回去 |
+| 计划只含目标要求的点 | 目标要求 k3 而 k3 依赖 k1、k2 时，不带闭包的计划执行不了 |
+| 目标的前置也放进计划 | 它是「开始这个目标前必须已经会」的前提，不是学习内容；补前置属于另一个目标 |
+| 计划范围由诊断决定 | 诊断是判断不是事实；两份事实之间选边是应用层的事（ADR-0020） |
+| 排不下就少排几个 | 丢掉单元会让「要补的地方」凭空消失——同 ADR-0023 反对的宽松汇总 |
+| 没有每日投入也硬排一天 | 假精度：看起来有日程，其实没有信息量 |
+| 估时写死在领域层 | 领域层定义「需要估什么」，不规定「怎么估」——同 `Grader`、`LLMClient` |
 
 ## 6. 未覆盖
 
@@ -486,8 +531,14 @@ for issue in issues:
 - **部分覆盖的折中**：领域层的准入条件是「覆盖完整」。目标要求很多知识点时，
   「部分覆盖 + 保守假设」是应用层策略，领域层目前没有给这个口子。
 - **目标与知识点的跨课程身份**：知识点仍以课程为边界，全局身份留给 Topic 22。
-- **计划粒度与知识点对齐**：`GoalSpec` 不带知识点，任务如何落到知识点上留给
-  Topic 23。
+- **计划的内容**：计划单元只有标题、理由、估时——「这个单元具体怎么学」要由
+  应用层或模型补上（Phase 2 的 AI Tutor）。领域层给结构，内容由生成层给。
+- **估时的实证依据**：默认 30 分钟/知识点没有数据支撑，会让排期看起来精确而
+  实际不准。真实估时应来自学习数据（Topic 44）。
+- **计划的版本与持久化**：计划目前是派生的值对象，没有版本、没有存下来；计划
+  变更与查询留给 Topic 24。
+- **复习安排**：计划只排「还没学会的知识点」，到期该复习的点不在计划里——复习
+  调度留给 Topic 50。
 - **复习调度与计划调整**：`suspended` / `expired` 两个状态目前没有产品侧强需求
   驱动，等 Topic 48 / 50 检验。
 
@@ -496,7 +547,8 @@ for issue in issues:
 ```bash
 uv run --group dev pytest -q tests/test_learning_domain.py tests/test_knowledge_structure.py \
   tests/test_learning_goal.py tests/test_learning_progress.py tests/test_learning_diagnosis.py \
-  tests/test_learning_assessment.py tests/test_learning_workflow.py
+  tests/test_learning_assessment.py tests/test_learning_planning.py \
+  tests/test_learning_workflow.py
 uv run python examples/learning_domain.py    # 聚合边界与拒绝演示
 uv run python examples/knowledge_structure.py # 路径、补课顺序、影响范围
 uv run python examples/learning_goal.py      # 状态机、约束、绑定与交接

@@ -260,6 +260,11 @@ class DiagnosticVerdict:
                 f"知识点 {self.point_id} 判为{_VERDICT_LABELS[self.verdict]}，但没有给出依据",
             )
         for item in self.evidence:
+            if item.point_id is None:
+                raise DomainError(
+                    f"知识点 {self.point_id} 的判定引用了没有映射到知识点的依据，"
+                    f"映射缺失的证据不能支撑任何判定",
+                )
             if item.point_id != self.point_id:
                 raise DomainError(
                     f"知识点 {self.point_id} 的判定引用了指向 "

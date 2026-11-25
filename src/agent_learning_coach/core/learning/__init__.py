@@ -34,7 +34,7 @@ from agent_learning_coach.core.learning.assessment import (
     Grading,
     assess_diagnosis,
 )
-from agent_learning_coach.core.learning.bridge import to_goal_spec
+from agent_learning_coach.core.learning.bridge import to_goal_spec, to_unit_goal_spec
 from agent_learning_coach.core.learning.consistency import (
     GoalIssue,
     GoalIssueCode,
@@ -83,6 +83,16 @@ from agent_learning_coach.core.learning.goal import (
     LearningGoal,
     TimeWindow,
 )
+from agent_learning_coach.core.learning.planning import (
+    DEFAULT_UNIT_MINUTES,
+    DailyLoad,
+    EffortEstimator,
+    LearningPlan,
+    LearningUnit,
+    PlanOverload,
+    UniformEffort,
+    generate_plan,
+)
 from agent_learning_coach.core.learning.progress import (
     GoalCompletion,
     LearningProgress,
@@ -96,11 +106,13 @@ from agent_learning_coach.core.learning.progress import (
 )
 
 __all__ = [
+    "DEFAULT_UNIT_MINUTES",
     "AssessmentResult",
     "CapabilityRequirement",
     "Course",
     "CourseId",
     "DailyEffort",
+    "DailyLoad",
     "DegradationReport",
     "Diagnosis",
     "DiagnosisId",
@@ -110,6 +122,7 @@ __all__ = [
     "DiagnosticSubmission",
     "DiagnosticVerdict",
     "DomainError",
+    "EffortEstimator",
     "EvidenceKind",
     "ExactMatchGrader",
     "ExerciseDifficulty",
@@ -132,22 +145,28 @@ __all__ = [
     "Learner",
     "LearnerId",
     "LearningGoal",
+    "LearningPlan",
     "LearningProgress",
     "LearningState",
+    "LearningUnit",
     "PointProgress",
     "PointSource",
     "PointTransition",
+    "PlanOverload",
     "ProgressIssue",
     "ProgressIssueCode",
     "RelationKind",
     "TimeWindow",
+    "UniformEffort",
     "Verdict",
     "assess_diagnosis",
     "blocked_points",
     "check_goal_against_course",
     "check_progress_against_course",
     "diagnosis_plan",
+    "generate_plan",
     "goal_completion",
     "ready_points",
     "to_goal_spec",
+    "to_unit_goal_spec",
 ]

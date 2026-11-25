@@ -86,6 +86,7 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | Diagnosis | 实体 | `core.learning.diagnosis.Diagnosis` |
 | 诊断判定 | 值对象 | `core.learning.diagnosis`（`DiagnosticVerdict` / `DiagnosticEvidence` / `DiagnosticExercise` / `DiagnosticSubmission`） |
 | 诊断评估 | 领域服务 | `core.learning.assessment.assess_diagnosis`（判官协议 `Grader`） |
+| 学习计划 | 领域服务 | `core.learning.planning.generate_plan`（估时协议 `EffortEstimator`） |
 | 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
@@ -142,6 +143,14 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 
 **依赖方向**：`core.learning` 不认识模型、工具与运行时；学习目标通过
 `bridge.to_goal_spec` 单向映射成 `GoalSpec` 后交给 `core.agent`。
+
+学习计划（ADR-0024）：`generate_plan` 把目标、知识结构与进度变成一份学习安排。
+**单元粒度与知识点一一对应**——掌握度、判定、依赖都以知识点为单位，粒度不对齐
+进度就写不回去。**范围** = 目标要求的点 ∪ 前置闭包 − 已学会；**顺序**遵守
+`requires` 的依赖（前置一定在前）。**排不下要报告，不能少排**：超载时计划仍包含
+全部单元，并给出超载报告——悄悄丢掉内容会让「要补的地方」凭空消失。学习单元
+交给运行时时经 `bridge.to_unit_goal_spec` 映射，**知识点 id 不越过桥接**，因此
+运行时契约不需要扩展。
 
 学习领域层不应依赖特定的 LLM 提供商或 Agent 框架。
 
