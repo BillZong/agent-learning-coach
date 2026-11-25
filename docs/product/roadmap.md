@@ -183,6 +183,7 @@
 - [x] Learning Plan 生成能力（Topic 13，Phase 0 已交付）。
 - [x] 学习计划持久化机制（会话快照，ADR-0009）。
 - [x] 阶段验收报告（`docs/product/phase-1-acceptance.md`）。
+- [x] 遗留问题台账（`docs/product/open-issues.md`；Phase 0–1 的未决问题与插入点）。
 - [x] Learning Domain Architecture 文档（`docs/engineering/domain.md`）。
 
 #### 阶段验收标准

@@ -60,7 +60,9 @@ M2 部分（学习领域与计划）在 Phase 1 验收。
 | 运行断点续跑 | 未覆盖 | 一次运行不是原子的；失败后只能从会话检查点重来 |
 
 这些边界已写入 [可靠性（Reliability）](../engineering/reliability.md#6-已知限制) 与
-[ADR-0014](../architecture/decisions/0014-observability-and-evaluation.md)。
+[ADR-0014](../architecture/decisions/0014-observability-and-evaluation.md)，并在
+[遗留问题台账](open-issues.md) 里逐条跟踪了覆盖情况与建议插入点（告警阈值、
+分布式追踪、断点续跑、真实模型回归、决策质量判据）。
 
 ## 5. 进入 Phase 1 的输入
 
