@@ -107,6 +107,43 @@ def test_generate_structured_rejects_schema_mismatch() -> None:
         asyncio.run(client.generate_structured(LLMRequest(), Diagnosis))
 
 
+def test_parse_error_preserves_original_field_errors() -> None:
+    """结构校验失败时，原始错误条目被保留——事实依据不能只剩一句摘要。"""
+    with pytest.raises(LLMParseError) as info:
+        parse_structured_output('{"summary": "缺少必填字段"}', Diagnosis)
+
+    error = info.value
+    assert len(error.field_errors) == 1
+    field_error = error.field_errors[0]
+    assert field_error.loc == ("weak_points",)
+    assert field_error.type == "missing"
+    assert field_error.msg == "Field required"
+    # 原始条目原样保留：厂商的上下文、输入值都在
+    assert field_error.raw["type"] == "missing"
+    assert "url" in field_error.raw
+
+
+def test_parse_error_summary_is_for_reading_raw_is_for_diagnosis() -> None:
+    """摘要给人和模型看；细节带原始条目，给排查问题的人看。"""
+    with pytest.raises(LLMParseError) as info:
+        parse_structured_output('{"summary": "缺少必填字段"}', Diagnosis)
+
+    error = info.value
+    assert "weak_points" in error.summary
+    assert "errors.pydantic.dev" not in error.summary
+    assert "errors.pydantic.dev" in error.detail
+
+
+def test_parse_error_without_field_errors_falls_back_to_message() -> None:
+    """非法 JSON 没有字段级错误，摘要与细节退回异常消息。"""
+    with pytest.raises(LLMParseError) as info:
+        parse_structured_output("not json at all", Diagnosis)
+
+    assert info.value.field_errors == ()
+    assert "不是合法 JSON" in info.value.summary
+    assert info.value.summary == info.value.detail
+
+
 def test_failing_client_raises_llm_error() -> None:
     client = FailingLLMClient("boom")
 

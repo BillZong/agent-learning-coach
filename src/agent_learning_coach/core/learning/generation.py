@@ -23,6 +23,10 @@ Topic 21 的工程问题是：**生成的诊断题如何做结构化校验？无
 **结构层是「模型有没有按格式回答」，领域层是「这个回答在业务上成不成立」。**
 两层的失败信息都会回喂给模型——模型能看见自己错在哪，重试才有意义。
 
+**失败信息分「摘要」与「细节」两档**（ADR-0022）：摘要给模型（它需要知道的是
+「哪个字段、为什么」），细节给排查问题的人（原始错误条目带着厂商上下文、输入值、
+错误码）。**原始错误始终保留**——摘要是视图，不是替代品。
+
 **生成器不认识学习领域的其他部分。** 它只接收「要考哪个知识点、要什么难度」
 这样的输入，产出 ``DiagnosticExercise``。诊断流程、判定、准入条件都在
 ``diagnosis.py``（ADR-0020）——生成器不重复这些规则。
@@ -33,7 +37,6 @@ Topic 21 的工程问题是：**生成的诊断题如何做结构化校验？无
 
 from __future__ import annotations
 
-import ast
 from dataclasses import dataclass
 from typing import Literal
 
@@ -124,16 +127,23 @@ class ExerciseGenerationError(Exception):
     """题目生成失败。
 
     失败发生在**重试耗尽之后**：每一步的失败都已尝试用反馈重试过。
+
+    **摘要与细节并存**（ADR-0022）：``message`` 是给调用方与日志看的摘要；
+    ``detail`` 是原始错误细节（含厂商的原始条目），排查问题时才需要展开。
+    摘要可以被改写或截断，事实不会——这是两者的分工。
     """
 
     message: str
-    """失败原因。"""
+    """失败原因摘要。"""
 
     attempts: int
     """尝试次数。"""
 
+    detail: str = ""
+    """原始错误细节；为空表示没有更细的上下文。"""
+
     def __str__(self) -> str:
-        """返回可读的错误信息。"""
+        """返回可读的错误信息（摘要级）。"""
         return f"{self.message}（已尝试 {self.attempts} 次）"
 
 
@@ -184,12 +194,15 @@ class ExerciseGenerator:
         """
         feedback = ""
         last_error = ""
+        last_detail = ""
         for _ in range(self.max_attempts):
             request_obj = self._build_request(request, feedback)
             try:
                 result = await self.client.generate_structured(request_obj, ExerciseSchema)
             except LLMParseError as exc:
-                last_error = f"输出不符合要求的结构：{_summarize_parse_error(exc)}"
+                # 原始错误留在异常里（事实依据），这里只取结构化摘要喂给模型。
+                last_error = f"输出不符合要求的结构：{exc.summary}"
+                last_detail = exc.detail
                 feedback = self._feedback(last_error)
                 continue
             except LLMError as exc:
@@ -204,11 +217,13 @@ class ExerciseGenerator:
                 return self._to_exercise(request, result)
             except DomainError as exc:
                 last_error = str(exc)
+                last_detail = str(exc)
                 feedback = self._feedback(last_error)
 
         raise ExerciseGenerationError(
             last_error or "模型未能产出合格的诊断题",
             attempts=self.max_attempts,
+            detail=last_detail,
         )
 
     def _build_request(self, request: ExerciseRequest, feedback: str) -> LLMRequest:
@@ -277,56 +292,6 @@ class ExerciseGenerator:
             "请重新生成，确保题面针对目标知识点、难度符合要求、"
             "并给出可判定的参考答案与出题理由。"
         )
-
-
-def _summarize_parse_error(exc: LLMParseError) -> str:
-    """把结构化解析错误压成一句人能读的话。
-
-    pydantic 的原始错误里带着 ``ctx``、``url``、``input`` 等字段，直接回喂给模型
-    既冗长又无用——模型需要知道的是「哪个字段不合法」，不是完整的校验上下文。
-
-    Args:
-        exc: 解析异常。
-
-    Returns:
-        简短说明。
-    """
-    message = str(exc)
-    marker = "结构:"
-    if "不符合" in message and marker in message:
-        detail = message.split(marker, 1)[-1].strip()
-        return _summarize_validation_errors(detail)
-    return message[:300]
-
-
-def _summarize_validation_errors(detail: str) -> str:
-    """把 pydantic 的错误列表压成「字段：原因」的短句。
-
-    pydantic 的错误列表是 **Python 字面量**（单引号、元组），不是 JSON——因此用
-    ``ast.literal_eval`` 解析；解析不了就原样截断返回，不抛异常。
-
-    Args:
-        detail: pydantic 错误列表的字面表示。
-
-    Returns:
-        简短说明。
-    """
-    try:
-        errors = ast.literal_eval(detail)
-    except (SyntaxError, ValueError):
-        return detail[:300]
-    if not isinstance(errors, list):
-        return detail[:300]
-    parts: list[str] = []
-    for item in errors:
-        if not isinstance(item, dict):
-            continue
-        location = ".".join(str(part) for part in item.get("loc", ()))
-        message = str(item.get("msg", ""))
-        parts.append(f"{location or '输出'}：{message}")
-    if not parts:
-        return detail[:300]
-    return "；".join(parts)
 
 
 def _render_request(request: ExerciseRequest) -> str:

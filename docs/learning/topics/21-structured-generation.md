@@ -18,6 +18,8 @@
     已经呈现给学习者，只能事后解释。**问题在能修的地方修**。
   - **反馈要具体。** 「失败了」对模型没有信息量；「难度与要求不符」才有。模型
     能看见自己错在哪，重试才是修复而不是碰运气。
+  - **错误要分摘要与细节两档。** 摘要是给模型看的视图，原始条目是给排查问题的人
+    看的事实。**摘要是视图，不是替代品**（ADR-0022）。
   - **重试与兜底要分层。** 题目不合格换一次输出可能就对了；调用超时重试只会
     把一次限流放大成 N 次。**传输问题与内容问题不是一回事**。
   - **不信任下游的前提是不把坏数据交出去。** 一旦交出去，下游就没有理由再怀疑
@@ -69,8 +71,12 @@
       者信息**（定制题属 Topic 22）。
     - `ExerciseGenerator`：**生成适配器**——调用模型 → 结构层校验 → 领域层校验
       → 失败带反馈重试。
-    - `ExerciseGenerationError`：重试耗尽（或调用失败）时抛出。
+    - `ExerciseGenerationError`：重试耗尽（或调用失败）时抛出；带 `message`
+      （摘要）与 `detail`（原始细节）两档。
     - `_addresses_point`：**弱**跑题检查（题面/理由是否出现知识点实词）。
+  - **`core/llm/errors.py`** + **`core/llm/structured.py`**：`FieldError` 与
+    `LLMParseError.field_errors`——**原始错误条目在抛出点就被保留**，摘要
+    （`.summary`）与细节（`.detail`）是它的两种视图（ADR-0022）。
   - **`core/learning/diagnosis.py`**：`DiagnosticExercise` 补齐 `expected_answer`、
     `difficulty`、`rationale`；难度取值放在领域模型里。
   - **`tests/test_learning_generation.py`**（新增）：15 个用例。

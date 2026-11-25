@@ -188,6 +188,49 @@ def test_feedback_is_sent_back_to_model() -> None:
     assert any("上一次生成的题目不合格" in item for item in second.instructions)
 
 
+def test_model_feedback_uses_summary_not_raw_detail() -> None:
+    """喂给模型的是**摘要**：字段 + 原因，不是原始条目。"""
+    broken = _payload()
+    del broken["expected_answer"]
+    client = _client_returning(broken, _payload())
+
+    asyncio.run(ExerciseGenerator(client).generate(_request()))
+
+    feedback = " ".join(client.requests[1].instructions)
+    assert "expected_answer：Field required" in feedback
+    # 原始条目里的噪声不进反馈：模型不需要 error code 与输入值
+    assert "errors.pydantic.dev" not in feedback
+    assert "'input'" not in feedback
+
+
+def test_original_field_errors_are_preserved_as_fact() -> None:
+    """原始错误条目被保留——摘要是视图，事实不能丢。"""
+    broken = _payload()
+    del broken["expected_answer"]
+    client = _client_returning(broken)
+
+    with pytest.raises(ExerciseGenerationError) as info:
+        asyncio.run(ExerciseGenerator(client, max_attempts=1).generate(_request()))
+
+    error = info.value
+    assert "expected_answer" in error.detail
+    assert "Field required" in error.detail
+    # 摘要与细节并存：摘要给模型，细节给排查
+    assert "expected_answer：Field required" in error.message
+    assert "expected_answer" in error.detail
+
+
+def test_generation_error_keeps_detail_for_diagnosis() -> None:
+    """重试耗尽时，异常带原始细节——排查问题时能拿到厂商上下文。"""
+    client = _client_returning(_payload(difficulty="advanced"))
+
+    with pytest.raises(ExerciseGenerationError) as info:
+        asyncio.run(ExerciseGenerator(client, max_attempts=1).generate(_request()))
+
+    assert "难度" in info.value.message
+    assert "难度" in info.value.detail
+
+
 def test_model_call_failure_is_not_retried() -> None:
     """调用失败不是「题目不合格」，重试也不会变好——直接上抛。"""
     client = FailingLLMClient("模型超时", error=LLMTimeoutError)

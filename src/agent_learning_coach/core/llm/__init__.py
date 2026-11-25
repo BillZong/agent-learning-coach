@@ -9,7 +9,12 @@ Provider 选择使用**命名空间**（厂商名，如 ``minimax``、``deepseek
 导入约定：调用方统一从 ``agent_learning_coach.core.llm`` 导入公开符号。
 """
 
-from agent_learning_coach.core.llm.errors import LLMError, LLMParseError, LLMTimeoutError
+from agent_learning_coach.core.llm.errors import (
+    FieldError,
+    LLMError,
+    LLMParseError,
+    LLMTimeoutError,
+)
 from agent_learning_coach.core.llm.litellm_client import LiteLLMClient
 from agent_learning_coach.core.llm.mock import FailingLLMClient, MockLLMClient
 from agent_learning_coach.core.llm.models import (
@@ -46,6 +51,7 @@ __all__ = [
     "ContentItem",
     "FailingLLMClient",
     "LLMClient",
+    "FieldError",
     "LLMError",
     "LLMParseError",
     "LLMRequest",

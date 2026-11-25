@@ -94,6 +94,8 @@ def show_structure_rejection() -> None:
         asyncio.run(ExerciseGenerator(client, max_attempts=1).generate(_request()))
     except ExerciseGenerationError as exc:
         print(f"[缺少参考答案] -> {exc}")
+        print(f"  原始细节（排查用）：{exc.detail[:120]}…")
+    print("（摘要给模型看，原始细节留着排查——摘要是视图，不是替代品）")
     print()
 
 

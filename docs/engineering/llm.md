@@ -193,7 +193,7 @@ request = LLMRequest(timeout=5.0)  # 单次请求覆盖
 | 异常 | 含义 | 建议处理 |
 | ---- | ---- | -------- |
 | `LLMTimeoutError` | 超过超时时间 | 退避重试；或降级到更小模型 |
-| `LLMParseError` | 结构化输出无法解析为目标模型 | 换 prompt 措辞；或退回非结构化路径 |
+| `LLMParseError` | 结构化输出无法解析为目标模型 | 读 `.field_errors` 定位字段；换 prompt 措辞；或退回非结构化路径 |
 | `LLMError` | 其他调用失败（鉴权、限流、厂商 5xx） | 按需重试；检查凭证与配额 |
 
 ## 4. 结构化输出
@@ -223,6 +223,29 @@ result = await client.generate_structured(
 2. `parse_structured_output` 剥离 Markdown 代码块包裹后严格解析 JSON，
    再用 Pydantic 校验；任一步失败抛 `LLMParseError`。
 3. 解析失败**不会**返回半成品对象。
+
+### 结构化校验失败：错误分三档
+
+`LLMParseError` 不只是一句消息，它保留**原始错误条目**（ADR-0022）：
+
+| 访问方式 | 内容 | 消费者 |
+| -------- | ---- | ------ |
+| `exc.field_errors` | `FieldError` 元组：归一化字段 + **原始条目** | 程序逻辑 |
+| `exc.summary` | 「字段：原因」逐条连成一行 | **模型**（重试反馈） |
+| `exc.detail` | 摘要 + 原始条目 | 排查问题的人 |
+
+```python
+try:
+    await client.generate_structured(request, Diagnosis)
+except LLMParseError as exc:
+    for field_error in exc.field_errors:
+        print(field_error.loc, field_error.type, field_error.msg)
+        print(field_error.raw)  # 原始条目：厂商上下文、输入值、错误码
+    feedback = exc.summary  # 喂给模型重试
+```
+
+**摘要与细节是同一份事实的两种视图**：摘要可随时从原始条目重新生成，反过来不行。
+程序应当读 `.field_errors` 属性，而不是解析异常消息文本。
 
 已知限制：schema 复杂时解析失败率高于厂商原生结构化输出。需要更高保真度的
 场景可另写适配器覆盖 `generate_structured`，不改 Protocol。

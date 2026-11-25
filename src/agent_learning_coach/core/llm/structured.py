@@ -12,7 +12,7 @@ import json
 
 from pydantic import BaseModel, ValidationError
 
-from agent_learning_coach.core.llm.errors import LLMParseError
+from agent_learning_coach.core.llm.errors import FieldError, LLMParseError
 from agent_learning_coach.core.llm.types import ContentItem, Message
 
 _FENCE_PREFIXES = ("```json", "```JSON", "```")
@@ -55,6 +55,10 @@ def parse_structured_output[ResponseT: BaseModel](
 ) -> ResponseT:
     """把模型输出解析为 ``output_model`` 实例。
 
+    结构校验失败时，**原始错误条目被保留**在 ``LLMParseError.field_errors`` 里
+    （ADR-0022）：异常消息是给人看的摘要，``field_errors`` 是给程序看的事实
+    依据。消费方可以只取摘要喂给模型重试，也可以按需展开原始细节。
+
     Args:
         text: 模型原始文本输出。
         output_model: 期望的结果模型。
@@ -76,7 +80,19 @@ def parse_structured_output[ResponseT: BaseModel](
     try:
         return output_model.model_validate(payload)
     except ValidationError as exc:
-        raise LLMParseError(f"模型输出不符合 {output_model.__name__} 结构: {exc.errors()}") from exc
+        field_errors = tuple(
+            FieldError(
+                loc=tuple(str(part) for part in item.get("loc", ())),
+                type=str(item.get("type", "")),
+                msg=str(item.get("msg", "")),
+                raw=item,
+            )
+            for item in exc.errors()
+        )
+        raise LLMParseError(
+            f"模型输出不符合 {output_model.__name__} 结构：{len(field_errors)} 处校验失败",
+            field_errors=field_errors,
+        ) from exc
 
 
 def extract_text(contents: list[ContentItem]) -> str:
