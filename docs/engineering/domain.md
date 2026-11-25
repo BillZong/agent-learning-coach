@@ -6,13 +6,14 @@
 > [ADR-0016](../architecture/decisions/0016-knowledge-representation.md)、
 > [ADR-0017](../architecture/decisions/0017-learning-goal-modeling.md)、
 > [ADR-0018](../architecture/decisions/0018-learning-progress.md)、
-> [ADR-0019](../architecture/decisions/0019-domain-review.md)
+> [ADR-0019](../architecture/decisions/0019-domain-review.md)、
+> [ADR-0020](../architecture/decisions/0020-diagnostic-assessment.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
 ## 1. 核心契约
 
-四个独立聚合，一个聚合内部的值对象结构，其余是值对象：
+五个独立聚合，一个聚合内部的值对象结构，其余是值对象：
 
 | 类型 | 分类 | 关键内容 |
 | ---- | ---- | ---- |
@@ -23,9 +24,11 @@
 | `KnowledgeRelation` | 值对象 | `kind`（`requires` / `part_of`）、`source`、`target` |
 | `LearningGoal` | 实体（关联聚合） | `id`、`learner_id`、`course_id`、`statement`、`outcomes`、`requirements`、`time_window`、`daily_effort`、`prerequisites`、`transitions` |
 | `LearningProgress` | 实体（关联聚合） | `learner_id`、`course_id`、`points`；知识点级学习状态 |
-| `LearnerId` / `CourseId` / `GoalId` / `KnowledgePointId` | 值对象 | 非空、无首尾空白；不同类型不相等 |
+| `Diagnosis` | 实体 | `id`、`learner_id`、`goal_id`、`verdicts`；一次诊断活动 |
+| `LearnerId` / `CourseId` / `GoalId` / `KnowledgePointId` / `DiagnosisId` | 值对象 | 非空、无首尾空白；不同类型不相等 |
 | `TimeWindow` / `DailyEffort` / `CapabilityRequirement` / `GoalTransition` | 值对象 | 目标的时间范围、每日投入、能力要求、状态迁移 |
 | `PointProgress` / `PointTransition` | 值对象 | 某个知识点的学习进度与状态迁移 |
+| `DiagnosticVerdict` / `DiagnosticExercise` / `DiagnosticSubmission` | 值对象 | 诊断判定、诊断题、作答 |
 
 知识结构的查询：
 
@@ -93,6 +96,28 @@
 门课**，否则抛 `DomainError`——别人的进度算不出这个目标的完成度（ADR-0019
 §2）。
 
+诊断的查询：
+
+| 方法 | 回答 |
+| ---- | ---- |
+| `verdict_for(point_id)` | 某知识点的判定（会 / 不会 / 未判定） |
+| `known_points()` / `gap_points()` / `undetermined_points()` | 各类判定的知识点 |
+| `has_full_coverage(goal)` | **准入条件**：目标要求的每个知识点都有判定 |
+| `missing_points(goal)` | 目标要求里未被诊断覆盖的知识点 |
+
+跨聚合的诊断查询：
+
+| 函数 | 回答 |
+| ---- | ---- |
+| `diagnosis_plan(diagnosis, goal)` | 准入结论：`is_sufficient`、`teachable`（要教的内容）、`undecided`（不知道的内容）、`coverage_ratio` |
+
+**判定是三态**（`known` / `gap` / `unknown`）：「测了不会」与「根本没测」在计划
+生成上完全不同——前者是要教的内容，后者是不知道的内容。混为一谈会让计划重复教
+已经会的东西。
+
+**「会」与「不会」必须带依据**（`basis`）与理由（`reason`）——没有依据的断言
+不可审计。
+
 **学习状态与任务状态是两套东西**：`LearningState`（`not_started` /
 `in_progress` / `learned`）描述学习者对概念的认知；运行时的 `TaskStatus` 描述
 一次执行的一个步骤。知识点没有「跳过」，也没有「受阻」状态——被阻塞是派生
@@ -114,6 +139,10 @@ from agent_learning_coach.core.learning import (
     Course,
     CourseId,
     DailyEffort,
+    Diagnosis,
+    DiagnosisId,
+    DiagnosticSubmission,
+    DiagnosticVerdict,
     GoalId,
     KnowledgePoint,
     KnowledgePointId,
@@ -125,6 +154,7 @@ from agent_learning_coach.core.learning import (
     TimeWindow,
     blocked_points,
     check_goal_against_course,
+    diagnosis_plan,
     goal_completion,
     ready_points,
     to_goal_spec,
@@ -183,6 +213,24 @@ progress.state_of(KnowledgePointId("k2"))  # 'in_progress'
 ready_points(progress, structure)  # 接下来能学哪些
 blocked_points(progress, structure)  # 哪些还动不了
 goal_completion(progress, goal)  # 目标完成度（结构性）
+
+# 诊断：判定学习者已经会哪些知识点
+diagnosis = Diagnosis(
+    id=DiagnosisId("diagnosis-1"),
+    learner_id=LearnerId("learner-1"),
+    goal_id=goal.id,
+    verdicts=(
+        DiagnosticVerdict(
+            point_id=KnowledgePointId("k1"),
+            verdict="known",
+            reason="答对作用域与捕获的定义",
+            basis=DiagnosticSubmission(exercise_id="e1", answer="…", correct=True),
+            basis_kind="exercise",
+        ),
+    ),
+)
+diagnosis.has_full_coverage(goal)  # 准入：目标要求的每个点都有判定
+diagnosis_plan(diagnosis, goal).teachable  # 要教的内容
 ```
 
 完整可运行示例：
@@ -191,6 +239,9 @@ goal_completion(progress, goal)  # 目标完成度（结构性）
 - `uv run python examples/knowledge_structure.py`——关系、路径、归因
 - `uv run python examples/learning_goal.py`——目标状态机、约束、绑定与交接
 - `uv run python examples/learning_progress.py`——进度归属、状态机、派生查询
+- `uv run python examples/learning_diagnosis.py`——三态判定、准入条件、与进度的衔接
+- `uv run python examples/learning_review.py`——四个聚合协同走一遍
+- `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
 
 ## 3. 不变量
 
@@ -225,6 +276,11 @@ goal_completion(progress, goal)  # 目标完成度（结构性）
 | `PointProgress` | 迁移历史不含非法迁移 | `知识点 k1 的学习状态包含非法迁移：学习中 -> 未开始` |
 | `PointTransition` | 理由非空 | `学习状态迁移理由不能为空` |
 | 知识点状态 | 每条边只有一个操作语义 | `知识点 k1 的学习状态为未开始，不能变更为学习中：只有已学会的知识点才能复习` |
+| `Diagnosis` | 同一知识点只有一条判定 | `同一个知识点只能有一条诊断判定` |
+| `DiagnosticVerdict` | 「会」与「不会」必须有依据 | `知识点 k1 判为已掌握，但没有给出依据` |
+| `DiagnosticVerdict` | 给了依据就要说明种类 | `知识点 k1 的判定给了依据，但没有说明依据种类` |
+| `DiagnosticVerdict` | 理由非空 | `诊断判定理由不能为空` |
+| `DiagnosticExercise` | 题面非空 | `诊断题面不能为空` |
 
 ## 4. 边界
 
@@ -234,6 +290,8 @@ core.learning.domain      实体、值对象、知识结构（不认识模型 / 
 core.learning.goal        目标状态机、结构化约束、能力要求
         ↑
 core.learning.progress    学习进度：知识点级状态与派生查询
+        ↑
+core.learning.diagnosis   诊断：三态判定与准入条件
         ↑
 core.learning.consistency 跨聚合一致性检查（领域服务）
         ↑
@@ -250,6 +308,9 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | `LearningGoal` 独立聚合 | 它有自己的生命周期；多目标并行合法 |
 | `LearningProgress` 独立聚合 | 进度按（学习者 × 课程）分片；同一事实不按目标重复存 |
 | 进度绑知识点不绑任务 | 任务可跳过、可重建，知识点身份稳定；掌握与否不由步骤完成度回答 |
+| 诊断是独立聚合 | 诊断是一次**活动**（可多次），进度是**当前状态**；两者不共享状态 |
+| 判定与进度靠应用层衔接 | 跨聚合写会破坏「一次事务只改一个聚合」；`assess()` 已预留接口 |
+| 领域层给「覆盖完整」而非「精度够」 | 覆盖是**集合问题**（可判定），精度是经验问题（需实证） |
 | 关系外置在结构里 | 关系是结构的事实；放在点上会让改一条边复制一个点 |
 | `requires` 与 `part_of` 分开 | 一个决定「能不能开始」，一个决定「归到哪个主题」 |
 | 实体不可变 | 历史与审计不能被原地改掉；对象可安全传递 |
@@ -296,6 +357,11 @@ for issue in issues:
 | 知识点设「受阻」状态 | 被阻塞是结构事实（前置没学会），存成状态就要同步更新所有下游点 |
 | 单列「已有知识」概念 | 它就是迁移序列的第一条；单列会让同一事实存两份 |
 | 进度进 `GoalSpec` | `GoalSpec` 是领域无关契约；进度是领域侧的观测事实，不是规划输入 |
+| 判定只用二态 | 「不会」要同时表示「测了不会」与「没测过」，计划会把没测过的点重复教 |
+| 判定不带依据 | 没有依据的「会」不可审计；事后查不出为何跳过这个知识点 |
+| 诊断自动同步进度 | 跨聚合写会破坏「一次事务只改一个聚合」；衔接是应用层的动作 |
+| 准入条件交给应用层判断 | 「覆盖完整」是**集合问题**，可由领域层判定；「精度够不够」才需实证 |
+| 诊断持有进度 | 同一事实两份副本；本项目已因此吃过三次亏 |
 
 ## 6. 未覆盖
 
@@ -306,7 +372,14 @@ for issue in issues:
   真的达成」这两条判断因此仍留在应用层。
 - **复习调度**：进度记了 `learned_at`，但「什么时候该复习」需要间隔重复规则，
   留给 Topic 50。
-- **诊断策略**：进度能承载「诊断判定已有基础」，但怎么判定留给 Topic 20。
+- **诊断题生成与判定质量**：本模块只定义题目与判定的**形状**，题目怎么生成
+  留给 Topic 21；一道测不准的题会让判定失真。
+- **诊断结果到知识点的映射**：题目与知识点的对应、映射缺失时如何降级，留给
+  Topic 22。
+- **掌握程度与薄弱点**：诊断给的是离散判定（「会 / 不会」）；掌握度量化留给
+  Topic 41，薄弱点判定（相对目标要求还是绝对阈值）留给 Topic 43。
+- **部分覆盖的折中**：领域层的准入条件是「覆盖完整」。目标要求很多知识点时，
+  「部分覆盖 + 保守假设」是应用层策略，领域层目前没有给这个口子。
 - **目标与知识点的跨课程身份**：知识点仍以课程为边界，全局身份留给 Topic 22。
 - **计划粒度与知识点对齐**：`GoalSpec` 不带知识点，任务如何落到知识点上留给
   Topic 23。

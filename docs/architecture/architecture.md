@@ -83,6 +83,8 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | 目标状态机与约束 | 值对象 | `core.learning.goal`（`TimeWindow` / `DailyEffort` / `CapabilityRequirement` / `GoalTransition`） |
 | Learning Progress | 实体（关联聚合） | `core.learning.progress.LearningProgress` |
 | 学习状态 | 值对象 | `core.learning.progress`（`PointProgress` / `PointTransition`） |
+| Diagnosis | 实体 | `core.learning.diagnosis.Diagnosis` |
+| 诊断判定 | 值对象 | `core.learning.diagnosis`（`DiagnosticVerdict` / `DiagnosticExercise` / `DiagnosticSubmission`） |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
 
@@ -113,6 +115,14 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 跨聚合校验，并新增四个聚合协同的集成测试。阶段验收 5/7 条达标，其余落在策略层
 （诊断、缺口判定）与持久化。持久化目标定为 PostgreSQL，但仓储层留待后续——
 不可变实体与迁移历史的存储形态尚未决策。
+
+诊断建模（ADR-0020）：`Diagnosis` 是一次**活动**（有独立 `DiagnosisId`，可多次
+诊断），产出**三态判定**（`known` / `gap` / `unknown`）——「测了不会」与「根本没
+测」在计划生成上不同，前者是要教的内容，后者是不知道的内容。**「会」与「不会」
+必须带依据**，没有依据的断言不可审计。**准入条件**是「目标要求的每个知识点都有
+判定」，这是可由领域层判定的集合问题；「精度够不够」属实证问题。判定经由
+`LearningProgress.assess()` 写成进度迁移（来源 `assessed`），衔接由应用层完成——
+跨聚合写会破坏「一次事务只改一个聚合」。
 
 **依赖方向**：`core.learning` 不认识模型、工具与运行时；学习目标通过
 `bridge.to_goal_spec` 单向映射成 `GoalSpec` 后交给 `core.agent`。

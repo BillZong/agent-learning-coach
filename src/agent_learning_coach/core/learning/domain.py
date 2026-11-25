@@ -119,6 +119,15 @@ class KnowledgePointId(_Identifier):
 
 
 @dataclass(frozen=True)
+class DiagnosisId(_Identifier):
+    """诊断标识。
+
+    诊断是**一次活动**，不是状态：同一个目标可以诊断多次（初诊、复诊），因此
+    它有独立身份，而不是 (学习者, 目标) 这一对。
+    """
+
+
+@dataclass(frozen=True)
 class Learner:
     """学习者——**实体**。
 
@@ -542,6 +551,7 @@ def _describe_cycle(
 __all__ = [
     "Course",
     "CourseId",
+    "DiagnosisId",
     "DomainError",
     "GoalId",
     "KnowledgePoint",

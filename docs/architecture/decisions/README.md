@@ -38,3 +38,4 @@
 | [0017](0017-learning-goal-modeling.md) | 学习目标的建模 | 已接受 |
 | [0018](0018-learning-progress.md) | 学习进度 | 已接受 |
 | [0019](0019-domain-review.md) | 领域模型评审（Phase 1 收口） | 已接受 |
+| [0020](0020-diagnostic-assessment.md) | 诊断——判定、准入条件与与进度的衔接 | 已接受 |

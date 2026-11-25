@@ -211,3 +211,25 @@ Knowledge Space Theory 的「知识状态对先修封闭」性质（ADR-0016 已
 
 接入说明见 [`docs/engineering/domain.md`](../../engineering/domain.md)。
 学习笔记见 [`docs/learning/topics/18-learning-progress.md`](../../learning/topics/18-learning-progress.md)。
+
+## 补充说明（2026-11-25，Topic 20）
+
+Topic 20 补上了本 ADR 留给它的「诊断策略」一侧。本 ADR 的进度模型不变，两处
+接口得到兑现：
+
+1. **`assess()` 的判定侧**：诊断判定「学习者本来就会这个知识点」，由应用层调用
+   `assess()` 写成 `not_started → learned` 的迁移，来源标记 `assessed`。**衔接是
+   应用层的动作，不是领域的自动同步**——诊断与进度是两个聚合，「一次事务只改一个
+   聚合」（ADR-0015）。因此本项目**不提供**「诊断自动同步进度」的函数
+   （ADR-0020）。
+2. **「已有知识」有了具体的表达**：诊断的判定是**三态**（`known` / `gap` /
+   `unknown`），「会」与「不会」必须带依据（`basis`）与理由（`reason`）。本 ADR
+   说的「看迁移序列就能区分本来就会与本次学会」，其判定来源现在有了具体的载体
+   ——诊断记录。
+
+本 ADR §6 提到的「掌握度量化」仍未建模（Topic 41），「薄弱点判定」也未建模
+（Topic 43）：诊断给的是离散判定，不是掌握程度。
+
+同时，本 ADR 的 `LearningProgress` 分片方式（学习者 × 课程）在本主题得到一次
+印证：诊断是**按目标**组织的活动（一次诊断针对一个目标），而进度是**按课程**
+组织的状态；两者不是同一件事，因此也不该合并。
