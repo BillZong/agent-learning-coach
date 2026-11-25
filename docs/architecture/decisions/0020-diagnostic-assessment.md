@@ -2,6 +2,9 @@
 
 - 状态：已接受
 - 日期：2026-11-25
+- 修正：2026-11-25，§2 的 `basis` / `basis_kind` 被
+  [ADR-0023](0023-diagnostic-assessment.md) 取代（改为 `evidence` 列表）；三态判定与
+  准入条件不变
 
 ## 背景
 

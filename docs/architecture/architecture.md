@@ -84,7 +84,8 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | Learning Progress | 实体（关联聚合） | `core.learning.progress.LearningProgress` |
 | 学习状态 | 值对象 | `core.learning.progress`（`PointProgress` / `PointTransition`） |
 | Diagnosis | 实体 | `core.learning.diagnosis.Diagnosis` |
-| 诊断判定 | 值对象 | `core.learning.diagnosis`（`DiagnosticVerdict` / `DiagnosticExercise` / `DiagnosticSubmission`） |
+| 诊断判定 | 值对象 | `core.learning.diagnosis`（`DiagnosticVerdict` / `DiagnosticEvidence` / `DiagnosticExercise` / `DiagnosticSubmission`） |
+| 诊断评估 | 领域服务 | `core.learning.assessment.assess_diagnosis`（判官协议 `Grader`） |
 | 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
@@ -131,6 +132,13 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 （`DiagnosticExercise` 构造：题目针对知识点、难度符合要求）。**无效题目在生成层
 拦截**：坏题会污染判定，而生成层是唯一能重试修好的地方。重试把失败原因回喂给
 模型；调用失败（超时、限流）则直接上抛不重试。不合格的题目**不外流**。
+
+诊断评估（ADR-0023）：`assess_diagnosis` 把作答映射成每个知识点的判定。**映射由
+题目声明**（`DiagnosticExercise.point_id` 可空——映射缺失是可表达的状态，不是
+隐藏的约定）；**判定由判官协议给出**（`Grader`：精确匹配是一种实现，LLM 判官是
+另一种）；**汇总从严**（全部答对才算会，一错即缺口）；**判定与证据必须一致**
+（构造期拒绝自相矛盾）。映射缺失走**降级**：不判定、保留证据、报告——降级是
+诊断的正常结果，与「信息矛盾」的错误分开。
 
 **依赖方向**：`core.learning` 不认识模型、工具与运行时；学习目标通过
 `bridge.to_goal_spec` 单向映射成 `GoalSpec` 后交给 `core.agent`。

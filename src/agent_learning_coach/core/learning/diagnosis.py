@@ -72,6 +72,10 @@ EvidenceKind = Literal["exercise", "self_report", "external"]
 
 区分依据的种类不是为了评判证据强弱（那是应用层的策略），而是为了**让「会」这个
 断言可追溯**：自述与做题给出的结论，置信度显然不同。
+
+**Phase 1 只有 ``exercise`` 真正在用**：自述与外部证据的采集流程尚未存在，因此
+它们目前只是枚举值，没有产生它们的入口。``DiagnosticEvidence`` 携带具体的题目与
+作答——「依据是什么」由证据对象本身回答，这个枚举留给后续主题（ADR-0023）。
 """
 
 _EXERCISE_DIFFICULTIES: tuple[str, ...] = ("basic", "intermediate", "advanced")
@@ -92,21 +96,29 @@ class DiagnosticExercise:
     题目带**参考答案**与**难度**，因为「会不会」这个判定需要依据：没有可判定的
     标准答案，题目就只是一段文字。难度是**题目**的属性（同一知识点可出不同
     难度的题），不是知识点的属性——后者属于课程侧（ADR-0017）。
+
+    **``point_id`` 可空**：映射缺失必须能被表达。题目可能来自外部题库、历史
+    数据或跨课程题——这些题不知道（或不该由本课程决定）它考哪个知识点。把它
+    做成必填，就只能靠「所有题都必须绑定」的约定把它藏起来（ADR-0023）。
     """
-
-    point_id: KnowledgePointId
-    """这道题考哪个知识点。"""
-
-    prompt: str
-    """题面。"""
 
     id: str
     """题目标识。"""
 
+    prompt: str
+    """题面。"""
+
+    point_id: KnowledgePointId | None = None
+    """这道题考哪个知识点；``None`` 表示**映射缺失**——题目没有声明考点。
+
+    映射缺失的题目仍然可以出、可以答、可以判对错；它只是**不能支撑任何知识点
+    的判定**（ADR-0023）。
+    """
+
     expected_answer: str = ""
     """参考答案——判定作答对错的标准。
 
-    空表示「这道题没有标准答案」（如开放题），此时判定需要人工或模型介入。
+    空表示「这道题没有标准答案」（如开放题），此时判定需要判官介入。
     """
 
     difficulty: str = "intermediate"
@@ -140,8 +152,12 @@ class DiagnosticExercise:
 class DiagnosticSubmission:
     """一次作答——**值对象**。
 
-    作答是**事实**：学习者答了什么、答对没有。它不解释「会哪个知识点」——
-    那是判定的职责。
+    作答是**事实**：学习者答了什么。它**不携带「对错」**——对错是**判断**，由
+    判官给出（ADR-0023）。
+
+    原来这里有一个手填的 ``correct: bool``。那让「作答」同时承载了事实与判断，
+    而判断的依据（谁判的、依据什么）无处安放；更糟的是它可以被随手填成
+    ``True``。现在对错在 ``DiagnosticEvidence.grading`` 里，由判官产生。
     """
 
     exercise_id: str
@@ -150,16 +166,58 @@ class DiagnosticSubmission:
     answer: str
     """学习者的回答。"""
 
-    correct: bool
-    """是否答对。"""
-
     def __post_init__(self) -> None:
         """校验作答非空。
 
         Raises:
-            DomainError: 题目标识为空。
+            DomainError: 题目标识为空；答案为空。
         """
         require_text("作答的题目标识", self.exercise_id)
+        require_text("作答内容", self.answer)
+
+
+Grading = Literal["correct", "incorrect", "undecided"]
+"""判官对一次作答的结论。
+
+- ``correct``：答对。
+- ``incorrect``：答错。
+- ``undecided``：**判不了**。
+
+``undecided`` 是一等状态而不是「当成答对或答错」：开放题没有唯一答案，精确匹配
+判不了；把它算作答错会凭空制造知识缺口，算作答对会掩盖缺口。**判不了就说判不了**
+——它对应 ADR-0020 的 ``unknown`` 判定。
+"""
+
+
+@dataclass(frozen=True)
+class DiagnosticEvidence:
+    """一条诊断证据——**值对象**。
+
+    证据 = 一次作答 + 判官的结论 + 它归属的知识点。**归属的知识点可空**：
+    映射缺失的作答仍然是有价值的事实（学习者确实答了这道题），只是不能用来
+    支撑任何知识点的判定（ADR-0023）。
+    """
+
+    exercise: DiagnosticExercise
+    """题目。"""
+
+    submission: DiagnosticSubmission
+    """作答。"""
+
+    grading: Grading
+    """判官的结论。"""
+
+    point_id: KnowledgePointId | None = None
+    """归属的知识点；``None`` 表示映射缺失——题目没有声明考点。
+
+    它取自题目的 ``point_id``，存在这里是为了让「这份证据支撑哪条判定」一眼
+    可查——判定与依据的一致性检查需要它。
+    """
+
+    @property
+    def is_mapped(self) -> bool:
+        """这份证据是否映射到了知识点。"""
+        return self.point_id is not None
 
 
 @dataclass(frozen=True)
@@ -168,6 +226,9 @@ class DiagnosticVerdict:
 
     「会 / 不会」这个**断言**必须能追溯到**依据**。因此判定带着证据，而不是一个
     孤零零的布尔值。
+
+    **判定与依据必须一致**：判定 k2 就不能拿 k1 的证据。这是构造期校验——
+    「判定说会，依据却指向别的点」是自相矛盾的事实（ADR-0023）。
     """
 
     point_id: KnowledgePointId
@@ -179,25 +240,31 @@ class DiagnosticVerdict:
     reason: str
     """判定理由，必填——「为什么这么判」要能回答。"""
 
-    basis: DiagnosticExercise | DiagnosticSubmission | None = None
-    """判定依据：一道题、一次作答，或 ``None``（无依据的判断，例如结构性推断）。"""
+    evidence: tuple[DiagnosticEvidence, ...] = ()
+    """判定依据——支撑这条判定的全部证据。
 
-    basis_kind: EvidenceKind | None = None
-    """依据的种类。"""
+    可能有**多条**：一个知识点出多道题时，每道题的作答都是一份依据。原先这里
+    只能放一道题或一次作答，多题场景下会丢掉其余依据。
+    """
 
     def __post_init__(self) -> None:
-        """校验理由非空，且判定与依据自洽。
+        """校验理由非空，判定与依据自洽。
 
         Raises:
-            DomainError: 理由为空；判定为「会」或「不会」却没有依据。
+            DomainError: 理由为空；判定为「会」或「不会」却没有依据；依据指向
+                别的知识点。
         """
         require_text("诊断判定理由", self.reason)
-        if self.verdict in ("known", "gap") and self.basis is None:
+        if self.verdict in ("known", "gap") and not self.evidence:
             raise DomainError(
                 f"知识点 {self.point_id} 判为{_VERDICT_LABELS[self.verdict]}，但没有给出依据",
             )
-        if self.basis is not None and self.basis_kind is None:
-            raise DomainError(f"知识点 {self.point_id} 的判定给了依据，但没有说明依据种类")
+        for item in self.evidence:
+            if item.point_id != self.point_id:
+                raise DomainError(
+                    f"知识点 {self.point_id} 的判定引用了指向 "
+                    f"{item.point_id} 的依据，判定与依据不一致",
+                )
 
     @property
     def label(self) -> str:
@@ -228,6 +295,13 @@ class Diagnosis:
 
     verdicts: tuple[DiagnosticVerdict, ...] = ()
     """各知识点的判定，按声明顺序。"""
+
+    evidence: tuple[DiagnosticEvidence, ...] = ()
+    """本次诊断的全部证据，包括映射缺失与判不了的。
+
+    证据**全部**保留，不只是支撑了判定的那些：映射缺失的作答也是事实，丢掉它
+    就没法回答「这次诊断到底覆盖了什么」（ADR-0023）。
+    """
 
     def __post_init__(self) -> None:
         """校验判定不重复。

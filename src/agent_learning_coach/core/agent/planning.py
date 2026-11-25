@@ -32,7 +32,6 @@
 
 from __future__ import annotations
 
-import re
 import time
 import uuid
 from collections.abc import Mapping, Sequence
@@ -45,6 +44,7 @@ from agent_learning_coach.core.agent.types import EXECUTION_CONTEXT_KEY, Executi
 from agent_learning_coach.core.llm.models import LLMRequest
 from agent_learning_coach.core.llm.protocol import LLMClient
 from agent_learning_coach.core.llm.types import Message
+from agent_learning_coach.core.text import normalize_for_match
 from agent_learning_coach.core.tools.types import (
     FunctionTool,
     ToolContext,
@@ -117,7 +117,8 @@ def normalize_content(text: str) -> str:
     """归一化任务文本，用于判重。
 
     折叠空白、忽略大小写与标点，因此「闭包的概念」与「闭包  的概念！」会被
-    判为同一个任务。
+    判为同一个任务。实现复用 ``core.text.normalize_for_match``——判重与
+    比对答案用的是同一条规则，两处各写一份必然漂移。
 
     Args:
         text: 原始文本。
@@ -125,7 +126,7 @@ def normalize_content(text: str) -> str:
     Returns:
         归一化后的文本。
     """
-    return re.sub(r"[\s\W_]+", "", text.casefold(), flags=re.UNICODE)
+    return normalize_for_match(text)
 
 
 @dataclass(frozen=True)

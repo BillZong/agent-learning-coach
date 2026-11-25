@@ -26,6 +26,14 @@ Phase 1 的业务核心：学习者、课程与知识点、学习目标。
 导入约定：调用方统一从 ``agent_learning_coach.core.learning`` 导入公开符号。
 """
 
+from agent_learning_coach.core.learning.assessment import (
+    AssessmentResult,
+    DegradationReport,
+    ExactMatchGrader,
+    Grader,
+    Grading,
+    assess_diagnosis,
+)
 from agent_learning_coach.core.learning.bridge import to_goal_spec
 from agent_learning_coach.core.learning.consistency import (
     GoalIssue,
@@ -38,6 +46,7 @@ from agent_learning_coach.core.learning.consistency import (
 from agent_learning_coach.core.learning.diagnosis import (
     Diagnosis,
     DiagnosisPlan,
+    DiagnosticEvidence,
     DiagnosticExercise,
     DiagnosticSubmission,
     DiagnosticVerdict,
@@ -87,18 +96,22 @@ from agent_learning_coach.core.learning.progress import (
 )
 
 __all__ = [
+    "AssessmentResult",
     "CapabilityRequirement",
     "Course",
     "CourseId",
     "DailyEffort",
+    "DegradationReport",
     "Diagnosis",
     "DiagnosisId",
     "DiagnosisPlan",
+    "DiagnosticEvidence",
     "DiagnosticExercise",
     "DiagnosticSubmission",
     "DiagnosticVerdict",
     "DomainError",
     "EvidenceKind",
+    "ExactMatchGrader",
     "ExerciseDifficulty",
     "ExerciseGenerationError",
     "ExerciseGenerator",
@@ -110,6 +123,8 @@ __all__ = [
     "GoalIssueCode",
     "GoalStatus",
     "GoalTransition",
+    "Grader",
+    "Grading",
     "KnowledgePoint",
     "KnowledgePointId",
     "KnowledgeRelation",
@@ -127,6 +142,7 @@ __all__ = [
     "RelationKind",
     "TimeWindow",
     "Verdict",
+    "assess_diagnosis",
     "blocked_points",
     "check_goal_against_course",
     "check_progress_against_course",

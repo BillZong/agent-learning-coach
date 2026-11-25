@@ -22,6 +22,7 @@ from agent_learning_coach.core.learning import (
     CourseId,
     Diagnosis,
     DiagnosisId,
+    DiagnosticEvidence,
     DiagnosticExercise,
     DiagnosticSubmission,
     DiagnosticVerdict,
@@ -62,34 +63,39 @@ def _goal() -> LearningGoal:
 def _exercise(point_id: str, exercise_id: str) -> DiagnosticExercise:
     """构造一道诊断题。"""
     return DiagnosticExercise(
-        point_id=KnowledgePointId(point_id),
-        prompt="闭包是什么？",
         id=exercise_id,
+        prompt="闭包是什么？",
+        point_id=KnowledgePointId(point_id),
     )
 
 
-def _submission(exercise_id: str, correct: bool) -> DiagnosticSubmission:
+def _submission(exercise_id: str, answer: str) -> DiagnosticSubmission:
     """构造一次作答。"""
-    return DiagnosticSubmission(
-        exercise_id=exercise_id,
-        answer="函数记住了创建时的作用域" if correct else "一个普通的函数",
-        correct=correct,
+    return DiagnosticSubmission(exercise_id=exercise_id, answer=answer)
+
+
+def _evidence(point_id: str, exercise_id: str, grading: str) -> DiagnosticEvidence:
+    """构造一条证据。"""
+    exercise = _exercise(point_id, exercise_id)
+    return DiagnosticEvidence(
+        exercise=exercise,
+        submission=_submission(exercise_id, "函数记住了创建时的作用域"),
+        grading=grading,  # type: ignore[arg-type]
+        point_id=exercise.point_id,
     )
 
 
 def show_judgement() -> None:
     """演示判定：必须有依据。"""
     print("=== 1. 判定：会 / 不会 / 未判定 ===\n")
-    submission = _submission("e1", correct=True)
     verdict = DiagnosticVerdict(
         point_id=KnowledgePointId("k1"),
         verdict="known",
         reason="答对作用域与捕获的定义",
-        basis=submission,
-        basis_kind="exercise",
+        evidence=(_evidence("k1", "e1", "correct"),),
     )
     print(f"知识点 k1：{verdict.label}（{verdict.reason}）")
-    print(f"依据种类：{verdict.basis_kind}")
+    print(f"依据条数：{len(verdict.evidence)}")
 
     try:
         DiagnosticVerdict(
@@ -99,6 +105,16 @@ def show_judgement() -> None:
         )
     except DomainError as exc:
         print(f"[没有依据的判定] -> {exc}")
+
+    try:
+        DiagnosticVerdict(
+            point_id=KnowledgePointId("k2"),
+            verdict="known",
+            reason="拿错了依据",
+            evidence=(_evidence("k1", "e1", "correct"),),
+        )
+    except DomainError as exc:
+        print(f"[判定与依据不一致] -> {exc}")
     print()
 
 
@@ -115,8 +131,7 @@ def show_admission() -> None:
                 point_id=KnowledgePointId("k1"),
                 verdict="known",
                 reason="答对",
-                basis=_submission("e1", True),
-                basis_kind="exercise",
+                evidence=(_evidence("k1", "e1", "correct"),),
             ),
         ),
     )
@@ -140,15 +155,13 @@ def show_separation() -> None:
                 point_id=KnowledgePointId("k1"),
                 verdict="known",
                 reason="答对",
-                basis=_submission("e1", True),
-                basis_kind="exercise",
+                evidence=(_evidence("k1", "e1", "correct"),),
             ),
             DiagnosticVerdict(
                 point_id=KnowledgePointId("k2"),
                 verdict="gap",
                 reason="答错，只会背定义",
-                basis=_submission("e2", False),
-                basis_kind="exercise",
+                evidence=(_evidence("k2", "e2", "incorrect"),),
             ),
         ),
     )

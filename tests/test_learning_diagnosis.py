@@ -22,11 +22,13 @@ from agent_learning_coach.core.learning import (
     CourseId,
     Diagnosis,
     DiagnosisId,
+    DiagnosticEvidence,
     DiagnosticExercise,
     DiagnosticSubmission,
     DiagnosticVerdict,
     DomainError,
     GoalId,
+    Grading,
     KnowledgePointId,
     LearnerId,
     LearningGoal,
@@ -42,18 +44,31 @@ AT = 1_700_000_000.0
 def _exercise(point_id: str = "k1", exercise_id: str = "e1") -> DiagnosticExercise:
     """构造一道诊断题。"""
     return DiagnosticExercise(
-        point_id=KnowledgePointId(point_id),
-        prompt="闭包是什么？",
         id=exercise_id,
+        prompt="闭包是什么？",
+        point_id=KnowledgePointId(point_id) if point_id else None,
     )
 
 
-def _submission(exercise_id: str = "e1", correct: bool = True) -> DiagnosticSubmission:
+def _submission(
+    exercise_id: str = "e1", answer: str = "函数记住了创建时的作用域"
+) -> DiagnosticSubmission:
     """构造一次作答。"""
-    return DiagnosticSubmission(
-        exercise_id=exercise_id,
-        answer="函数记住了创建时的作用域",
-        correct=correct,
+    return DiagnosticSubmission(exercise_id=exercise_id, answer=answer)
+
+
+def _evidence(
+    point_id: str = "k1",
+    grading: Grading = "correct",
+    exercise_id: str = "e1",
+) -> DiagnosticEvidence:
+    """构造一条证据。"""
+    exercise = _exercise(point_id, exercise_id)
+    return DiagnosticEvidence(
+        exercise=exercise,
+        submission=_submission(exercise_id),
+        grading=grading,
+        point_id=exercise.point_id,
     )
 
 
@@ -63,18 +78,15 @@ def _verdict(
     **kwargs: object,
 ) -> DiagnosticVerdict:
     """构造一条判定。"""
-    basis = kwargs.pop("basis", None)
-    basis_kind = kwargs.pop("basis_kind", None)
     reason = kwargs.pop("reason", "测试判定")
-    if verdict in ("known", "gap") and basis is None:
-        basis = _submission()
-        basis_kind = "exercise"
+    evidence = kwargs.pop("evidence", None)
+    if evidence is None:
+        evidence = (_evidence(point_id),) if verdict in ("known", "gap") else ()
     return DiagnosticVerdict(
         point_id=KnowledgePointId(point_id),
         verdict=verdict,
         reason=reason,
-        basis=basis,
-        basis_kind=basis_kind,
+        evidence=evidence,  # type: ignore[arg-type]
     )
 
 
@@ -129,7 +141,7 @@ def test_verdict_requires_basis_for_known_and_gap() -> None:
         )
 
 
-def test_verdict_allows_unknown_without_basis() -> None:
+def test_verdict_allows_unknown_without_evidence() -> None:
     """「未判定」不需要依据——它就是「没有证据」。"""
     verdict = DiagnosticVerdict(
         point_id=KnowledgePointId("k1"),
@@ -138,7 +150,7 @@ def test_verdict_allows_unknown_without_basis() -> None:
     )
 
     assert verdict.verdict == "unknown"
-    assert verdict.basis is None
+    assert verdict.evidence == ()
 
 
 def test_verdict_requires_reason() -> None:
@@ -147,35 +159,34 @@ def test_verdict_requires_reason() -> None:
         _verdict(reason=" ")
 
 
-def test_verdict_requires_basis_kind_when_basis_given() -> None:
-    """给了依据就要说明依据的种类。"""
-    with pytest.raises(DomainError, match="给了依据，但没有说明依据种类"):
+def test_verdict_evidence_must_match_the_judged_point() -> None:
+    """判定与依据必须一致——判定 k2 不能拿 k1 的证据。"""
+    with pytest.raises(DomainError, match="判定与依据不一致"):
         DiagnosticVerdict(
-            point_id=KnowledgePointId("k1"),
+            point_id=KnowledgePointId("k2"),
             verdict="known",
             reason="答对",
-            basis=_submission(),
+            evidence=(_evidence("k1"),),
         )
 
 
-def test_verdict_accepts_self_report_as_basis() -> None:
-    """自述也是依据——只是种类不同。"""
+def test_verdict_carries_multiple_evidence() -> None:
+    """一个知识点出多道题时，每道题的作答都是一份依据。"""
     verdict = DiagnosticVerdict(
         point_id=KnowledgePointId("k1"),
         verdict="known",
-        reason="学习者自述以前学过",
-        basis=_submission(),
-        basis_kind="self_report",
+        reason="两道题都答对",
+        evidence=(_evidence("k1", "correct", "e1"), _evidence("k1", "correct", "e2")),
     )
 
-    assert verdict.basis_kind == "self_report"
+    assert len(verdict.evidence) == 2
     assert verdict.label == "已掌握"
 
 
 def test_exercise_requires_non_empty_prompt() -> None:
     """题面不能为空。"""
     with pytest.raises(DomainError, match="诊断题面不能为空"):
-        DiagnosticExercise(point_id=KnowledgePointId("k1"), prompt=" ", id="e1")
+        DiagnosticExercise(id="e1", prompt=" ")
 
 
 # --- 归属 -----------------------------------------------------------------

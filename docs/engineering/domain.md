@@ -8,7 +8,8 @@
 > [ADR-0018](../architecture/decisions/0018-learning-progress.md)、
 > [ADR-0019](../architecture/decisions/0019-domain-review.md)、
 > [ADR-0020](../architecture/decisions/0020-diagnostic-assessment.md)、
-> [ADR-0021](../architecture/decisions/0021-structured-generation.md)
+> [ADR-0021](../architecture/decisions/0021-structured-generation.md)、
+> [ADR-0023](../architecture/decisions/0023-diagnostic-assessment.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -25,13 +26,15 @@
 | `KnowledgeRelation` | 值对象 | `kind`（`requires` / `part_of`）、`source`、`target` |
 | `LearningGoal` | 实体（关联聚合） | `id`、`learner_id`、`course_id`、`statement`、`outcomes`、`requirements`、`time_window`、`daily_effort`、`prerequisites`、`transitions` |
 | `LearningProgress` | 实体（关联聚合） | `learner_id`、`course_id`、`points`；知识点级学习状态 |
-| `Diagnosis` | 实体 | `id`、`learner_id`、`goal_id`、`verdicts`；一次诊断活动 |
+| `Diagnosis` | 实体 | `id`、`learner_id`、`goal_id`、`verdicts`、`evidence`；一次诊断活动 |
 | `LearnerId` / `CourseId` / `GoalId` / `KnowledgePointId` / `DiagnosisId` | 值对象 | 非空、无首尾空白；不同类型不相等 |
 | `TimeWindow` / `DailyEffort` / `CapabilityRequirement` / `GoalTransition` | 值对象 | 目标的时间范围、每日投入、能力要求、状态迁移 |
 | `PointProgress` / `PointTransition` | 值对象 | 某个知识点的学习进度与状态迁移 |
-| `DiagnosticVerdict` / `DiagnosticExercise` / `DiagnosticSubmission` | 值对象 | 诊断判定、诊断题、作答 |
+| `DiagnosticExercise` / `DiagnosticSubmission` / `DiagnosticEvidence` / `DiagnosticVerdict` | 值对象 | 诊断题、作答、证据、判定 |
 | `ExerciseRequest` / `ExerciseSchema` | 值对象 | 出题请求、模型输出结构 |
 | `ExerciseGenerator` | 生成适配器 | 调用模型、校验、产出 `DiagnosticExercise` |
+| `Grader` / `ExactMatchGrader` | 判官协议与实现 | 判定一次作答对错 |
+| `AssessmentResult` / `DegradationReport` | 值对象 | 评估结果与降级报告 |
 
 知识结构的查询：
 
@@ -113,6 +116,25 @@
 | 函数 | 回答 |
 | ---- | ---- |
 | `diagnosis_plan(diagnosis, goal)` | 准入结论：`is_sufficient`、`teachable`（要教的内容）、`undecided`（不知道的内容）、`coverage_ratio` |
+| `assess_diagnosis(exercises, submissions, grader)` | 评估结果：判定、证据与降级报告 |
+
+**判定与证据必须一致**：判定 k2 不能拿 k1 的证据当依据——构造期就拒绝
+（ADR-0023）。
+
+**汇总规则**：一个知识点的所有证据**全部答对**才算「会」；有一道答错就是「不会」；
+没有证据或只有「判不了」的证据，是「未判定」。
+
+**降级与错误是两件事**：
+
+| 情况 | 处理 |
+| ---- | ---- |
+| 映射缺失（题目没声明考点） | **降级**：不判定、保留证据、报告 |
+| 判不了（开放题无参考答案） | **降级**：判「未判定」、保留证据、报告 |
+| 判定与依据不一致 | **错误**：构造期拒绝 |
+| 作答引用不存在的题目 | **错误**：拒绝 |
+| 题目标识重复 | **错误**：拒绝 |
+
+前者是「信息不全」（正常结果），后者是「信息矛盾」（数据坏了）。
 
 **判定是三态**（`known` / `gap` / `unknown`）：「测了不会」与「根本没测」在计划
 生成上完全不同——前者是要教的内容，后者是不知道的内容。混为一谈会让计划重复教
@@ -192,6 +214,7 @@ from agent_learning_coach.core.learning import (
     LearningGoal,
     LearningProgress,
     TimeWindow,
+    assess_diagnosis,
     blocked_points,
     check_goal_against_course,
     diagnosis_plan,
@@ -264,13 +287,28 @@ diagnosis = Diagnosis(
             point_id=KnowledgePointId("k1"),
             verdict="known",
             reason="答对作用域与捕获的定义",
-            basis=DiagnosticSubmission(exercise_id="e1", answer="…", correct=True),
-            basis_kind="exercise",
+            evidence=(
+                DiagnosticEvidence(
+                    exercise=DiagnosticExercise(
+                        id="e1",
+                        prompt="闭包是什么？",
+                        point_id=KnowledgePointId("k1"),
+                    ),
+                    submission=DiagnosticSubmission(exercise_id="e1", answer="…"),
+                    grading="correct",
+                    point_id=KnowledgePointId("k1"),
+                ),
+            ),
         ),
     ),
 )
 diagnosis.has_full_coverage(goal)  # 准入：目标要求的每个点都有判定
 diagnosis_plan(diagnosis, goal).teachable  # 要教的内容
+
+# 评估：作答 → 判定 + 证据 + 降级报告
+result = assess_diagnosis(exercises, submissions, ExactMatchGrader())
+result.verdict_for(KnowledgePointId("k1"))  # 会 / 不会 / 未判定
+result.degradation.unmapped_evidence  # 映射缺失的证据（保留但不判定）
 ```
 
 完整可运行示例：
@@ -280,6 +318,7 @@ diagnosis_plan(diagnosis, goal).teachable  # 要教的内容
 - `uv run python examples/learning_goal.py`——目标状态机、约束、绑定与交接
 - `uv run python examples/learning_progress.py`——进度归属、状态机、派生查询
 - `uv run python examples/learning_diagnosis.py`——三态判定、准入条件、与进度的衔接
+- `uv run python examples/learning_assessment.py`——映射、汇总、降级、判官
 - `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
@@ -323,6 +362,10 @@ diagnosis_plan(diagnosis, goal).teachable  # 要教的内容
 | `DiagnosticVerdict` | 理由非空 | `诊断判定理由不能为空` |
 | `DiagnosticExercise` | 题面非空 | `诊断题面不能为空` |
 | `DiagnosticExercise` | 难度合法 | `诊断题难度必须是 basic / intermediate / advanced 之一：'trivial'` |
+| `DiagnosticSubmission` | 答案非空 | `作答内容不能为空` |
+| `DiagnosticVerdict` | 判定与证据一致 | `知识点 k2 的判定引用了指向 k1 的依据，判定与依据不一致` |
+| `assess_diagnosis` | 作答引用存在的题目 | `作答引用了不存在的诊断题：e9` |
+| `assess_diagnosis` | 题目标识唯一 | `诊断题标识重复：e1` |
 
 ## 4. 边界
 
@@ -360,6 +403,13 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 题目不合格重试，调用失败不重试 | 重试不会让超时变好，只会把一次限流放大成 N 次 |
 | 重试把失败原因回喂给模型 | 模型要能看见自己错在哪，重试才有意义 |
 | 不合格题目不外流 | 交出去之后下游就没有理由再怀疑它，判定会把它当依据 |
+| 映射由题目声明，不由评估推断 | 推断出的映射无法审计；「为什么判定这个点会」要能回答 |
+| 映射缺失可表达（`point_id` 可空） | 外部题库、历史题、跨课程题确实不知道考点；靠约定藏起来会让降级无处落地 |
+| 判定交给判官协议 | 精确匹配是一种实现，LLM 判官是另一种（Topic 39）；换判官不改领域模型 |
+| 作答只承载事实 | 「对错」是判断，可被随手填成 True；它属于判官与证据 |
+| 汇总从严（全对才算会） | 诊断的目的是找出要补的地方；宽松汇总会跳过真正没学会的知识点，而知识点有先修依赖 |
+| 「判不了」是一等状态 | 算作答错会凭空制造知识缺口，算作答对会掩盖缺口 |
+| 降级不抛异常 | 映射缺失是诊断的**正常结果**，不是失败；矛盾才是失败 |
 | 关系外置在结构里 | 关系是结构的事实；放在点上会让改一条边复制一个点 |
 | `requires` 与 `part_of` 分开 | 一个决定「能不能开始」，一个决定「归到哪个主题」 |
 | 实体不可变 | 历史与审计不能被原地改掉；对象可安全传递 |
@@ -425,8 +475,12 @@ for issue in issues:
   后续（不可变实体与迁移历史的存储形态尚未决策）。
 - **题目质量的强判断**：生成层只做**弱检查**（题面是否出现知识点实词），挡得住
   完全跑题，挡不住「相关但角度偏了」。后者需要模型打分或人工审阅（Topic 44）。
-- **诊断结果到知识点的映射**：题目与知识点的对应、映射缺失时如何降级，留给
-  Topic 22。
+- **能力估计（连续掌握度）**：诊断给的是离散判定；掌握度量化留给 Topic 41。
+- **LLM 判官**：Phase 1 的 `ExactMatchGrader` 只适用于有唯一答案的题目；开放题只能
+  判「判不了」。LLM 判官留给 Topic 39。
+- **证据的多种类型**：自述与外部证据尚无采集流程，`EvidenceKind` 目前只有 `exercise`
+  真正在用；证据类型与置信权重留给 Topic 40。
+- **诊断阈值**：一个知识点出几道题才算判准，尚无实证依据（Topic 44）。
 - **掌握程度与薄弱点**：诊断给的是离散判定（「会 / 不会」）；掌握度量化留给
   Topic 41，薄弱点判定（相对目标要求还是绝对阈值）留给 Topic 43。
 - **部分覆盖的折中**：领域层的准入条件是「覆盖完整」。目标要求很多知识点时，
@@ -441,7 +495,8 @@ for issue in issues:
 
 ```bash
 uv run --group dev pytest -q tests/test_learning_domain.py tests/test_knowledge_structure.py \
-  tests/test_learning_goal.py tests/test_learning_progress.py tests/test_learning_workflow.py
+  tests/test_learning_goal.py tests/test_learning_progress.py tests/test_learning_diagnosis.py \
+  tests/test_learning_assessment.py tests/test_learning_workflow.py
 uv run python examples/learning_domain.py    # 聚合边界与拒绝演示
 uv run python examples/knowledge_structure.py # 路径、补课顺序、影响范围
 uv run python examples/learning_goal.py      # 状态机、约束、绑定与交接

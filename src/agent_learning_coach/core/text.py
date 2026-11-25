@@ -50,12 +50,28 @@ def tokenize(text: str) -> set[str]:
     """把文本切成用于匹配的小块。
 
     Args:
-        text: 待切分的文本。
+        text: 待分词的文本。
 
     Returns:
-        小块集合。大小写不敏感。
+        小块集合。
     """
     return set(token_counts(text))
 
 
-__all__ = ["token_counts", "tokenize"]
+def normalize_for_match(text: str) -> str:
+    """把文本归一化成便于**精确比对**的形式。
+
+    折叠空白、忽略大小写与标点，因此「闭包的概念」与「闭包  的概念！」会
+    被判为同一个字符串。这比 :func:`tokenize` 更严格——它是「相等」而不是
+    「相似」。
+
+    Args:
+        text: 原始文本。
+
+    Returns:
+        归一化后的文本。
+    """
+    return re.sub(r"[\s\W_]+", "", text.casefold(), flags=re.UNICODE)
+
+
+__all__ = ["normalize_for_match", "token_counts", "tokenize"]
