@@ -87,6 +87,7 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | 诊断判定 | 值对象 | `core.learning.diagnosis`（`DiagnosticVerdict` / `DiagnosticEvidence` / `DiagnosticExercise` / `DiagnosticSubmission`） |
 | 诊断评估 | 领域服务 | `core.learning.assessment.assess_diagnosis`（判官协议 `Grader`） |
 | 学习计划 | 领域服务 | `core.learning.planning.generate_plan`（估时协议 `EffortEstimator`） |
+| 计划版本 | 实体 + 领域服务 | `core.learning.versions`（`PlanVersion` / `PlanBasis` / `PlanDelta`） |
 | 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
@@ -151,6 +152,14 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 全部单元，并给出超载报告——悄悄丢掉内容会让「要补的地方」凭空消失。学习单元
 交给运行时时经 `bridge.to_unit_goal_spec` 映射，**知识点 id 不越过桥接**，因此
 运行时契约不需要扩展。
+
+计划版本（ADR-0025）：计划内容是**派生的值对象**，版本是**实体**——每次修订
+留下一条记录，内容快照 + 生成依据 + 与上一版的差异 + 改动理由。**`PlanId` 区分
+「同一计划的修订」与「全新计划」**：修订是同一计划线内版本号 +1，全新计划是新
+的计划线、版本号从 1 开始。**排序按版本号，不按时间**——版本号是领域分配的序
+号，时间由调用方传入，可能补录或乱序。仓储层按 ADR-0019 仍待后续，因此本阶段
+只给领域侧的纯函数（`start_plan` / `revise_plan` / `plan_versions` /
+`current_plan_version`）。
 
 学习领域层不应依赖特定的 LLM 提供商或 Agent 框架。
 

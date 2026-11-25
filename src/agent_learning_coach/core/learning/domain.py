@@ -128,6 +128,27 @@ class DiagnosisId(_Identifier):
 
 
 @dataclass(frozen=True)
+class PlanId(_Identifier):
+    """计划标识——标识**一条计划线**。
+
+    一条计划线 = 一份计划及其全部修订。**同一目标可以有多条计划线**：换了学习
+    路径就是新的一条，而不是把旧计划的修订接着写。
+
+    它与 ``DiagnosisId`` 是同一条线索：活动有独立身份。少了它，「同一计划的
+    修订」与「全新计划」就分不开（ADR-0025）。
+    """
+
+
+@dataclass(frozen=True)
+class PlanVersionId(_Identifier):
+    """计划版本标识——标识**一次修订**。
+
+    版本是计划的修订记录：同一计划线下按序号递增（1、2、3……）。序号决定排序，
+    标识只用于引用。
+    """
+
+
+@dataclass(frozen=True)
 class Learner:
     """学习者——**实体**。
 

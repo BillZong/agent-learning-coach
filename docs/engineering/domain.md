@@ -10,7 +10,8 @@
 > [ADR-0020](../architecture/decisions/0020-diagnostic-assessment.md)、
 > [ADR-0021](../architecture/decisions/0021-structured-generation.md)、
 > [ADR-0023](../architecture/decisions/0023-diagnostic-assessment.md)、
-> [ADR-0024](../architecture/decisions/0024-learning-planning.md)
+> [ADR-0024](../architecture/decisions/0024-learning-planning.md)、
+> [ADR-0025](../architecture/decisions/0025-plan-versioning.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -39,6 +40,8 @@
 | `LearningUnit` | 值对象 | 一个学习单元——一个知识点 |
 | `LearningPlan` / `DailyLoad` / `PlanOverload` | 值对象 | 学习计划、每天负载、超载报告 |
 | `EffortEstimator` / `UniformEffort` | 估时协议与实现 | 估算一个知识点要学多久 |
+| `PlanVersion` | 实体 | 计划的一个版本：内容快照 + 依据 + 差异 + 理由 |
+| `PlanBasis` / `PlanDelta` | 值对象 | 生成依据、与上一版的差异 |
 
 知识结构的查询：
 
@@ -122,6 +125,10 @@
 | `diagnosis_plan(diagnosis, goal)` | 准入结论：`is_sufficient`、`teachable`（要教的内容）、`undecided`（不知道的内容）、`coverage_ratio` |
 | `assess_diagnosis(exercises, submissions, grader)` | 评估结果：判定、证据与降级报告 |
 | `generate_plan(goal, structure, progress)` | 学习计划：单元、每天负载、超载报告 |
+| `start_plan(goal, structure, progress, ...)` | 开一份**全新计划**（版本 1，新计划线） |
+| `revise_plan(versions, goal, structure, progress, ...)` | 在同一份计划上产生下一个版本 |
+| `plan_versions(versions, plan_id=..., goal_id=...)` | 查计划版本（按计划线分组、组内按版本号） |
+| `current_plan_version(versions, plan_id=... / goal_id=...)` | 当前的计划版本 |
 
 **判定与证据必须一致**：判定 k2 不能拿 k1 的证据当依据——构造期就拒绝
 （ADR-0023）。
@@ -152,6 +159,14 @@
 目标前必须已经会」的前提条件，不是学习内容。
 
 **单元与知识点一一对应**：完成一个单元就能直接回写一个知识点的进度。
+
+**计划版本**：`PlanId` 区分「同一计划的修订」（同一计划线，版本号 +1）与「全
+新计划」（新计划线，版本号从 1 开始）。**同一计划线内按版本号排序，不按时间**
+——版本号是领域分配的序号，时间由调用方传入，可能补录或乱序。
+
+**每一版都带依据、差异与理由**：依据记的是**输入**（目标、生成时已学会的知识点、
+参考的诊断、课程结构指纹），差异记的是**排程变化**（新增、移除、重排），理由必
+填。
 
 **判定是三态**（`known` / `gap` / `unknown`）：「测了不会」与「根本没测」在计划
 生成上完全不同——前者是要教的内容，后者是不知道的内容。混为一谈会让计划重复教
@@ -234,10 +249,14 @@ from agent_learning_coach.core.learning import (
     assess_diagnosis,
     blocked_points,
     check_goal_against_course,
+    current_plan_version,
     diagnosis_plan,
     generate_plan,
     goal_completion,
+    plan_versions,
     ready_points,
+    revise_plan,
+    start_plan,
     to_goal_spec,
 )
 
@@ -333,6 +352,15 @@ plan = generate_plan(goal, structure, progress)
 plan.units  # 学习单元，按依赖顺序
 plan.days  # 每天的负载
 plan.overload  # 时间超载报告（装得下时为空）
+
+# 版本：全新计划 → 修订 → 查询
+version = start_plan(goal, structure, progress, plan_id=PlanId("plan-1"),
+                     version_id=PlanVersionId("plan-1-v1"), reason="初次规划", at=now)
+next_version = revise_plan([version], goal, structure, progress,
+                           version_id=PlanVersionId("plan-1-v2"),
+                           reason="学习者掌握了 k1", at=now + 1)
+plan_versions([version, next_version], goal_id=goal.id)  # 按计划线分组、组内按版本号
+current_plan_version([version, next_version], goal_id=goal.id)  # 当前版本
 ```
 
 完整可运行示例：
@@ -344,6 +372,8 @@ plan.overload  # 时间超载报告（装得下时为空）
 - `uv run python examples/learning_diagnosis.py`——三态判定、准入条件、与进度的衔接
 - `uv run python examples/learning_assessment.py`——映射、汇总、降级、判官
 - `uv run python examples/learning_planning.py`——范围、依赖顺序、时间约束、超载
+- `uv run python examples/learning_plan_versioning.py`——修订 vs 全新计划、依据、
+  查询与当前版本
 - `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
@@ -396,6 +426,11 @@ plan.overload  # 时间超载报告（装得下时为空）
 | `LearningPlan` | 一个知识点一个单元 | `学习计划里知识点 k1 出现了多个单元` |
 | `LearningPlan` | 依赖在计划内 | `学习单元 k3 依赖的知识点 k9 不在计划内` |
 | `LearningPlan` | 后继不排在前置之前 | `学习单元 k3 排在了它的前置 k2 之前` |
+| `PlanVersion` | 版本号为正整数 | `计划版本号必须是从 1 开始的正整数：0` |
+| `PlanVersion` | 理由非空 | `计划版本的改动理由不能为空` |
+| `PlanVersion` | 首版不带差异 | `首个计划版本没有上一版，因此不能带差异` |
+| `revise_plan` | 版本属于同一条计划线 | `修订需要同一条计划线的版本，收到 2 条` |
+| `revise_plan` | 版本号不重复 | `同一计划线内的版本号不能重复` |
 
 ## 4. 边界
 
@@ -448,6 +483,13 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 排不下要报告 | 悄悄丢掉内容会让「要补的地方」凭空消失——同 ADR-0023 的宽松汇总 |
 | 没有每日投入就不排期 | 硬排「第 0 天装下全部内容」是假精度 |
 | 估时可替换 | 领域层定义「需要估什么」，不规定「怎么估」（同 `Grader`） |
+| 用 `PlanId` 区分修订与全新计划 | 少了它，「重新规划」既像新版本又像新计划——无法判定的区分等于没有区分 |
+| 目标不充当计划线 | 同一目标可以先后有两条计划线（换了一条学习路径） |
+| 排序按版本号，不按时间 | 时间由调用方传入，可能补录、乱序；让它决定顺序，「谁是当前版本」就变成了猜 |
+| 跨计划线用时间比 | 两条线之间没有共同序号，只能比「哪条更近」 |
+| 依据记输入，不记输出 | 输出已在版本里；依据的价值是「当时已经会了什么」 |
+| 差异只比排程，不比措辞 | 标题与理由是解释不是排程；比了它们，「这一版变了吗」永远答不上来 |
+| 首版没有差异 | 没有上一版，就不存在差异 |
 | 关系外置在结构里 | 关系是结构的事实；放在点上会让改一条边复制一个点 |
 | `requires` 与 `part_of` 分开 | 一个决定「能不能开始」，一个决定「归到哪个主题」 |
 | 实体不可变 | 历史与审计不能被原地改掉；对象可安全传递 |
@@ -535,8 +577,8 @@ for issue in issues:
   应用层或模型补上（Phase 2 的 AI Tutor）。领域层给结构，内容由生成层给。
 - **估时的实证依据**：默认 30 分钟/知识点没有数据支撑，会让排期看起来精确而
   实际不准。真实估时应来自学习数据（Topic 44）。
-- **计划的版本与持久化**：计划目前是派生的值对象，没有版本、没有存下来；计划
-  变更与查询留给 Topic 24。
+- **计划的持久化与 HTTP 接口**：版本模型（ADR-0025）已有，仓储层按 ADR-0019
+  仍待后续；API 框架尚未选型，因此本阶段只给领域侧的纯函数。
 - **复习安排**：计划只排「还没学会的知识点」，到期该复习的点不在计划里——复习
   调度留给 Topic 50。
 - **复习调度与计划调整**：`suspended` / `expired` 两个状态目前没有产品侧强需求
@@ -548,7 +590,7 @@ for issue in issues:
 uv run --group dev pytest -q tests/test_learning_domain.py tests/test_knowledge_structure.py \
   tests/test_learning_goal.py tests/test_learning_progress.py tests/test_learning_diagnosis.py \
   tests/test_learning_assessment.py tests/test_learning_planning.py \
-  tests/test_learning_workflow.py
+  tests/test_learning_plan_versioning.py tests/test_learning_workflow.py
 uv run python examples/learning_domain.py    # 聚合边界与拒绝演示
 uv run python examples/knowledge_structure.py # 路径、补课顺序、影响范围
 uv run python examples/learning_goal.py      # 状态机、约束、绑定与交接

@@ -66,6 +66,8 @@ from agent_learning_coach.core.learning.domain import (
     KnowledgeStructure,
     Learner,
     LearnerId,
+    PlanId,
+    PlanVersionId,
     RelationKind,
 )
 from agent_learning_coach.core.learning.generation import (
@@ -103,6 +105,16 @@ from agent_learning_coach.core.learning.progress import (
     blocked_points,
     goal_completion,
     ready_points,
+)
+from agent_learning_coach.core.learning.versions import (
+    PlanBasis,
+    PlanDelta,
+    PlanVersion,
+    current_plan_version,
+    fingerprint_structure,
+    plan_versions,
+    revise_plan,
+    start_plan,
 )
 
 __all__ = [
@@ -152,7 +164,12 @@ __all__ = [
     "PointProgress",
     "PointSource",
     "PointTransition",
+    "PlanBasis",
+    "PlanDelta",
+    "PlanId",
     "PlanOverload",
+    "PlanVersion",
+    "PlanVersionId",
     "ProgressIssue",
     "ProgressIssueCode",
     "RelationKind",
@@ -163,10 +180,15 @@ __all__ = [
     "blocked_points",
     "check_goal_against_course",
     "check_progress_against_course",
+    "current_plan_version",
     "diagnosis_plan",
+    "fingerprint_structure",
     "generate_plan",
     "goal_completion",
+    "plan_versions",
     "ready_points",
+    "revise_plan",
+    "start_plan",
     "to_goal_spec",
     "to_unit_goal_spec",
 ]
