@@ -178,3 +178,23 @@ progress.assess(k1, at=..., reason="诊断 diagnosis-1：答对")
 
 接入说明见 [`docs/engineering/domain.md`](../../engineering/domain.md)。
 学习笔记见 [`docs/learning/topics/20-diagnostic-assessment.md`](../../learning/topics/20-diagnostic-assessment.md)。
+
+## 补充说明（2026-11-25，Topic 21）
+
+Topic 21 补上了本 ADR 留下的「题目从哪来」一侧。本 ADR 的判定与准入模型不变，
+两处接口得到兑现：
+
+1. **`DiagnosticExercise` 补齐三个字段**：`expected_answer`（判定要靠它）、
+   `difficulty`（难度是**题目**的属性，不是知识点的——与 ADR-0017 不冲突）、
+   `rationale`（让题目可被审阅）。难度取值放在领域模型里，任何来源的题目都受
+   同一套约束。
+2. **判定与出题严格分开**：出题由 `core.learning.generation` 完成，它**不认识**
+   诊断流程——不判断「这次诊断够不够驱动计划生成」。本 ADR 的准入条件仍是唯一
+   的那一个。
+
+本 ADR §6 提到的「题目生成」已交付（ADR-0021），但「诊断结果到知识点的映射与
+降级」仍未建模（Topic 22）：题目与知识点的对应在生成时已确定（每道题知道自己
+考哪个点），但**判定汇总**与**映射缺失时的降级**还没有。
+
+另外，本 ADR §5 的「依据种类」目前只有 `exercise`（做题）真正用得上；
+`self_report` 与 `external` 是为后续留的位置，尚无产生它们的流程。

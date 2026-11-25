@@ -1,0 +1,91 @@
+{
+  "description": "诊断题生成的测试集。每条用例给出一次模型输出与期望结果——期望结果只有两种：通过（题目合格）或拒绝（题目不合格，附拒绝理由里应当出现的关键词）。这个数据集测的是「拦截规则」，不是「模型质量」：它用固定的模型输出验证每一层校验确实拦得住。",
+  "layers": {
+    "structure": "结构层：字段缺失、类型错、长度不足。模型没按格式回答。",
+    "domain": "领域层：难度不符、题目跑题。模型按格式回答了，但业务上不成立。"
+  },
+  "cases": [
+    {
+      "name": "合格题目",
+      "layer": "pass",
+      "output": {
+        "prompt": "闭包与普通函数在返回后访问变量时有什么不同？请举一个例子。",
+        "expected_answer": "闭包记住了创建时的作用域，返回后仍可访问；普通函数做不到。",
+        "difficulty": "intermediate",
+        "rationale": "要求对比并举例，暴露是否理解闭包的捕获语义。"
+      },
+      "expect": "accepted"
+    },
+    {
+      "name": "题面太短——测不出程度",
+      "layer": "structure",
+      "output": {
+        "prompt": "闭包？",
+        "expected_answer": "闭包记住了创建时的作用域。",
+        "difficulty": "intermediate",
+        "rationale": "基础题。"
+      },
+      "expect": "rejected",
+      "reason_contains": "prompt"
+    },
+    {
+      "name": "缺少参考答案",
+      "layer": "structure",
+      "output": {
+        "prompt": "闭包与普通函数返回后访问变量有什么不同？",
+        "difficulty": "intermediate",
+        "rationale": "对比两者的作用域行为。"
+      },
+      "expect": "rejected",
+      "reason_contains": "expected_answer"
+    },
+    {
+      "name": "难度取值非法",
+      "layer": "structure",
+      "output": {
+        "prompt": "闭包与普通函数返回后访问变量有什么不同？",
+        "expected_answer": "闭包记住了创建时的作用域。",
+        "difficulty": "trivial",
+        "rationale": "考查作用域行为。"
+      },
+      "expect": "rejected",
+      "reason_contains": "difficulty"
+    },
+    {
+      "name": "难度与要求不符",
+      "layer": "domain",
+      "output": {
+        "prompt": "闭包与普通函数返回后访问变量有什么不同？请举例。",
+        "expected_answer": "闭包记住了创建时的作用域。",
+        "difficulty": "advanced",
+        "rationale": "深入考查闭包的实现细节。"
+      },
+      "expect": "rejected",
+      "reason_contains": "难度"
+    },
+    {
+      "name": "题目跑题——考的是别的知识点",
+      "layer": "domain",
+      "output": {
+        "prompt": "请介绍一下 Python 装饰器是怎样实现的？",
+        "expected_answer": "装饰器是一个接受函数并返回新函数的包装器。",
+        "difficulty": "intermediate",
+        "rationale": "用来考查装饰器的实现原理。"
+      },
+      "expect": "rejected",
+      "reason_contains": "针对知识点"
+    },
+    {
+      "name": "出题理由太短",
+      "layer": "structure",
+      "output": {
+        "prompt": "闭包与普通函数返回后访问变量有什么不同？",
+        "expected_answer": "闭包记住了创建时的作用域。",
+        "difficulty": "intermediate",
+        "rationale": "题"
+      },
+      "expect": "rejected",
+      "reason_contains": "rationale"
+    }
+  ]
+}

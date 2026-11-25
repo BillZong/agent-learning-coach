@@ -175,7 +175,8 @@
 - [x] Learning Progress 数据模型（知识点级学习状态 + 归属与派生查询，ADR-0018）。
 - [x] 领域模型评审与 Phase 1 建模收口（ADR-0019；含四聚合集成测试）。
 - [x] Learning Diagnosis 数据模型（三态判定 + 准入条件，ADR-0020）。
-- [ ] Learning Diagnosis 流程（题目生成 Topic 21、结果映射 Topic 22）。
+- [x] 诊断题生成（两层校验 + 带反馈重试 + 不合格不外流，ADR-0021）。
+- [ ] Learning Diagnosis 流程（结果映射与降级 Topic 22）。
 - [x] Learning Plan 生成能力（Topic 13，Phase 0 已交付）。
 - [x] 学习计划持久化机制（会话快照，ADR-0009）。
 - [x] Learning Domain Architecture 文档（`docs/engineering/domain.md`）。

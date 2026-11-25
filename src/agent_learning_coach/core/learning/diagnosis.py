@@ -74,13 +74,24 @@ EvidenceKind = Literal["exercise", "self_report", "external"]
 断言可追溯**：自述与做题给出的结论，置信度显然不同。
 """
 
+_EXERCISE_DIFFICULTIES: tuple[str, ...] = ("basic", "intermediate", "advanced")
+"""合法的题目难度。
+
+放在领域模型里而不是生成器里：难度是**题目自身的属性**，任何来源的题目都要
+受同一套约束——包括从存储里读出来的历史题目。
+"""
+
 
 @dataclass(frozen=True)
 class DiagnosticExercise:
     """一道诊断题——**值对象**。
 
-    题目的**生成**属于 Topic 21（Structured Generation）；本模块只定义它作为
+    题目的**生成**属于 Topic 21（Structured Generation）；本模块定义它作为
     诊断输入的形状。
+
+    题目带**参考答案**与**难度**，因为「会不会」这个判定需要依据：没有可判定的
+    标准答案，题目就只是一段文字。难度是**题目**的属性（同一知识点可出不同
+    难度的题），不是知识点的属性——后者属于课程侧（ADR-0017）。
     """
 
     point_id: KnowledgePointId
@@ -92,14 +103,37 @@ class DiagnosticExercise:
     id: str
     """题目标识。"""
 
+    expected_answer: str = ""
+    """参考答案——判定作答对错的标准。
+
+    空表示「这道题没有标准答案」（如开放题），此时判定需要人工或模型介入。
+    """
+
+    difficulty: str = "intermediate"
+    """题目难度：``basic`` / ``intermediate`` / ``advanced``。"""
+
+    rationale: str = ""
+    """出题理由——这道题如何检验目标知识点。
+
+    它让题目可被审阅：「为什么用这道题考这个点」有答案，而不是只能相信它。
+    """
+
     def __post_init__(self) -> None:
-        """校验题面非空。
+        """校验题目内容。
 
         Raises:
-            DomainError: 题面为空或含首尾空白；题目标识为空。
+            DomainError: 题面为空或含首尾空白；题目标识为空；难度非法。
         """
         require_text("诊断题面", self.prompt)
         require_text("诊断题标识", self.id)
+        if self.expected_answer:
+            require_text("诊断题参考答案", self.expected_answer)
+        if self.rationale:
+            require_text("诊断题出题理由", self.rationale)
+        if self.difficulty not in _EXERCISE_DIFFICULTIES:
+            raise DomainError(
+                f"诊断题难度必须是 {' / '.join(_EXERCISE_DIFFICULTIES)} 之一：{self.difficulty!r}",
+            )
 
 
 @dataclass(frozen=True)

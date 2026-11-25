@@ -59,6 +59,13 @@ from agent_learning_coach.core.learning.domain import (
     LearnerId,
     RelationKind,
 )
+from agent_learning_coach.core.learning.generation import (
+    ExerciseDifficulty,
+    ExerciseGenerationError,
+    ExerciseGenerator,
+    ExerciseRequest,
+    ExerciseSchema,
+)
 from agent_learning_coach.core.learning.goal import (
     CapabilityRequirement,
     DailyEffort,
@@ -92,6 +99,11 @@ __all__ = [
     "DiagnosticVerdict",
     "DomainError",
     "EvidenceKind",
+    "ExerciseDifficulty",
+    "ExerciseGenerationError",
+    "ExerciseGenerator",
+    "ExerciseRequest",
+    "ExerciseSchema",
     "GoalCompletion",
     "GoalId",
     "GoalIssue",

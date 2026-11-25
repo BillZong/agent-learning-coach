@@ -7,7 +7,8 @@
 > [ADR-0017](../architecture/decisions/0017-learning-goal-modeling.md)、
 > [ADR-0018](../architecture/decisions/0018-learning-progress.md)、
 > [ADR-0019](../architecture/decisions/0019-domain-review.md)、
-> [ADR-0020](../architecture/decisions/0020-diagnostic-assessment.md)
+> [ADR-0020](../architecture/decisions/0020-diagnostic-assessment.md)、
+> [ADR-0021](../architecture/decisions/0021-structured-generation.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -29,6 +30,8 @@
 | `TimeWindow` / `DailyEffort` / `CapabilityRequirement` / `GoalTransition` | 值对象 | 目标的时间范围、每日投入、能力要求、状态迁移 |
 | `PointProgress` / `PointTransition` | 值对象 | 某个知识点的学习进度与状态迁移 |
 | `DiagnosticVerdict` / `DiagnosticExercise` / `DiagnosticSubmission` | 值对象 | 诊断判定、诊断题、作答 |
+| `ExerciseRequest` / `ExerciseSchema` | 值对象 | 出题请求、模型输出结构 |
+| `ExerciseGenerator` | 生成适配器 | 调用模型、校验、产出 `DiagnosticExercise` |
 
 知识结构的查询：
 
@@ -117,6 +120,33 @@
 
 **「会」与「不会」必须带依据**（`basis`）与理由（`reason`）——没有依据的断言
 不可审计。
+
+### 题目生成
+
+`ExerciseGenerator.generate(request)` 出题，两层校验：
+
+| 层 | 校验什么 | 失败 |
+| -- | -------- | ---- |
+| **结构层**（`ExerciseSchema`） | 字段齐全、类型正确、长度合理（题面 ≥ 8 字符） | 带反馈重试 |
+| **领域层**（`DiagnosticExercise` 构造） | 题目针对目标知识点、难度符合要求 | 带反馈重试 |
+
+**两种失败要分开**：
+
+| 失败 | 处理 | 理由 |
+| ---- | ---- | ---- |
+| 题目不合格 | 带反馈重试（`max_attempts`，默认 2） | 换一次输出可能就对了 |
+| 调用失败（超时、限流） | 直接上抛 `ExerciseGenerationError`，**不重试** | 重试不会让超时变好 |
+
+**不合格的题目不外流**：`generate()` 只有两种结局——返回合格题目，或抛错。没有
+「返回一道题但质量存疑」的第三种可能。
+
+`DiagnosticExercise` 的三个字段：
+
+| 字段 | 为什么必须有 |
+| ---- | ------------ |
+| `expected_answer` | 没有可判定的标准答案，题目只是一段文字 |
+| `difficulty` | 同一知识点可出不同难度的题；难度是**题目**的属性 |
+| `rationale` | 让题目可被审阅：「为什么用这道题考这个点」有答案 |
 
 **学习状态与任务状态是两套东西**：`LearningState`（`not_started` /
 `in_progress` / `learned`）描述学习者对概念的认知；运行时的 `TaskStatus` 描述
@@ -240,6 +270,7 @@ diagnosis_plan(diagnosis, goal).teachable  # 要教的内容
 - `uv run python examples/learning_goal.py`——目标状态机、约束、绑定与交接
 - `uv run python examples/learning_progress.py`——进度归属、状态机、派生查询
 - `uv run python examples/learning_diagnosis.py`——三态判定、准入条件、与进度的衔接
+- `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
 
@@ -281,6 +312,7 @@ diagnosis_plan(diagnosis, goal).teachable  # 要教的内容
 | `DiagnosticVerdict` | 给了依据就要说明种类 | `知识点 k1 的判定给了依据，但没有说明依据种类` |
 | `DiagnosticVerdict` | 理由非空 | `诊断判定理由不能为空` |
 | `DiagnosticExercise` | 题面非空 | `诊断题面不能为空` |
+| `DiagnosticExercise` | 难度合法 | `诊断题难度必须是 basic / intermediate / advanced 之一：'trivial'` |
 
 ## 4. 边界
 
@@ -292,6 +324,8 @@ core.learning.goal        目标状态机、结构化约束、能力要求
 core.learning.progress    学习进度：知识点级状态与派生查询
         ↑
 core.learning.diagnosis   诊断：三态判定与准入条件
+        ↑
+core.learning.generation  出题适配器：调用模型、两层校验、带反馈重试
         ↑
 core.learning.consistency 跨聚合一致性检查（领域服务）
         ↑
@@ -311,6 +345,11 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 诊断是独立聚合 | 诊断是一次**活动**（可多次），进度是**当前状态**；两者不共享状态 |
 | 判定与进度靠应用层衔接 | 跨聚合写会破坏「一次事务只改一个聚合」；`assess()` 已预留接口 |
 | 领域层给「覆盖完整」而非「精度够」 | 覆盖是**集合问题**（可判定），精度是经验问题（需实证） |
+| 无效题目在生成层拦截 | 坏题会污染判定；生成层是唯一能重试修好的地方 |
+| 结构层与领域层不合并 | 结构层可被其他生成场景复用；领域层只属于学习领域 |
+| 题目不合格重试，调用失败不重试 | 重试不会让超时变好，只会把一次限流放大成 N 次 |
+| 重试把失败原因回喂给模型 | 模型要能看见自己错在哪，重试才有意义 |
+| 不合格题目不外流 | 交出去之后下游就没有理由再怀疑它，判定会把它当依据 |
 | 关系外置在结构里 | 关系是结构的事实；放在点上会让改一条边复制一个点 |
 | `requires` 与 `part_of` 分开 | 一个决定「能不能开始」，一个决定「归到哪个主题」 |
 | 实体不可变 | 历史与审计不能被原地改掉；对象可安全传递 |
@@ -372,8 +411,10 @@ for issue in issues:
   真的达成」这两条判断因此仍留在应用层。
 - **复习调度**：进度记了 `learned_at`，但「什么时候该复习」需要间隔重复规则，
   留给 Topic 50。
-- **诊断题生成与判定质量**：本模块只定义题目与判定的**形状**，题目怎么生成
-  留给 Topic 21；一道测不准的题会让判定失真。
+- **题目持久化**：生成器产出题目，但**没有仓储层**——ADR-0019 已决定仓储层留待
+  后续（不可变实体与迁移历史的存储形态尚未决策）。
+- **题目质量的强判断**：生成层只做**弱检查**（题面是否出现知识点实词），挡得住
+  完全跑题，挡不住「相关但角度偏了」。后者需要模型打分或人工审阅（Topic 44）。
 - **诊断结果到知识点的映射**：题目与知识点的对应、映射缺失时如何降级，留给
   Topic 22。
 - **掌握程度与薄弱点**：诊断给的是离散判定（「会 / 不会」）；掌握度量化留给

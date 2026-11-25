@@ -85,6 +85,7 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | 学习状态 | 值对象 | `core.learning.progress`（`PointProgress` / `PointTransition`） |
 | Diagnosis | 实体 | `core.learning.diagnosis.Diagnosis` |
 | 诊断判定 | 值对象 | `core.learning.diagnosis`（`DiagnosticVerdict` / `DiagnosticExercise` / `DiagnosticSubmission`） |
+| 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
 
@@ -123,6 +124,13 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 判定」，这是可由领域层判定的集合问题；「精度够不够」属实证问题。判定经由
 `LearningProgress.assess()` 写成进度迁移（来源 `assessed`），衔接由应用层完成——
 跨聚合写会破坏「一次事务只改一个聚合」。
+
+题目生成（ADR-0021）：`ExerciseGenerator` 是**生成适配器**——领域模型文件仍然不
+认识模型，生成器是领域与模型之间的窄接口（同 `bridge.py` 一类）。校验分**结构
+层**（`ExerciseSchema`：字段齐全、类型正确、长度合理）与**领域层**
+（`DiagnosticExercise` 构造：题目针对知识点、难度符合要求）。**无效题目在生成层
+拦截**：坏题会污染判定，而生成层是唯一能重试修好的地方。重试把失败原因回喂给
+模型；调用失败（超时、限流）则直接上抛不重试。不合格的题目**不外流**。
 
 **依赖方向**：`core.learning` 不认识模型、工具与运行时；学习目标通过
 `bridge.to_goal_spec` 单向映射成 `GoalSpec` 后交给 `core.agent`。
