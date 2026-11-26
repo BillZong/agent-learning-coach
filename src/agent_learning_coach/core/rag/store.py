@@ -346,9 +346,21 @@ def _matches_one(actual: Any, expected: Any) -> bool:
     return bool(actual == expected)
 
 
-PGVECTOR_TABLE_TEMPLATE = """\
-CREATE EXTENSION IF NOT EXISTS vector;
+PGVECTOR_EXTENSION_SQL = "CREATE EXTENSION IF NOT EXISTS vector;"
+"""建扩展的语句。
 
+**扩展由部署建，不由应用建**：``CREATE EXTENSION`` 需要超级用户权限，而应用连接串
+通常不该有。因此这句属于 ``migrations/``（部署步骤），不属于应用运行时。
+
+**它必须早于适配器注册**：``register_vector_async`` 会去查 ``vector`` 类型，扩展没
+建时它直接抛「vector type not found in the database」。所以「建扩展 → 注册适配器
+→ 建表」是硬顺序。
+
+（这条是被集成测试逮到的：手工先建好扩展时一切正常，从空库开始就失败——而失败的
+那句话完全指不到真正的原因。）
+"""
+
+PGVECTOR_TABLE_TEMPLATE = """\
 CREATE TABLE IF NOT EXISTS {table} (
     id            TEXT PRIMARY KEY,
     document_id   TEXT NOT NULL,
@@ -739,9 +751,18 @@ class PgVectorStore:
         from pgvector.psycopg import register_vector_async
         from psycopg import AsyncConnection
 
+        from agent_learning_coach.core.llm.errors import LLMError
+
         conn = await AsyncConnection.connect(self.dsn)
         try:
-            await register_vector_async(conn)
+            try:
+                await register_vector_async(conn)
+            except Exception as exc:
+                # 适配器注册要去查 vector 类型——扩展没建时它抛的话完全指不到
+                # 真正的原因。这里把它换成一句能照着做的话。
+                raise LLMError(
+                    f"pgvector 扩展未安装：请先执行 {PGVECTOR_EXTENSION_SQL}（见 migrations/）",
+                ) from exc
             yield conn
         finally:
             await conn.close()
@@ -762,6 +783,7 @@ def _json(metadata: Mapping[str, Any]) -> str:
 
 
 __all__ = [
+    "PGVECTOR_EXTENSION_SQL",
     "PGVECTOR_INDEX_TEMPLATES",
     "PGVECTOR_TABLE_TEMPLATE",
     "InMemoryVectorStore",
