@@ -161,8 +161,8 @@ A、实际按 B 校验」的错位。
 按优先级。**括号里是该项的归属 Topic**——缺口都有主人，不会在「先忽略」里消失：
 
 1. **T6 目标操纵未缓解**——工具结果与模型输出在上下文里不可区分。缺来源标记
-   与内容净化。见威胁模型路径 C。→ **Day 63 Security Review**
-2. **无沙箱**——权限模型是前置条件，不是替代。见 [sandbox.md](./sandbox.md)。→ **Day 63 Security Review**
+   与内容净化。见威胁模型路径 C。→ **Day 65 Security Review**
+2. **无沙箱**——权限模型是前置条件，不是替代。见 [sandbox.md](./sandbox.md)。→ **Day 65 Security Review**
 3. **无人工确认**——高风险工具没有 T10 意义上的拦截。→ **Day 09 Session 与 HITL**
 4. **`additionalProperties` 默认宽松**——严格性靠 schema 作者自觉。
 5. **未声明作用域的工具恒放行**——见 §2.3。

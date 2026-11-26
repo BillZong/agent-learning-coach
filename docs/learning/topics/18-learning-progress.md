@@ -31,8 +31,8 @@ Learner Profile 与 Learning Progress 的区别是什么？进度应与知识点
 |---|---|---|
 | Doignon & Falmagne, *Knowledge Spaces*（1999）；KST 系列论文 | 知识状态是知识点集合的子集；先修关系是偏序；状态在先修下封闭 | 本主题的直接依据：进度**按知识点**组织、`requires` 决定「现在能不能学这个点」，封闭性作为一致性检查 |
 | Masters, *Space of Learning*（2004） | 学习进度是「学习空间中的位置」，随学习活动在空间内移动 | 支持「进度是独立于目标的事实」：目标指定终点，进度记录当前位置 |
-| Bloom, *Taxonomy of Educational Objectives*（1956）与 mastery learning | 目标分认知层级；掌握度是分级的连续量 | 支持把**认知层级**（掌握到什么程度）留给掌握度模型（Topic 41），本主题只做「学过没有」的离散状态 |
-| 间隔重复（Ebbinghaus；SM-2 等） | 复习间隔随记忆强度变化 | 说明「已学会」不是终态——需要能回到「学习中」，因此 `review()` 迁移存在；具体调度留给 Topic 50 |
+| Bloom, *Taxonomy of Educational Objectives*（1956）与 mastery learning | 目标分认知层级；掌握度是分级的连续量 | 支持把**认知层级**（掌握到什么程度）留给掌握度模型（Topic 43），本主题只做「学过没有」的离散状态 |
+| 间隔重复（Ebbinghaus；SM-2 等） | 复习间隔随记忆强度变化 | 说明「已学会」不是终态——需要能回到「学习中」，因此 `review()` 迁移存在；具体调度留给 Topic 52 |
 | ADR-0013 / 0015 / 0016 / 0017 | 运行时与领域单向解耦；跨聚合只按 id 引用；派生视图不持久化；状态由历史派生 | 本主题全部沿用：进度不引用任务 id、不进 `GoalSpec`；顺序与闭包仍是派生查询；状态由迁移历史派生 |
 | 本项目 ADR-0018 | 进度建模的完整论证 | — |
 
@@ -66,7 +66,7 @@ Learner Profile 与 Learning Progress 的区别是什么？进度应与知识点
 - **哪些观点不适用于当前项目？**
   - **概率知识空间（PKS）与完整的掌握度分布**：需要大规模题目数据，Phase 1
     没有。
-  - **连续掌握度分数**：属于掌握度模型（Topic 41）。
+  - **连续掌握度分数**：属于掌握度模型（Topic 43）。
 
 ## 5. Engineering Practice
 
@@ -157,8 +157,8 @@ Learner Profile 与 Learning Progress 的区别是什么？进度应与知识点
 - Article Notes: [domain.md](../../engineering/domain.md)；
   [architecture.md](../../architecture/architecture.md) 学习领域层
 - Unresolved Questions:
-  - 三档状态是否够用，「部分掌握」要不要提前进模型（与 Topic 41 的边界）
+  - 三档状态是否够用，「部分掌握」要不要提前进模型（与 Topic 43 的边界）
   - 封闭性作为硬规则是否过严（先学后学的部分很常见）
   - 进度的持久化形态：整体重建 vs 增量更新（知识点多时的成本）
   - 跨课程同一概念的进度如何合并（依赖 Topic 22 的全局知识地图）
-  - 复习调度规则如何消费 `learned_at`（Topic 50）
+  - 复习调度规则如何消费 `learned_at`（Topic 52）

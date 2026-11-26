@@ -36,6 +36,7 @@
 |---|---|---|---|
 | Phase 0 | Week 1–2 | Agent Engineering Foundation | 建立 Agent Runtime 工程基础 |
 | Phase 1 | Week 3–4 | Learning Domain & Planning | 建立学习领域模型和学习规划能力 |
+| Phase 1.5 | 2 天（接在 Week 4 后） | Persistence & Application Services | 补 Phase 0–1 遗留：仓储层与应用层编排 |
 | Phase 2 | Week 5–6 | AI Tutor & Learning Context | 实现具备学习上下文的 AI 教学 |
 | Phase 3 | Week 7–8 | Practice & Assessment | 实现练习、评估和知识掌握度分析 |
 | Phase 4 | Week 9–10 | Adaptive Learning | 实现基于学习状态的动态学习调整 |
@@ -196,9 +197,48 @@
 - [x] 能够创建学习目标。
 - [ ] 能够根据学习者背景开展初始诊断。（Topic 20/22：诊断机制齐了——出题、作答、
   评估、判定、准入；仍缺「根据背景决定诊断什么」的选题策略与应用层编排）
-- [ ] 能够识别初步知识缺口。（Topic 43：薄弱点判定；逐知识点判定已由 ADR-0020 给出）
+- [ ] 能够识别初步知识缺口。（Topic 45：薄弱点判定；逐知识点判定已由 ADR-0020 给出）
 - [x] 能够生成结构化、可执行的学习计划。
 - [x] 学习计划能够持久化并被后续模块使用。
+
+---
+
+### Phase 1.5：Foundation Remediation
+
+**周期：2 天（接在 Week 4 之后）**
+
+**阶段目标：** 补上 Phase 0–1 验收里反复被推迟的两条缺口——**学习领域仓储层**与
+**应用层编排**。
+
+这两条不解决，Phase 2 起每个主题都会各自发明一套存储与编排，到 Phase 5 接 API 时
+统一返工。独立成阶段而不是塞进 Phase 1，是因为它们是**补 Phase 0–1 的账**，不是
+Phase 1 的新功能——Phase 1 的领域层已验收（[`phase-1-acceptance.md`](./phase-1-acceptance.md)）。
+
+#### 核心工作
+
+1. Persistence Baseline
+   - 仓储协议与 `to_dict` / `from_dict` 的形状。
+   - PostgreSQL schema（目标 + 迁移历史、进度、诊断 + 证据、计划版本、题目）。
+   - **写入路径复用领域层不变量**（ADR-0015 的硬要求）。
+   - 版本号与并发写。
+2. Application Services
+   - 用例编排：诊断 → 进度 → 计划 → 落库。
+   - 诊断与进度不一致时的处置规则（选边 + 报告）。
+   - 「一次事务只改一个聚合」的写边界。
+
+#### 阶段交付物
+
+- [ ] 学习领域仓储层（协议 + schema + 校验复用）。
+- [ ] 应用层用例服务（诊断 → 进度 → 计划）。
+- [ ] 主题笔记：[`25-persistence-baseline.md`](../learning/topics/25-persistence-baseline.md)、
+  [`26-application-services.md`](../learning/topics/26-application-services.md)。
+
+#### 阶段验收标准
+
+- [ ] 目标、进度、诊断、计划版本可以落库并取回。
+- [ ] 绕过领域对象的非法数据进不去。
+- [ ] 诊断 → 进度 → 计划有一个可调用的用例。
+- [ ] 诊断与进度不一致时有确定处置且被报告。
 
 ---
 

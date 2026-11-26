@@ -127,7 +127,7 @@ ScopePolicy(granted=frozenset({"fs:read"}))
 - 4.8「调试靠执行轨迹」——得到支持但**方式不同**：本项目没有单独的 `display_trace` 工具，因为 `ExecutionContext` 的事件流**本身就是**轨迹（`Event` 带作者与时刻）。Topic 06 的设计在 Topic 07 这里才显出价值。
 - 4.8「用 GAIA 测」——得到**部分**支持：GAIA 式的端到端跑通有价值，但它每次结果可能不同（真实模型、真实工具、真实数据集），**不能当回归测试**。本项目 33 个安全用例全部确定性、零真实 LLM 调用，能进 CI 当守门人。**这是分工不是替代**——但两者的分工要按路线图的两类评估来分，不能笼统说「效果评测」：
   - **Agent Evaluation**（Phase 0 范围）：验证 Agent 的**行为**——选对工具了吗、异常处理对吗、权限拦住了吗。Phase 0 的交付物里明确列了「基础 Agent Evaluation」「基础评估数据集」，验收标准是「能够通过评估用例验证基础 Agent 行为」。本次的 33 个用例属于这一类，但形式是 pytest 断言；**数据集化的评估用例集**尚未做，那属于 Topic 14（Reliability and Phase Acceptance）。
-  - **Learning Evaluation**（Phase 5 范围，Topic 61）：验证**学习效果**——掌握度判断准不准、路径调整好不好。Phase 0 不需要它，现在也不预设基准。
+  - **Learning Evaluation**（Phase 5 范围，Topic 63）：验证**学习效果**——掌握度判断准不准、路径调整好不好。Phase 0 不需要它，现在也不预设基准。
 - OWASP「授权在执行组件里做」——得到直接支持，并且实现时发现了一件文档不会告诉你的事：**组合调度器时容易丢策略**。`output_model` 设置后运行时会组合出新调度器补 `final_answer` 工具，漏掉 `policy=dispatcher.policy` 就等于给被限制的工具开了后门。这是本次特意加回归测试的一处。
 - 8.2「代码执行要沙箱」——**尚未验证**：本项目没有代码执行需求，设计保留在 `docs/engineering/sandbox.md`，代码未实现。
 
@@ -143,9 +143,9 @@ ScopePolicy(granted=frozenset({"fs:read"}))
    另一处修正：原本以为「输入净化」是防注入的正路。OWASP 明确建议做，但读了 Cheat Sheet 才发现它自己也把净化放在「纵深防御」里、并且强调外部数据一律不可信。真正的教训不是「做不做净化」，而是**任何单一手段都不够，因此必须让多个手段互不依赖**——这恰好是权限模型的设计逻辑：可见性过滤、强制检查、参数校验，三层各自独立。
 
 3. **当前实现还有哪些局限？**
-   - **T6 目标操纵完全未缓解**——工具结果与模型输出在上下文里不可区分，模型可以被外部内容改写学习目标。这是当前最大的缺口，且**权限模型管不了它**。→ 归 **Day 63 Security Review**（本 Topic 写下时它没有归属，2026-11-19 决定留在那里）。
+   - **T6 目标操纵完全未缓解**——工具结果与模型输出在上下文里不可区分，模型可以被外部内容改写学习目标。这是当前最大的缺口，且**权限模型管不了它**。→ 归 **Day 65 Security Review**（本 Topic 写下时它没有归属，2026-11-19 决定留在那里）。
    - **权限只到工具粒度，不到参数粒度**——`read_notes` 拿到了 `fs:read`，它内部读什么路径不在管辖范围内。
-   - **没有沙箱**——见 `docs/engineering/sandbox.md`，是设计不是实现。→ 归 **Day 63 Security Review**（同上）。
+   - **没有沙箱**——见 `docs/engineering/sandbox.md`，是设计不是实现。→ 归 **Day 65 Security Review**（同上）。
    - **没有人工确认**——高风险工具没有 T10 意义上的拦截。OWASP 提到批准必须「原子地检查并消费」，防止并发或重放复用批准——这一点在设计 HITL 时必须处理。
    - **Agent Evaluation 尚未数据集化**——33 个用例是 pytest 断言，Phase 0 交付物要求的「基础评估数据集 / 评估用例」还没有。这是 Phase 0 **范围内**的欠账，属 Topic 14。（Learning Evaluation 不在此列：它属 Phase 5，现在不预设基准。）
    - **上下文不压缩**（属 Topic 08）——长会话撑爆窗口，间接放大 T4。
@@ -166,7 +166,7 @@ ScopePolicy(granted=frozenset({"fs:read"}))
 - ADR: `docs/architecture/decisions/0007-tool-permission-and-sandbox-boundary.md`
 - Article Notes: `docs/articles/agent-runtime.md`、`docs/engineering/security.md`、`docs/engineering/threat-model.md`、`docs/engineering/sandbox.md`
 - Unresolved Questions:
-  - T6 目标操纵的缓解方案（来源标记 / 边界分隔 / 内容净化 / 独立校验调用）该如何选型？→ **Day 63**
+  - T6 目标操纵的缓解方案（来源标记 / 边界分隔 / 内容净化 / 独立校验调用）该如何选型？→ **Day 65**
   - HITL 的批准记录如何做到「原子检查并消费」？运行时的暂停/恢复状态模型怎么设计？→ **Day 09 Session 与 HITL**
-  - 权限如何从工具粒度下沉到参数粒度（例如路径白名单）？这属于工具自身职责还是策略职责？→ **Day 63**（与沙箱一并考虑）
+  - 权限如何从工具粒度下沉到参数粒度（例如路径白名单）？这属于工具自身职责还是策略职责？→ **Day 65**（与沙箱一并考虑）
   - Phase 0 的「基础评估数据集」怎么组织才既能进 CI 又不与 pytest 重复？→ **Day 14 可靠性与阶段验收**（Learning Evaluation 的基准属 Phase 5，现在不预设。）

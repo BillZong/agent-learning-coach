@@ -38,62 +38,69 @@
 | 23 | Learning Planning | [day-23](23-learning-planning.md) |
 | 24 | Plan Versioning | [day-24](24-plan-versioning.md) |
 
-## Phase 2 · AI Tutor（Day 25～34）
+## Phase 1.5 · Foundation Remediation（Day 25～26）
 
 | Day | 主题 | 笔记 |
 | --- | ---- | ---- |
-| 25 | Document Ingestion | [day-25](25-document-ingestion.md) |
-| 26 | Chunking Strategy | [day-26](26-chunking-strategy.md) |
-| 27 | Embedding & Retrieval | [day-27](27-embedding-and-retrieval.md) |
-| 28 | Retrieval Evaluation | [day-28](28-retrieval-evaluation.md) |
-| 29 | Citation & Grounding | [day-29](29-citation-and-grounding.md) |
-| 30 | Context Engineering | [day-30](30-context-engineering.md) |
-| 31 | Direct Teaching | [day-31](31-direct-teaching.md) |
-| 32 | Socratic Teaching | [day-32](32-socratic-teaching.md) |
-| 33 | Learning Session | [day-33](33-learning-session.md) |
-| 34 | Memory Integration | [day-34](34-memory-integration.md) |
+| 25 | Persistence Baseline | [day-25](25-persistence-baseline.md) |
+| 26 | Application Services | [day-26](26-application-services.md) |
 
-## Phase 3 · Assessment（Day 35～44）
+## Phase 2 · AI Tutor（Day 27～36）
 
 | Day | 主题 | 笔记 |
 | --- | ---- | ---- |
-| 35 | Exercise Design | [day-35](35-exercise-design.md) |
-| 36 | Exercise Generation | [day-36](36-exercise-generation.md) |
-| 37 | Submission Modeling | [day-37](37-submission-modeling.md) |
-| 38 | Rubric Design | [day-38](38-rubric-design.md) |
-| 39 | LLM-as-a-Judge | [day-39](39-llm-as-a-judge.md) |
-| 40 | Evidence-based Assessment | [day-40](40-evidence-based-assessment.md) |
-| 41 | Mastery Model | [day-41](41-mastery-model.md) |
-| 42 | Confidence Estimation | [day-42](42-confidence-estimation.md) |
-| 43 | Weakness Detection | [day-43](43-weakness-detection.md) |
-| 44 | Assessment Evaluation | [day-44](44-assessment-evaluation.md) |
+| 27 | Document Ingestion | [day-27](27-document-ingestion.md) |
+| 28 | Chunking Strategy | [day-28](28-chunking-strategy.md) |
+| 29 | Embedding & Retrieval | [day-29](29-embedding-and-retrieval.md) |
+| 30 | Retrieval Evaluation | [day-30](30-retrieval-evaluation.md) |
+| 31 | Citation & Grounding | [day-31](31-citation-and-grounding.md) |
+| 32 | Context Engineering | [day-32](32-context-engineering.md) |
+| 33 | Direct Teaching | [day-33](33-direct-teaching.md) |
+| 34 | Socratic Teaching | [day-34](34-socratic-teaching.md) |
+| 35 | Learning Session | [day-35](35-learning-session.md) |
+| 36 | Memory Integration | [day-36](36-memory-integration.md) |
 
-## Phase 4 · Adaptive Learning（Day 45～54）
-
-| Day | 主题 | 笔记 |
-| --- | ---- | ---- |
-| 45 | Knowledge Dependency | [day-45](45-knowledge-dependency.md) |
-| 46 | Learning Path | [day-46](46-learning-path.md) |
-| 47 | Weakness Analysis | [day-47](47-weakness-analysis.md) |
-| 48 | Plan Adaptation | [day-48](48-plan-adaptation.md) |
-| 49 | Plan Versioning（变更记录） | [day-49](49-plan-versioning-changes.md) |
-| 50 | Review Scheduling | [day-50](50-review-scheduling.md) |
-| 51 | Reflection | [day-51](51-reflection.md) |
-| 52 | Adaptation Policy | [day-52](52-adaptation-policy.md) |
-| 53 | Explainability | [day-53](53-explainability.md) |
-| 54 | E2E Validation | [day-54](54-e2e-validation.md) |
-
-## Phase 5 · Productization（Day 55～64）
+## Phase 3 · Assessment（Day 37～46）
 
 | Day | 主题 | 笔记 |
 | --- | ---- | ---- |
-| 55 | API Design | [day-55](55-api-design.md) |
-| 56 | Async Task API | [day-56](56-async-task-api.md) |
-| 57 | Learning UI | [day-57](57-learning-ui.md) |
-| 58 | Learning Interaction | [day-58](58-learning-interaction.md) |
-| 59 | Dashboard | [day-59](59-dashboard.md) |
-| 60 | Agent Evaluation | [day-60](60-agent-evaluation.md) |
-| 61 | Learning Evaluation | [day-61](61-learning-evaluation.md) |
-| 62 | Reliability Testing | [day-62](62-reliability-testing.md) |
-| 63 | Security Review | [day-63](63-security-review.md) |
-| 64 | Documentation & Demo | [day-64](64-documentation-and-demo.md) |
+| 37 | Exercise Design | [day-37](37-exercise-design.md) |
+| 38 | Exercise Generation | [day-38](38-exercise-generation.md) |
+| 39 | Submission Modeling | [day-39](39-submission-modeling.md) |
+| 40 | Rubric Design | [day-40](40-rubric-design.md) |
+| 41 | LLM-as-a-Judge | [day-41](41-llm-as-a-judge.md) |
+| 42 | Evidence-based Assessment | [day-42](42-evidence-based-assessment.md) |
+| 43 | Mastery Model | [day-43](43-mastery-model.md) |
+| 44 | Confidence Estimation | [day-44](44-confidence-estimation.md) |
+| 45 | Weakness Detection | [day-45](45-weakness-detection.md) |
+| 46 | Assessment Evaluation | [day-46](46-assessment-evaluation.md) |
+
+## Phase 4 · Adaptive Learning（Day 47～56）
+
+| Day | 主题 | 笔记 |
+| --- | ---- | ---- |
+| 47 | Knowledge Dependency | [day-47](47-knowledge-dependency.md) |
+| 48 | Learning Path | [day-48](48-learning-path.md) |
+| 49 | Weakness Analysis | [day-49](49-weakness-analysis.md) |
+| 50 | Plan Adaptation | [day-50](50-plan-adaptation.md) |
+| 51 | Plan Versioning（变更记录） | [day-51](51-plan-versioning-changes.md) |
+| 52 | Review Scheduling | [day-52](52-review-scheduling.md) |
+| 53 | Reflection | [day-53](53-reflection.md) |
+| 54 | Adaptation Policy | [day-54](54-adaptation-policy.md) |
+| 55 | Explainability | [day-55](55-explainability.md) |
+| 56 | E2E Validation | [day-56](56-e2e-validation.md) |
+
+## Phase 5 · Productization（Day 57～66）
+
+| Day | 主题 | 笔记 |
+| --- | ---- | ---- |
+| 57 | API Design | [day-57](57-api-design.md) |
+| 58 | Async Task API | [day-58](58-async-task-api.md) |
+| 59 | Learning UI | [day-59](59-learning-ui.md) |
+| 60 | Learning Interaction | [day-60](60-learning-interaction.md) |
+| 61 | Dashboard | [day-61](61-dashboard.md) |
+| 62 | Agent Evaluation | [day-62](62-agent-evaluation.md) |
+| 63 | Learning Evaluation | [day-63](63-learning-evaluation.md) |
+| 64 | Reliability Testing | [day-64](64-reliability-testing.md) |
+| 65 | Security Review | [day-65](65-security-review.md) |
+| 66 | Documentation & Demo | [day-66](66-documentation-and-demo.md) |

@@ -18,7 +18,7 @@ DocumentLoader → Chunker → EmbeddingClient → VectorStore
 
 | 协议 | 离线实现 | 生产实现 |
 |---|---|---|
-| `DocumentLoader` | `TextFileLoader` / `DirectoryLoader` | 同左（PDF 留给 Day 25） |
+| `DocumentLoader` | `TextFileLoader` / `DirectoryLoader` | 同左（PDF 留给 Day 27） |
 | `Chunker` | `FixedSizeChunker` / `RecursiveChunker` | 同左 |
 | `EmbeddingClient` | `HashingEmbedder` | `OpenAICompatibleEmbedder` |
 | `VectorStore` | `InMemoryVectorStore` | `PgVectorStore` |
@@ -158,7 +158,7 @@ uv run --group dev pytest tests/test_rag.py -q
 **文档 id 由来源路径的 SHA-256 推导**，不是随机 UUID。同一份材料每次摄取都得到
 同一个 id——否则重新摄取会产生「同一份材料的两份记录」，而向量库里无法区分它们。
 
-**当前只支持纯文本与 Markdown。** PDF、Word 等富格式的解析留给 Day 25
+**当前只支持纯文本与 Markdown。** PDF、Word 等富格式的解析留给 Day 27
 「Document Ingestion」——那是学习领域侧的摄取工作，与检索基础设施是两件事。
 
 ## 切分与索引
@@ -455,7 +455,7 @@ Vector(list(embedding))
 - **没有查询改写**。多轮对话里的指代（「那个函数的第二个参数」）不会被改写
   成可检索的形式。
 - **没有增量更新**。文档改了要重新摄取整份文档。
-- **加载器只支持纯文本与 Markdown**。PDF、Word 留给 Day 25。
+- **加载器只支持纯文本与 Markdown**。PDF、Word 留给 Day 27。
 - **`HashingEmbedder` 只是占位级的**。它捕捉词汇相似，不是语义相似。
 - **`PgVectorStore` 每次操作开连接**，不适合高并发。
 - **`chromadb` 虽在依赖里，但本模块不用它**（见 ADR-0011）。

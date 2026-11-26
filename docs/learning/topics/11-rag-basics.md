@@ -136,8 +136,8 @@ Chunking 策略如何影响检索质量？Document Loader 到 Vector Retrieval �
    - **没有重排、没有查询改写、没有增量更新**。
    - **哈希嵌入是占位级的**，只捕捉词汇相似。
    - **`PgVectorStore` 每次操作开连接**，不适合高并发。
-   - **加载器只支持纯文本与 Markdown**，PDF 留给 Day 25。
-   - **检索质量还没有被量化**——recall@k / MRR 属于 Day 28 的检索评估 topic，
+   - **加载器只支持纯文本与 Markdown**，PDF 留给 Day 27。
+   - **检索质量还没有被量化**——recall@k / MRR 属于 Day 30 的检索评估 topic，
      现在只能靠人眼看结果。
 
 ## 7. Output
@@ -150,7 +150,7 @@ Chunking 策略如何影响检索质量？Document Loader 到 Vector Retrieval �
 - Article Notes: `docs/articles/memory-and-rag.md`、`docs/engineering/rag.md`
 - Unresolved Questions:
   - 混合检索（向量 + BM25）值不值得引入？取决于教材材料里「精确标识符」的
-    提问占比——需要先有检索评估数据（Day 28）才能回答。
+    提问占比——需要先有检索评估数据（Day 30）才能回答。
   - 块大小到底按多少字符定？目前是 120/250 的经验值，**没有数据支撑**。
   - `HashingEmbedder` 该不该在生产路径里保留？留着的价值是「无外部依赖也能
     跑通」，但它可能误导后来者以为那是可用的嵌入。
