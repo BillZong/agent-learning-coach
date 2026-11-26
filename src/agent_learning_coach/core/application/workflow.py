@@ -138,6 +138,9 @@ class WorkflowResult:
     progress_written: bool
     """进度是否真的写了。内容没变就不写——避免无谓的版本递增。"""
 
+    plan_written: bool
+    """计划版本是否真的产生了。内容没变就**不产生新版本**——空版本是噪音。"""
+
 
 def sync_diagnosis(
     diagnosis: Diagnosis,
@@ -298,7 +301,7 @@ class LearningWorkflow:
             progress_record = saved
             written = True
 
-        plan_record = await self._write_plan(
+        plan_record, plan_written = await self._write_plan(
             goal,
             structure,
             progress_record.value if progress_record is not None else progress,
@@ -319,6 +322,7 @@ class LearningWorkflow:
             plan_version=plan_record,
             sync=report,
             progress_written=written,
+            plan_written=plan_written,
         )
 
     async def record_learning(
@@ -371,7 +375,7 @@ class LearningWorkflow:
         moved = moved.complete(point_id, at=at, reason=reason)
         saved = await self._save_progress_with_retry(goal, moved, revision, None, at=at)
 
-        plan_record = await self._write_plan(
+        plan_record, plan_written = await self._write_plan(
             goal,
             structure,
             saved.value,
@@ -390,6 +394,7 @@ class LearningWorkflow:
             plan_version=plan_record,
             sync=SyncReport(),
             progress_written=True,
+            plan_written=plan_written,
         )
 
     async def current_unit(self, goal_id: GoalId) -> LearningUnit | None:
@@ -525,11 +530,19 @@ class LearningWorkflow:
         at: float,
         reason: str,
         estimator: EffortEstimator | None,
-    ) -> Stored[PlanVersion]:
+    ) -> tuple[Stored[PlanVersion], bool]:
         """生成并写入计划版本。
 
         目标已有计划线就**修订**它（版本号 +1），否则**开一条新的**（版本 1）。
         「当前计划线」的判定复用 ADR-0025 的规则：同一目标下最近开始的那条。
+
+        **内容没变就不产生新版本**：算出来的计划与当前版本**完全相同**时，返回当前
+        版本、一个字都不写。空版本是噪音——它不回答「计划变了没有」（``delta`` 已
+        经回答了），只在历史里堆出一串内容相同的记录，还让人怀疑是不是出了 bug。
+
+        比较的是**整个计划内容**（含 ``diagnosis_id``）：同一份诊断 + 同样的进度
+        ⇒ 相同 ⇒ 不出版本；换了诊断即使结果一样也出版本，因为**依据变了**——那是
+        有信息量的。
 
         Args:
             goal: 目标。
@@ -543,10 +556,18 @@ class LearningWorkflow:
             estimator: 估时器。
 
         Returns:
-            写入后的计划版本记录。
+            计划版本记录，以及是否真的写了。
+
+        Raises:
+            WorkflowError: 版本写入冲突——基线已过期。
         """
         versions = await self._plans.list_for_goal(goal.id)
         current = current_plan_version([record.value for record in versions], goal_id=goal.id)
+        current_record = (
+            next((record for record in versions if record.value.id == current.id), None)
+            if current is not None
+            else None
+        )
 
         if current is None:
             version = start_plan(
@@ -575,7 +596,17 @@ class LearningWorkflow:
                 diagnosis=diagnosis,
                 estimator=estimator,
             )
-        return await self._plans.save(Stored(value=version, revision=0))
+            if current_record is not None and version.plan == current.plan:
+                return current_record, False
+
+        try:
+            return await self._plans.save(Stored(value=version, revision=0)), True
+        except ConflictError as exc:
+            base = f"（基于 v{current.number} 生成）" if current is not None else ""
+            raise WorkflowError(
+                f"目标 {goal.id} 的计划版本写入冲突{base}——基线已过期："
+                f"期间有人改动了计划。请重新读取当前计划后重试",
+            ) from exc
 
 
 __all__ = [

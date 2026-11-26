@@ -29,6 +29,7 @@ import pytest
 from agent_learning_coach.core.application import (
     LearningWorkflow,
     NotFoundError,
+    WorkflowError,
     sync_diagnosis,
 )
 from agent_learning_coach.core.learning import (
@@ -243,6 +244,32 @@ class _RecordingPlanRepository(InMemoryPlanVersionRepository):
         return await super().save(record)
 
 
+class _ConflictingPlanRepository(InMemoryPlanVersionRepository):
+    """第一次写入计划版本时制造一次冲突。"""
+
+    def __init__(self) -> None:
+        """初始化。"""
+        super().__init__()
+        self._pending = True
+
+    async def save(self, record: Stored[object]) -> Stored[object]:
+        """第一次保存时抛出冲突。
+
+        Args:
+            record: 待写入的记录。
+
+        Returns:
+            写入后的记录。
+
+        Raises:
+            ConflictError: 第一次保存时抛出。
+        """
+        if self._pending:
+            self._pending = False
+            raise ConflictError("存储中的版本是 1，与携带的版本 0 不一致")
+        return await super().save(record)
+
+
 class _ConflictingProgressRepository(InMemoryProgressRepository):
     """第一次保存时制造一次乐观锁冲突。"""
 
@@ -436,7 +463,7 @@ def test_explicit_diagnosis_id_wins() -> None:
 
 
 def test_running_twice_is_idempotent() -> None:
-    """同一份诊断跑两次：第二次不改进度，但会出一个新的计划版本。"""
+    """同一份诊断跑两次：第二次既不改进度，也不产生新的计划版本。"""
     harness = _harness(diagnoses=(_diagnosis(),))
 
     first = asyncio.run(
@@ -447,26 +474,34 @@ def test_running_twice_is_idempotent() -> None:
     )
 
     assert first.progress_written is True
+    assert first.plan_written is True
     assert second.progress_written is False
+    assert second.plan_written is False
     assert second.sync.applied == ()
-    assert second.plan_version.value.number == 2
-    assert second.plan_version.value.plan_id == first.plan_version.value.plan_id
+    assert second.plan_version.value.number == 1
+    assert second.plan_version.value.id == first.plan_version.value.id
 
 
 # --- 写边界 -------------------------------------------------------------
 
 
-def test_plan_is_revised_not_restarted() -> None:
-    """目标已有计划线 → 修订它（同一计划线，版本号 +1）。"""
+def test_changed_plan_produces_a_new_version() -> None:
+    """内容变了 → 修订它（同一计划线，版本号 +1）。"""
     harness = _harness(diagnoses=(_diagnosis(),))
-
     first = asyncio.run(
         harness.workflow.diagnose_and_plan(GoalId("goal-1"), at=2000.0, reason="初次规划"),
     )
+
     second = asyncio.run(
-        harness.workflow.diagnose_and_plan(GoalId("goal-1"), at=3000.0, reason="再规划一次"),
+        harness.workflow.record_learning(
+            GoalId("goal-1"),
+            KnowledgePointId("k2"),
+            at=3000.0,
+            reason="学完了闭包",
+        ),
     )
 
+    assert second.plan_written is True
     assert second.plan_version.value.plan_id == first.plan_version.value.plan_id
     assert second.plan_version.value.number == 2
     assert second.plan_version.value.delta is not None
@@ -489,6 +524,7 @@ def test_record_learning_updates_progress_and_replans() -> None:
     )
 
     assert result.progress.value.state_of(KnowledgePointId("k2")) == "learned"
+    assert result.plan_written is True
     assert result.plan_version.value.number == 2
     assert result.plan_version.value.plan.units == ()
 
@@ -581,3 +617,20 @@ def test_conflict_triggers_reread_and_retry() -> None:
     assert result.progress_written is True
     assert result.progress.value.state_of(KnowledgePointId("k1")) == "learned"
     assert result.plan_version.value.number == 1
+
+
+def test_plan_write_conflict_says_the_base_is_stale() -> None:
+    """计划版本写入冲突要说清「基线已过期」，而不是含糊的「版本不一致」。"""
+    harness = _harness(diagnoses=(_diagnosis(),))
+    workflow = LearningWorkflow(
+        goals=harness.goals,
+        progresses=harness.progresses,
+        diagnoses=harness.diagnoses,
+        plans=_ConflictingPlanRepository(),
+        courses=harness.courses,
+    )
+
+    with pytest.raises(WorkflowError, match="基线已过期"):
+        asyncio.run(
+            workflow.diagnose_and_plan(GoalId("goal-1"), at=2000.0, reason="初次规划"),
+        )

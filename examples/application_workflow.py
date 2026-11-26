@@ -249,7 +249,7 @@ def show_pick_latest() -> None:
 
 
 def show_idempotency() -> None:
-    """演示幂等与版本递增。"""
+    """演示幂等：同一份诊断跑两次，什么都不写。"""
     print("=== 4. 幂等：同一份诊断跑两次 ===\n")
     diagnosis = _diagnosis(
         "diagnosis-1",
@@ -265,11 +265,13 @@ def show_idempotency() -> None:
         workflow.diagnose_and_plan(GoalId("goal-1"), at=3000.0, reason="再规划一次"),
     )
 
-    print(f"第一次：写了进度 {first.progress_written}，计划 v{first.plan_version.value.number}")
-    print(f"第二次：写了进度 {second.progress_written}，计划 v{second.plan_version.value.number}")
-    print("（内容没变就不写——避免无谓的版本递增）")
-    print("（但计划每次都出新版本：计划变了没有，要从版本里看得见）")
-    print(f"两版的差异：{second.plan_version.value.delta}")
+    print(f"第一次：写了进度 {first.progress_written}，出了计划 v{first.plan_version.value.number}")
+    print(
+        f"第二次：写了进度 {second.progress_written}，出了计划 v{second.plan_version.value.number}"
+    )
+    print("（进度没变 → 不写；计划没变 → **不产生新版本**）")
+    print("（空版本是噪音：它不回答「计划变了没有」，只在历史里堆出一串内容相同的记录）")
+    print("（换了诊断即使结果一样也会出版本——依据变了，那是有信息量的）")
     print("（同一目标已有计划线就**修订**它，不重开一条——否则「这份计划从哪来」说不清）\n")
 
 
