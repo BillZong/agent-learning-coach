@@ -48,3 +48,4 @@
 | [0027](0027-application-services.md) | 应用层用例编排——顺序、冲突与写边界 | 已接受 |
 | [0028](0028-document-ingestion.md) | 课程文档摄取——格式、部分成功与幂等 | 已接受 |
 | [0029](0029-chunking-strategy.md) | 切分策略——按材料类型选，以及参数如何被测试锁定 | 已接受 |
+| [0030](0030-retrieval-filtering-and-index.md) | 检索过滤、top-k 与阈值的归属、索引方案的选择 | 已接受 |

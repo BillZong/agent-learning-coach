@@ -15,7 +15,8 @@
 > [ADR-0026](../architecture/decisions/0026-persistence-baseline.md)、
 > [ADR-0027](../architecture/decisions/0027-application-services.md)、
 > [ADR-0028](../architecture/decisions/0028-document-ingestion.md)、
-> [ADR-0029](../architecture/decisions/0029-chunking-strategy.md)
+> [ADR-0029](../architecture/decisions/0029-chunking-strategy.md)、
+> [ADR-0030](../architecture/decisions/0030-retrieval-filtering-and-index.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -386,6 +387,8 @@ current_plan_version([version, next_version], goal_id=goal.id)  # 当前版本
 - `uv run python examples/document_ingestion.py`——格式、部分成功、幂等、关联与归属
 - `uv run python examples/chunking_strategy.py`——按类型选策略、元数据随切片走、
   锁不变量而非数字
+- `uv run python examples/material_retrieval.py`——过滤语义、top-k 与阈值的归属、
+  索引方案的选择
 - `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
@@ -518,6 +521,11 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 所有材料用同一种切分策略 | 定长切代码会拦腰截断；递归切代码也不对——段落不是代码的语义单元 |
 | 为每种语言写一个代码切分器 | 结构由正则给出，换语言改正则即可；识别不出来退回兜底 |
 | 测试锁住具体参数 | 数字会随模型与语料变化；锁数字只会让改动变成「改测试」 |
+| 过滤一律等值匹配 | 知识点关联是数组——等值匹配永远匹配不上，「教 k1 时检索」根本做不到 |
+| 过滤语义由调用方约定 | 同一份 `filters` 里标量与序列语义不同；由值的类型隐式决定更省事 |
+| 存储层自己决定 top-k 与阈值 | 「讲一个知识点要几份材料」是业务判断，不是存储层的默认 |
+| 写死 HNSW 索引 | 语料小的时候精确扫描召回 100%；索引方案是部署决策，应是配置项 |
+| 阈值在应用层筛 | 等于把全部向量拉回内存——与「过滤下推」是同一条原则的两面 |
 | 用 `PlanId` 区分修订与全新计划 | 少了它，「重新规划」既像新版本又像新计划——无法判定的区分等于没有区分 |
 | 目标不充当计划线 | 同一目标可以先后有两条计划线（换了一条学习路径） |
 | 排序按版本号，不按时间 | 时间由调用方传入，可能补录、乱序；让它决定顺序，「谁是当前版本」就变成了猜 |
@@ -672,6 +680,29 @@ chunks = default_chunking_policy().split(to_rag_document(course_document))
 **测试锁不变量，不锁数字**（ADR-0029）：代码不切断顶层定义、习题不切断一道题、
 切片不超上限、切片 id 可复现、切分是幂等——数字会变，不变量不会。
 
+## 4.5 材料检索
+
+**学习领域的「教 k1」翻译成检索层的过滤条件**——这是两个领域之间的接缝。
+
+```python
+from agent_learning_coach.core.application import MaterialQuery, MaterialSearch
+
+hits = await search.search(
+    MaterialQuery(query="闭包是什么", point_ids=(KnowledgePointId("k1"),), top_k=3),
+)
+```
+
+**过滤语义由值的类型决定**：标量 → 等于；序列 → **包含任一**。序列语义是必需的——
+知识点关联（`point_ids`）是数组，等值匹配永远匹配不上（`->>` 对数组取出的是数组的
+**文本**）。
+
+**top-k 与阈值由应用层决定**：两者都是业务判断（「要几份材料」「低于多少分就不算相
+关」）。存储层与检索层只执行——它们提供默认值，但**默认值不是决策**。
+
+**索引方案是部署决策**：`none`（语料小，精确扫描召回 100%）/ `hnsw`（默认）/
+`ivfflat`（写入极少、内存紧张）。详见
+[ADR-0030](../architecture/decisions/0030-retrieval-filtering-and-index.md)。
+
 ## 5. 设计取舍
 
 | 替代方案 | 为什么不选 |
@@ -738,6 +769,9 @@ chunks = default_chunking_policy().split(to_rag_document(course_document))
 - **估时的实证依据**：默认 30 分钟/知识点没有数据支撑，会让排期看起来精确而
   实际不准。真实估时应来自学习数据（Topic 46；台账 `open-issues.md` §2.2）。
 - **从 URL 导入**：只支持文件路径；抓网页没做。
+- **过滤的取反与 all-of**：「排除某类材料」「同时覆盖 k1 与 k2」现在做不到，需要更
+  丰富的过滤表达式。
+- **向量库的驱动选型**：`psycopg` 只在本地装来验证 SQL，没有进 `pyproject`。
 - **文档的历史版本**：重复导入是覆盖，材料的历史不保留（计划版本有历史，材料没有）。
 - **证据没有时间戳**：「学习者什么时候答的」答不上来；「哪份诊断更新」只能靠诊断
   自己的 `at`。
@@ -760,7 +794,7 @@ uv run --group dev pytest -q tests/test_learning_domain.py tests/test_knowledge_
   tests/test_learning_assessment.py tests/test_learning_planning.py \
   tests/test_learning_plan_versioning.py tests/test_learning_persistence.py \
   tests/test_application_workflow.py tests/test_document_ingestion.py \
-  tests/test_learning_workflow.py
+  tests/test_retrieval_filtering.py tests/test_learning_workflow.py
 uv run python examples/learning_domain.py    # 聚合边界与拒绝演示
 uv run python examples/knowledge_structure.py # 路径、补课顺序、影响范围
 uv run python examples/learning_goal.py      # 状态机、约束、绑定与交接

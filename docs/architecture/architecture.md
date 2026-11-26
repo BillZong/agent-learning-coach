@@ -92,6 +92,7 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | 用例编排 | 应用层 | `core.application.workflow`（`LearningWorkflow` / `sync_diagnosis`） |
 | 课程文档 | 实体 + 应用层 | `core.learning.documents`（`CourseDocument`）+ `core.application.ingestion` |
 | 切分策略 | 检索基础设施 | `core.rag.chunking`（`PolicyChunker` / `CodeChunker` / `ExerciseChunker`） |
+| 材料检索 | 应用层 + 检索基础设施 | `core.application.retrieval`（`MaterialSearch`）+ `core.rag.store`（过滤 / 阈值 / 索引方案） |
 | 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
@@ -213,6 +214,11 @@ Phase 1 的领域层全是纯函数，不读、不写、不串联——**顺序�
 参考资料按定长——**每类材料有它自己的语义单元**，一刀切的策略总有一半材料是错的。
 课程侧的元数据（种类、课程 id、知识点关联）随切片走，检索时才能按课程与知识点
 过滤。**测试锁不变量，不锁数字**。
+
+**检索过滤与阈值**（ADR-0030）：过滤语义由**值的类型**决定——标量等值、序列**包含任
+一**（知识点关联是数组，等值匹配永远匹配不上）。**top-k 与阈值由应用层决定**（业务
+判断，存储层只执行）。**索引方案是部署决策**：`none`（语料小，精确扫描召回 100%）/
+`hnsw`（默认）/ `ivfflat`（写入极少、内存紧张）。
 
 ### 3.4 Agent 运行时层（Agent Runtime）
 

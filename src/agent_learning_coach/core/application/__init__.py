@@ -22,6 +22,10 @@ from agent_learning_coach.core.application.ingestion import (
     ingest_course_documents,
     to_rag_document,
 )
+from agent_learning_coach.core.application.retrieval import (
+    MaterialQuery,
+    MaterialSearch,
+)
 from agent_learning_coach.core.application.workflow import (
     LearningWorkflow,
     NotFoundError,
@@ -34,6 +38,8 @@ from agent_learning_coach.core.application.workflow import (
 
 __all__ = [
     "DocumentRequest",
+    "MaterialQuery",
+    "MaterialSearch",
     "IngestionFailure",
     "IngestionIssue",
     "IngestionReport",

@@ -82,7 +82,8 @@ from agent_learning_coach.core.rag.loader import (
 )
 from agent_learning_coach.core.rag.retrieval import VectorRetriever
 from agent_learning_coach.core.rag.store import (
-    PGVECTOR_SCHEMA_TEMPLATE,
+    PGVECTOR_INDEX_TEMPLATES,
+    PGVECTOR_TABLE_TEMPLATE,
     InMemoryVectorStore,
     PgVectorStore,
     VectorStore,
@@ -95,7 +96,8 @@ from agent_learning_coach.core.rag.types import Chunk, Document, ScoredChunk
 
 __all__ = [
     "DEFAULT_SEPARATORS",
-    "PGVECTOR_SCHEMA_TEMPLATE",
+    "PGVECTOR_INDEX_TEMPLATES",
+    "PGVECTOR_TABLE_TEMPLATE",
     "Chunk",
     "Citation",
     "CitationIssue",

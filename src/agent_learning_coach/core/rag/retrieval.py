@@ -45,13 +45,18 @@ class VectorRetriever:
         *,
         top_k: int | None = None,
         filters: Mapping[str, object] | None = None,
+        min_score: float | None = None,
     ) -> list[ScoredChunk]:
         """检索与查询相关的切片。
+
+        **top_k 与 min_score 都由调用方决定**：它们是业务判断（「这次要几份材料」
+        「低于多少分就不算相关」），检索器只提供默认值并如实执行。
 
         Args:
             query: 查询文本。
             top_k: 覆盖默认返回条数。
-            filters: 元数据等值过滤，全部条件都要满足。
+            filters: 元数据过滤，全部条件都要满足。序列按「包含任一」匹配。
+            min_score: 相关度下限；低于它的结果不返回。
 
         Returns:
             按相关度从高到低排列的切片。查询为空时返回空列表。
@@ -63,6 +68,7 @@ class VectorRetriever:
             vector,
             top_k=self.top_k if top_k is None else top_k,
             filters=filters,
+            min_score=min_score,
         )
 
 

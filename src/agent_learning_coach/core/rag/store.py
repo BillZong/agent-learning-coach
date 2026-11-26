@@ -52,13 +52,22 @@ class VectorStore(Protocol):
         *,
         top_k: int = 5,
         filters: Mapping[str, Any] | None = None,
+        min_score: float | None = None,
     ) -> list[ScoredChunk]:
         """检索最相关的切片。
+
+        **过滤条件的语义由值的类型决定**：标量 → **等于**；序列 → **包含任一**。
+        「教 k1 时」要的就是「元数据里的 point_ids 含 k1」——那是一个列表，用等值
+        匹配永远匹配不上。
+
+        **top_k 与阈值由调用方决定**，存储层只执行：这两个都是**业务判断**
+        （「这次要几份材料」「低于多少分就不算相关」），不是存储层的默认。
 
         Args:
             embedding: 查询向量。
             top_k: 最多返回几条。
-            filters: 元数据等值过滤。全部条件都要满足。
+            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配。
+            min_score: 相关度下限；低于它的结果不返回。
 
         Returns:
             按相关度从高到低排列的切片。
@@ -211,13 +220,15 @@ class InMemoryVectorStore:
         *,
         top_k: int = 5,
         filters: Mapping[str, Any] | None = None,
+        min_score: float | None = None,
     ) -> list[ScoredChunk]:
         """检索最相关的切片。
 
         Args:
             embedding: 查询向量。
             top_k: 最多返回几条。
-            filters: 元数据等值过滤。
+            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配。
+            min_score: 相关度下限；低于它的结果不返回。
 
         Returns:
             按相关度从高到低排列的切片。
@@ -233,14 +244,15 @@ class InMemoryVectorStore:
         if not candidates:
             return []
         matrix = np.stack([vector for _, vector in candidates])
-        scores = matrix @ query
-        ranked = sorted(
-            zip(candidates, scores.tolist(), strict=True),
-            key=lambda item: item[1],
-            reverse=True,
-        )
+        scores = (matrix @ query).tolist()
+        pairs = [
+            (candidate, float(score)) for candidate, score in zip(candidates, scores, strict=True)
+        ]
+        if min_score is not None:
+            pairs = [pair for pair in pairs if pair[1] >= min_score]
+        ranked = sorted(pairs, key=lambda item: item[1], reverse=True)
         return [
-            ScoredChunk(chunk=self._chunks[chunk_id], score=float(score))
+            ScoredChunk(chunk=self._chunks[chunk_id], score=score)
             for (chunk_id, _), score in ranked[:top_k]
         ]
 
@@ -303,19 +315,38 @@ class InMemoryVectorStore:
 def _matches(metadata: Mapping[str, Any], filters: Mapping[str, Any] | None) -> bool:
     """判断元数据是否满足全部过滤条件。
 
+    **值的类型决定语义**：标量等值匹配；序列按「包含任一」匹配。
+
     Args:
         metadata: 切片的元数据。
-        filters: 等值过滤条件。为 None 表示不过滤。
+        filters: 过滤条件。为 None 表示不过滤。
 
     Returns:
         全部条件满足返回 True。
     """
     if not filters:
         return True
-    return all(metadata.get(key) == value for key, value in filters.items())
+    return all(_matches_one(metadata.get(key), value) for key, value in filters.items())
 
 
-PGVECTOR_SCHEMA_TEMPLATE = """\
+def _matches_one(actual: Any, expected: Any) -> bool:
+    """判断单个过滤条件。
+
+    Args:
+        actual: 元数据里的实际值（键不存在时为 ``None``）。
+        expected: 期望值。序列表示「包含任一」。
+
+    Returns:
+        满足返回 True。
+    """
+    if isinstance(expected, (list, tuple, set, frozenset)):
+        if not isinstance(actual, (list, tuple, set, frozenset)):
+            return False
+        return any(item in actual for item in expected)
+    return bool(actual == expected)
+
+
+PGVECTOR_TABLE_TEMPLATE = """\
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS {table} (
@@ -329,13 +360,36 @@ CREATE TABLE IF NOT EXISTS {table} (
 );
 
 CREATE INDEX IF NOT EXISTS {table}_document_idx ON {table} (document_id);
-CREATE INDEX IF NOT EXISTS {table}_embedding_idx
-    ON {table} USING hnsw (embedding vector_cosine_ops);
 """
 """pgvector 的建表语句。
 
 维度必须写进 ``vector(n)``——pgvector 的向量列是定长的，维度与已有数据不一致
-时无法写入。HNSW 索引让相似度检索不必全表扫描。
+时无法写入。
+"""
+
+PGVECTOR_INDEX_TEMPLATES: dict[str, str] = {
+    "none": "",
+    "hnsw": """\
+CREATE INDEX IF NOT EXISTS {table}_embedding_idx
+    ON {table} USING hnsw (embedding vector_cosine_ops);
+""",
+    "ivfflat": """\
+CREATE INDEX IF NOT EXISTS {table}_embedding_idx
+    ON {table} USING ivfflat (embedding vector_cosine_ops) WITH (lists = {lists});
+""",
+}
+"""向量索引的建索引语句，按索引方案取。
+
+**怎么选**（ADR-0030）：
+
+| 方案 | 什么时候用 |
+| ---- | ---------- |
+| ``none`` | **语料小**（几千片以内）：顺序扫描的召回是 100%，ANN 索引的近似误差与调参不值得 |
+| ``hnsw`` | **默认**：写入友好、召回高、内存换速度；语料变大时的通用选择 |
+| ``ivfflat`` | 写入极少、只读查询、内存紧张；代价是需要定期 ``REINDEX`` |
+
+**召回是近似的**：ANN 索引会漏掉一些真正相关的切片。语料小的时候这个代价不值得
+付——**精确扫描没有近似误差**。
 """
 
 
@@ -369,6 +423,8 @@ class PgVectorStore:
         *,
         dimension: int,
         table: str = "rag_chunks",
+        index: str = "hnsw",
+        ivfflat_lists: int = 100,
     ) -> None:
         """初始化存储。
 
@@ -376,18 +432,39 @@ class PgVectorStore:
             dsn: PostgreSQL 连接串。
             dimension: 向量维度。必须与嵌入模型一致。
             table: 表名。
+            index: 向量索引方案：``none`` / ``hnsw`` / ``ivfflat``。选择规则见
+                ``PGVECTOR_INDEX_TEMPLATES``。
+            ivfflat_lists: ``ivfflat`` 的聚类数。
+
+        Raises:
+            ValueError: 索引方案不认识。
         """
+        if index not in PGVECTOR_INDEX_TEMPLATES:
+            raise ValueError(
+                f"未知的向量索引方案：{index}"
+                f"（可选：{'、'.join(sorted(PGVECTOR_INDEX_TEMPLATES))}）",
+            )
         self.dsn = dsn
         self.dimension = dimension
         self.table = table
+        self.index = index
+        self.ivfflat_lists = ivfflat_lists
 
     def schema(self) -> str:
-        """建表语句。
+        """建表与建索引语句。
 
         Returns:
             DDL 文本。
         """
-        return PGVECTOR_SCHEMA_TEMPLATE.format(table=self.table, dimension=self.dimension)
+        table = PGVECTOR_TABLE_TEMPLATE.format(
+            table=self.table,
+            dimension=self.dimension,
+        )
+        index_sql = PGVECTOR_INDEX_TEMPLATES[self.index].format(
+            table=self.table,
+            lists=self.ivfflat_lists,
+        )
+        return table + index_sql
 
     async def ensure_schema(self) -> None:
         """确保扩展、表与索引就位。
@@ -464,16 +541,24 @@ class PgVectorStore:
         *,
         top_k: int = 5,
         filters: Mapping[str, Any] | None = None,
+        min_score: float | None = None,
     ) -> list[ScoredChunk]:
         """检索最相关的切片。
 
         过滤条件在 SQL 里下推——这样索引才能用上。在应用层过滤等于把全部向量
         拉回内存再筛，那是「索引 ≠ 检索」最常见的误用。
 
+        **序列型过滤用 JSONB 的 ``?|`` 算子**（查数组元素），标量用 ``->>``。
+
+        **ANN 索引 + 过滤的坑**：过滤发生在索引扫描之后，因此带过滤的查询**可能返回
+        少于 top_k 条**——被过滤掉的结果不会占用名额。需要更多召回时调大
+        ``hnsw.ef_search``。
+
         Args:
             embedding: 查询向量。
             top_k: 最多返回几条。
-            filters: 元数据等值过滤。
+            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配。
+            min_score: 相关度下限；低于它的结果不返回。
 
         Returns:
             按相关度从高到低排列的切片。
@@ -485,14 +570,22 @@ class PgVectorStore:
 
         clauses: list[str] = []
         filter_params: list[Any] = []
-        if filters:
-            for key, value in filters.items():
+        for key, value in (filters or {}).items():
+            if isinstance(value, (list, tuple, set, frozenset)):
+                # 序列 → 「包含任一」：JSONB 的 ?| 算子查数组元素。
+                clauses.append("metadata -> %s ?| %s")
+                filter_params.extend([key, list(value)])
+            else:
                 clauses.append("metadata ->> %s = %s")
                 filter_params.extend([key, str(value)])
+        vector = _pg_vector(embedding)
+        if min_score is not None:
+            clauses.append("1 - (embedding <=> %s) >= %s")
+            filter_params.extend([vector, min_score])
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         # 占位符顺序必须与 SQL 里的出现顺序一致：
-        # SELECT 里的向量 → WHERE 里的过滤值 → ORDER BY 里的向量 → LIMIT。
-        vector = _pg_vector(embedding)
+        # SELECT 里的向量 → WHERE 里的过滤值（末尾是阈值用的向量）→ ORDER BY 里的
+        # 向量 → LIMIT。
         params: list[Any] = [vector, *filter_params, vector, top_k]
         try:
             async with self._connect() as conn:
@@ -669,8 +762,9 @@ def _json(metadata: Mapping[str, Any]) -> str:
 
 
 __all__ = [
+    "PGVECTOR_INDEX_TEMPLATES",
+    "PGVECTOR_TABLE_TEMPLATE",
     "InMemoryVectorStore",
-    "PGVECTOR_SCHEMA_TEMPLATE",
     "PgVectorStore",
     "VectorStore",
 ]
