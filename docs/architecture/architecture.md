@@ -90,6 +90,7 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | 计划版本 | 实体 + 领域服务 | `core.learning.versions`（`PlanVersion` / `PlanBasis` / `PlanDelta`） |
 | 持久化 | 存储层（形状 / 协议 / 实现） | `core.storage`（`codecs` / `protocols` / `memory`）；DDL 在 `migrations/` |
 | 用例编排 | 应用层 | `core.application.workflow`（`LearningWorkflow` / `sync_diagnosis`） |
+| 课程文档 | 实体 + 应用层 | `core.learning.documents`（`CourseDocument`）+ `core.application.ingestion` |
 | 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
@@ -192,6 +193,20 @@ Phase 1 的领域层全是纯函数，不读、不写、不串联——**顺序�
 4. **幂等**：进度内容没变就不写；计划内容没变就**不产生新版本**——空版本是噪音。
 
 多份诊断取最新的一份（按诊断的 `at`）；给了 `diagnosis_id` 就用它。
+
+### 3.3.2 课程材料摄取（Phase 2）
+
+课程文档是**材料在课程里的记录**：内容、来源、种类、属于哪门课、覆盖哪些知识点。
+它是独立实体（导入一份材料不该重写整门课），按 id 引用课程。
+
+**支持的格式**：纯文本、Markdown、代码、PDF（PyMuPDF）、Jupyter 笔记本。解析在
+``core.rag.loader``（与检索侧共用，**只解析一次**）；课程侧只加「属于哪门课、
+覆盖哪些知识点」。
+
+**部分成功，失败必须进报告**（ADR-0028）：一份坏文件不该毁掉整个课程库；但静默的
+部分成功比整批失败更糟，所以失败清单在报告里。**摄取幂等**：文档 id 由来源推导，
+重复导入是覆盖，内容没变就不写。**知识点关联有三种语义**（不改 / 清空 / 设置），
+重新导入材料不会顺手抹掉标注。
 
 ### 3.4 Agent 运行时层（Agent Runtime）
 

@@ -33,6 +33,7 @@ from agent_learning_coach.core.learning.diagnosis import (
     DiagnosticSubmission,
     DiagnosticVerdict,
 )
+from agent_learning_coach.core.learning.documents import CourseDocument
 from agent_learning_coach.core.learning.domain import (
     Course,
     CourseId,
@@ -960,8 +961,59 @@ def plan_version_from_dict(payload: dict[str, Any]) -> PlanVersion:
     )
 
 
+def course_document_to_dict(document: CourseDocument) -> dict[str, Any]:
+    """课程文档 → 负载。
+
+    Args:
+        document: 课程文档。
+
+    Returns:
+        JSON 兼容的负载。
+    """
+    return _envelope(
+        "course_document",
+        {
+            "id": document.id,
+            "course_id": str(document.course_id),
+            "title": document.title,
+            # 字段名避开 "kind"——那是负载信封的种类标记（payload 的类型）。
+            "document_kind": document.kind,
+            "content": document.content,
+            "source": document.source,
+            "point_ids": [str(item) for item in document.point_ids],
+        },
+    )
+
+
+def course_document_from_dict(payload: dict[str, Any]) -> CourseDocument:
+    """负载 → 课程文档。
+
+    Args:
+        payload: 负载。
+
+    Returns:
+        课程文档。
+
+    Raises:
+        DecodeError: 负载结构不对。
+        DomainError: 负载里的事实不合法（构造期校验）。
+    """
+    body = _unwrap(payload, "course_document")
+    return CourseDocument(
+        id=_text(body, "id"),
+        course_id=CourseId(_text(body, "course_id")),
+        title=_text(body, "title"),
+        kind=_text(body, "document_kind"),  # type: ignore[arg-type]
+        content=_text(body, "content"),
+        source=_text(body, "source"),
+        point_ids=tuple(KnowledgePointId(item) for item in _strings(body, "point_ids")),
+    )
+
+
 __all__ = [
     "SCHEMA_VERSION",
+    "course_document_from_dict",
+    "course_document_to_dict",
     "course_from_dict",
     "course_to_dict",
     "diagnosis_from_dict",

@@ -19,6 +19,8 @@ PostgreSQL 的 schema 在 ``migrations/0001_learning_domain.sql``；适配器尚
 
 from agent_learning_coach.core.storage.codecs import (
     SCHEMA_VERSION,
+    course_document_from_dict,
+    course_document_to_dict,
     course_from_dict,
     course_to_dict,
     diagnosis_from_dict,
@@ -40,6 +42,7 @@ from agent_learning_coach.core.storage.errors import (
     StorageError,
 )
 from agent_learning_coach.core.storage.memory import (
+    InMemoryCourseDocumentRepository,
     InMemoryCourseRepository,
     InMemoryDiagnosisRepository,
     InMemoryExerciseRepository,
@@ -48,6 +51,7 @@ from agent_learning_coach.core.storage.memory import (
     InMemoryProgressRepository,
 )
 from agent_learning_coach.core.storage.protocols import (
+    CourseDocumentRepository,
     CourseRepository,
     DiagnosisRepository,
     ExerciseRepository,
@@ -61,11 +65,13 @@ from agent_learning_coach.core.storage.protocols import (
 __all__ = [
     "SCHEMA_VERSION",
     "ConflictError",
+    "CourseDocumentRepository",
     "CourseRepository",
     "DecodeError",
     "DiagnosisRepository",
     "ExerciseRepository",
     "GoalRepository",
+    "InMemoryCourseDocumentRepository",
     "InMemoryCourseRepository",
     "InMemoryDiagnosisRepository",
     "InMemoryExerciseRepository",
@@ -76,6 +82,8 @@ __all__ = [
     "ProgressRepository",
     "StorageError",
     "Stored",
+    "course_document_from_dict",
+    "course_document_to_dict",
     "course_from_dict",
     "course_to_dict",
     "diagnosis_from_dict",

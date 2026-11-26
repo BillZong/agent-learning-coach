@@ -230,15 +230,16 @@ Phase 1 的新功能——Phase 1 的领域层已验收（[`phase-1-acceptance.m
 
 - [x] 学习领域仓储层（协议 + schema + 校验复用；ADR-0026；SQL 适配器待驱动选型）。
 - [x] 应用层用例服务（诊断 → 进度 → 计划；ADR-0027）。
-- [ ] 主题笔记：[`25-persistence-baseline.md`](../learning/topics/25-persistence-baseline.md)、
+- [x] 主题笔记：[`25-persistence-baseline.md`](../learning/topics/25-persistence-baseline.md)、
   [`26-application-services.md`](../learning/topics/26-application-services.md)。
 
 #### 阶段验收标准
 
-- [ ] 目标、进度、诊断、计划版本可以落库并取回。
-- [ ] 绕过领域对象的非法数据进不去。
-- [ ] 诊断 → 进度 → 计划有一个可调用的用例。
-- [ ] 诊断与进度不一致时有确定处置且被报告。
+- [x] 目标、进度、诊断、计划版本可以落库并取回（内存实现 + PostgreSQL schema；
+  SQL 适配器待驱动选型）。
+- [x] 绕过领域对象的非法数据进不去（解码重跑领域层不变量 + CHECK 约束）。
+- [x] 诊断 → 进度 → 计划有一个可调用的用例。
+- [x] 诊断与进度不一致时有确定处置且被报告。
 
 ---
 
@@ -284,7 +285,8 @@ Phase 1 的新功能——Phase 1 的领域层已验收（[`phase-1-acceptance.m
 
 #### 阶段交付物
 
-- [ ] 课程资料管理能力。
+- [ ] 课程资料管理能力。（Day 27 已交付课程文档摄取：格式 + 部分成功 + 幂等 +
+  知识点关联，ADR-0028；切分与索引待 Day 28–31。）
 - [ ] RAG Pipeline。
 - [ ] 检索结果来源追踪与引用。
 - [ ] Learning Context 管理。

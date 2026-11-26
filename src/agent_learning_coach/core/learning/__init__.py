@@ -54,6 +54,12 @@ from agent_learning_coach.core.learning.diagnosis import (
     Verdict,
     diagnosis_plan,
 )
+from agent_learning_coach.core.learning.documents import (
+    CourseDocument,
+    DocumentKind,
+    document_id,
+    infer_kind,
+)
 from agent_learning_coach.core.learning.domain import (
     Course,
     CourseId,
@@ -122,6 +128,7 @@ __all__ = [
     "AssessmentResult",
     "CapabilityRequirement",
     "Course",
+    "CourseDocument",
     "CourseId",
     "DailyEffort",
     "DailyLoad",
@@ -133,6 +140,7 @@ __all__ = [
     "DiagnosticExercise",
     "DiagnosticSubmission",
     "DiagnosticVerdict",
+    "DocumentKind",
     "DomainError",
     "EffortEstimator",
     "EvidenceKind",
@@ -182,9 +190,11 @@ __all__ = [
     "check_progress_against_course",
     "current_plan_version",
     "diagnosis_plan",
+    "document_id",
     "fingerprint_structure",
     "generate_plan",
     "goal_completion",
+    "infer_kind",
     "plan_versions",
     "ready_points",
     "revise_plan",

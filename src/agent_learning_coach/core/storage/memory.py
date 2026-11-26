@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agent_learning_coach.core.learning.diagnosis import Diagnosis, DiagnosticExercise
+from agent_learning_coach.core.learning.documents import CourseDocument
 from agent_learning_coach.core.learning.domain import (
     Course,
     CourseId,
@@ -490,7 +491,64 @@ class InMemoryExerciseRepository(_InMemoryRepository[DiagnosticExercise]):
         return self._list_group(str(point_id))
 
 
+class InMemoryCourseDocumentRepository(_InMemoryRepository[CourseDocument]):
+    """课程文档的内存仓储。"""
+
+    def _key(self, value: CourseDocument) -> str:
+        """主键是文档标识。"""
+        return value.id
+
+    def _encode(self, value: CourseDocument) -> dict[str, Any]:
+        """编码成文档负载。"""
+        return codecs.course_document_to_dict(value)
+
+    def _decode(self, payload: dict[str, Any]) -> CourseDocument:
+        """解码成文档。"""
+        return codecs.course_document_from_dict(payload)
+
+    def _group_keys(self, value: CourseDocument) -> tuple[str, ...]:
+        """按课程分组。"""
+        return (str(value.course_id),)
+
+    async def load(self, document_id: str) -> Stored[CourseDocument] | None:
+        """按 id 读取文档。
+
+        Args:
+            document_id: 文档标识。
+
+        Returns:
+            记录；不存在时为 ``None``。
+        """
+        return self._get(document_id)
+
+    async def save(self, record: Stored[CourseDocument]) -> Stored[CourseDocument]:
+        """写入文档。
+
+        Args:
+            record: 待写入的记录。
+
+        Returns:
+            写入后的记录。
+
+        Raises:
+            ConflictError: 版本冲突。
+        """
+        return self._put(self._key(record.value), record, self._group_keys(record.value))
+
+    async def list_for_course(self, course_id: CourseId) -> tuple[Stored[CourseDocument], ...]:
+        """列出某门课的全部文档。
+
+        Args:
+            course_id: 课程标识。
+
+        Returns:
+            记录元组，按文档标识升序。
+        """
+        return self._list_group(str(course_id))
+
+
 __all__ = [
+    "InMemoryCourseDocumentRepository",
     "InMemoryCourseRepository",
     "InMemoryDiagnosisRepository",
     "InMemoryExerciseRepository",

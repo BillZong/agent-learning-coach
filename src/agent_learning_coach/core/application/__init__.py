@@ -14,6 +14,13 @@ Phase 1 的领域层全是纯函数——判定、排计划、留版本，谁先
 导入约定：调用方统一从 ``agent_learning_coach.core.application`` 导入公开符号。
 """
 
+from agent_learning_coach.core.application.ingestion import (
+    DocumentRequest,
+    IngestionFailure,
+    IngestionIssue,
+    IngestionReport,
+    ingest_course_documents,
+)
 from agent_learning_coach.core.application.workflow import (
     LearningWorkflow,
     NotFoundError,
@@ -25,11 +32,16 @@ from agent_learning_coach.core.application.workflow import (
 )
 
 __all__ = [
+    "DocumentRequest",
+    "IngestionFailure",
+    "IngestionIssue",
+    "IngestionReport",
     "LearningWorkflow",
     "NotFoundError",
     "ProgressConflict",
     "SyncReport",
     "WorkflowError",
     "WorkflowResult",
+    "ingest_course_documents",
     "sync_diagnosis",
 ]

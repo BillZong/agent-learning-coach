@@ -13,7 +13,8 @@
 > [ADR-0024](../architecture/decisions/0024-learning-planning.md)、
 > [ADR-0025](../architecture/decisions/0025-plan-versioning.md)、
 > [ADR-0026](../architecture/decisions/0026-persistence-baseline.md)、
-> [ADR-0027](../architecture/decisions/0027-application-services.md)
+> [ADR-0027](../architecture/decisions/0027-application-services.md)、
+> [ADR-0028](../architecture/decisions/0028-document-ingestion.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -40,6 +41,8 @@
 | `Grader` / `ExactMatchGrader` | 判官协议与实现 | 判定一次作答对错 |
 | `AssessmentResult` / `DegradationReport` | 值对象 | 评估结果与降级报告 |
 | `LearningUnit` | 值对象 | 一个学习单元——一个知识点 |
+| `CourseDocument` | 实体 | 课程文档——材料在课程里的记录（含知识点关联） |
+| `DocumentKind` | 值对象 | 材料种类：讲义 / 习题 / 代码 / 笔记本 / 参考资料 / 其它 |
 | `LearningPlan` / `DailyLoad` / `PlanOverload` | 值对象 | 学习计划、每天负载、超载报告 |
 | `EffortEstimator` / `UniformEffort` | 估时协议与实现 | 估算一个知识点要学多久 |
 | `PlanVersion` | 实体 | 计划的一个版本：内容快照 + 依据 + 差异 + 理由 |
@@ -379,6 +382,7 @@ current_plan_version([version, next_version], goal_id=goal.id)  # 当前版本
 - `uv run python examples/learning_persistence.py`——形状、往返、乐观锁、不变量，
   以及进度「整体重建 vs 增量更新」的成本实测
 - `uv run python examples/application_workflow.py`——编排、矛盾、取舍与幂等
+- `uv run python examples/document_ingestion.py`——格式、部分成功、幂等、关联与归属
 - `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
@@ -501,6 +505,13 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 计划冲突也重试 | 重试要基于**新的基线**重算，得先重读当前计划——那是调用方的决策 |
 | 计划每次都出新版本 | 空版本不回答「变了没有」，只在历史里堆噪音，还让人怀疑是不是出了 bug |
 | 现在就加「来源版本」字段 | `revise_plan` 的基线恒等于 number-1——冗余；等回滚 / 并发合并出现时再加 |
+| 课程文档放进 `Course` 聚合 | 导入一份材料就要重写整门课（ADR-0015 的「一次事务一个聚合」） |
+| 课程文档与 RAG 文档合成一个类型 | 两边形状与生命周期不同（切片 vs 文档），合成会让两边都别扭 |
+| 导入失败就整批回滚 | 一份坏文件毁掉整个课程库；但**前置条件错误**（课程不存在）除外 |
+| 静默跳过失败的文件 | 静默的部分成功比整批失败更糟——它让人以为材料齐了 |
+| 重新导入时覆盖知识点关联 | 「重导一遍更新教材」会静默清空教师之前标的关联 |
+| 自动关联知识点 | 判断「这份材料讲哪个点」要模型打分（Topic 46）；本主题只提供显式关联 |
+| 正文也套用「不允许首尾空白」 | 那条规则是给标识符与短标签的；文件末尾通常有换行，正文要按原样保存 |
 | 用 `PlanId` 区分修订与全新计划 | 少了它，「重新规划」既像新版本又像新计划——无法判定的区分等于没有区分 |
 | 目标不充当计划线 | 同一目标可以先后有两条计划线（换了一条学习路径） |
 | 排序按版本号，不按时间 | 时间由调用方传入，可能补录、乱序；让它决定顺序，「谁是当前版本」就变成了猜 |
@@ -598,6 +609,39 @@ result.plan_written      # 内容没变时为 False——不产生空版本
 
 多份诊断取**最新**的一份（按诊断的 `at`）；给了 `diagnosis_id` 就用它。
 
+## 4.3 课程文档摄取
+
+**课程文档**是材料在课程里的记录：内容、来源、种类、属于哪门课、覆盖哪些知识点。
+它是**独立实体**（不是 ``Course`` 聚合的一部分）——导入一份材料不该重写整门课。
+
+```python
+from agent_learning_coach.core.application import DocumentRequest, ingest_course_documents
+
+report = await ingest_course_documents(
+    [DocumentRequest(source="notes.md", point_ids=(KnowledgePointId("k1"),))],
+    course,
+    repository=documents,
+)
+report.imported    # 新导入的
+report.updated     # 内容变了被覆盖的
+report.unchanged   # 内容没变没重写的
+report.failed      # 没进来的与原因
+report.issues      # 一致性问题（关联了不存在的知识点）
+```
+
+四条规则：
+
+1. **部分成功，失败必须进报告**——一份坏文件不该毁掉整个课程库；但**静默的部分
+   成功比整批失败更糟**，所以失败清单在报告里。
+2. **幂等**——文档 id 由来源推导，重复导入是覆盖；内容没变就不写。
+3. **知识点关联不会被顺手抹掉**——重新导入只更新材料本身；关联的语义是「不改 /
+   清空 / 设置」三种。
+4. **材料属于一门课**——同一份材料导入到另一门课会被拒绝并报告。
+
+支持的格式：纯文本、Markdown、代码、PDF（PyMuPDF）、Jupyter 笔记本。Word 不做
+（依赖在 notebook 组，且还没验证有需求）。详见
+[ADR-0028](../architecture/decisions/0028-document-ingestion.md)。
+
 ## 5. 设计取舍
 
 | 替代方案 | 为什么不选 |
@@ -663,6 +707,8 @@ result.plan_written      # 内容没变时为 False——不产生空版本
   应用层或模型补上（Phase 2 的 AI Tutor）。领域层给结构，内容由生成层给。
 - **估时的实证依据**：默认 30 分钟/知识点没有数据支撑，会让排期看起来精确而
   实际不准。真实估时应来自学习数据（Topic 46；台账 `open-issues.md` §2.2）。
+- **从 URL 导入**：只支持文件路径；抓网页没做。
+- **文档的历史版本**：重复导入是覆盖，材料的历史不保留（计划版本有历史，材料没有）。
 - **证据没有时间戳**：「学习者什么时候答的」答不上来；「哪份诊断更新」只能靠诊断
   自己的 `at`。
 - **多诊断并发时的合并**：冲突重试是「以最新进度为基准重新同步」，不是「合并两个
@@ -683,7 +729,8 @@ uv run --group dev pytest -q tests/test_learning_domain.py tests/test_knowledge_
   tests/test_learning_goal.py tests/test_learning_progress.py tests/test_learning_diagnosis.py \
   tests/test_learning_assessment.py tests/test_learning_planning.py \
   tests/test_learning_plan_versioning.py tests/test_learning_persistence.py \
-  tests/test_application_workflow.py tests/test_learning_workflow.py
+  tests/test_application_workflow.py tests/test_document_ingestion.py \
+  tests/test_learning_workflow.py
 uv run python examples/learning_domain.py    # 聚合边界与拒绝演示
 uv run python examples/knowledge_structure.py # 路径、补课顺序、影响范围
 uv run python examples/learning_goal.py      # 状态机、约束、绑定与交接

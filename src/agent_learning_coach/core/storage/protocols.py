@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from agent_learning_coach.core.learning.diagnosis import Diagnosis, DiagnosticExercise
+from agent_learning_coach.core.learning.documents import CourseDocument
 from agent_learning_coach.core.learning.domain import (
     Course,
     CourseId,
@@ -353,8 +354,55 @@ class ExerciseRepository(Protocol):
         ...
 
 
+@runtime_checkable
+class CourseDocumentRepository(Protocol):
+    """课程文档的仓储。
+
+    文档身份由**来源**推导（``core.learning.documents.document_id``），因此
+    重复导入同一份材料是**覆盖**而不是追加——「换了教材重新导入一遍」是安全的
+    日常操作。
+    """
+
+    async def load(self, document_id: str) -> Stored[CourseDocument] | None:
+        """按 id 读取文档。
+
+        Args:
+            document_id: 文档标识。
+
+        Returns:
+            记录；不存在时为 ``None``。
+        """
+        ...
+
+    async def save(self, record: Stored[CourseDocument]) -> Stored[CourseDocument]:
+        """写入文档（新建或整体替换）。
+
+        Args:
+            record: 待写入的记录。
+
+        Returns:
+            写入后的记录。
+
+        Raises:
+            ConflictError: 版本冲突。
+        """
+        ...
+
+    async def list_for_course(self, course_id: CourseId) -> tuple[Stored[CourseDocument], ...]:
+        """列出某门课的全部文档。
+
+        Args:
+            course_id: 课程标识。
+
+        Returns:
+            记录元组，按文档标识升序。
+        """
+        ...
+
+
 __all__ = [
     "ConflictError",
+    "CourseDocumentRepository",
     "CourseRepository",
     "DiagnosisRepository",
     "ExerciseRepository",
