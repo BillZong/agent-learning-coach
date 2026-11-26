@@ -261,6 +261,20 @@ class PlanVersionRepository(Protocol):
         """
         ...
 
+    async def list_for_goal(self, goal_id: GoalId) -> tuple[Stored[PlanVersion], ...]:
+        """列出某个目标的全部计划版本。
+
+        「当前计划线是哪一条」要靠它回答——版本散在多条计划线上时，得先找出
+        最近开始的那条（ADR-0025）。
+
+        Args:
+            goal_id: 目标标识。
+
+        Returns:
+            记录元组，按版本号升序。
+        """
+        ...
+
 
 @runtime_checkable
 class CourseRepository(Protocol):

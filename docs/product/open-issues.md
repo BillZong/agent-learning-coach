@@ -84,7 +84,11 @@
      应用层必须选；
   3. 多份诊断如何取舍（初诊 vs 复诊）；
   4. 一次事务只改一个聚合的写边界怎么守（ADR-0015）。
-- **已落地**：**Day 26「Application Services」**（Phase 1.5），紧跟 Day 25。主题笔记见
+- **已落地**：**Day 26「Application Services」**（Phase 1.5），紧跟 Day 25。交付见
+  ADR-0027：`core/application/workflow.py`——用例编排（诊断 → 进度 → 计划 → 落库）、
+  同步的处置规则、矛盾报告、多诊断取舍、乐观锁重试，以及 Phase 2 的两个接口。
+  **未交付**：HTTP API（框架未定）、复习调度（Topic 52）、多诊断并发时的合并策略。
+  主题笔记见
   [`26-application-services.md`](../learning/topics/26-application-services.md)。
 - **注意**：这条不解决，Phase 2 的 Tutor E2E（Day 36）与 Phase 4 的 Adapt 闭环
   （Day 56）都只能测「单个纯函数」，测不出「诊断→教学→计划」的完整链路。

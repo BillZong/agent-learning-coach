@@ -332,8 +332,8 @@ class InMemoryPlanVersionRepository(_InMemoryRepository[PlanVersion]):
         return codecs.plan_version_from_dict(payload)
 
     def _group_keys(self, value: PlanVersion) -> tuple[str, ...]:
-        """按计划线分组。"""
-        return (str(value.plan_id),)
+        """按计划线与目标分组。"""
+        return (str(value.plan_id), f"goal:{value.plan.goal_id}")
 
     async def load(self, plan_id: str, number: int) -> Stored[PlanVersion] | None:
         """按计划线与版本号读取。
@@ -372,6 +372,20 @@ class InMemoryPlanVersionRepository(_InMemoryRepository[PlanVersion]):
         """
         records = self._list_group(str(plan_id))
         return tuple(sorted(records, key=lambda record: record.value.number))
+
+    async def list_for_goal(self, goal_id: GoalId) -> tuple[Stored[PlanVersion], ...]:
+        """列出某个目标的全部计划版本。
+
+        Args:
+            goal_id: 目标标识。
+
+        Returns:
+            记录元组，按（计划线, 版本号）升序。
+        """
+        records = self._list_group(f"goal:{goal_id}")
+        return tuple(
+            sorted(records, key=lambda record: (record.value.plan_id, record.value.number))
+        )
 
 
 class InMemoryCourseRepository(_InMemoryRepository[Course]):

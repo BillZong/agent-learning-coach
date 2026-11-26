@@ -248,6 +248,7 @@ def test_reason_prefers_diagnosis_gap() -> None:
         id=DiagnosisId("diagnosis-1"),
         learner_id=LearnerId("learner-1"),
         goal_id=GoalId("goal-1"),
+        at=1000.0,
         verdicts=(
             DiagnosticVerdict(
                 point_id=KnowledgePointId("k3"),

@@ -706,6 +706,7 @@ def diagnosis_to_dict(diagnosis: Diagnosis) -> dict[str, Any]:
             "id": str(diagnosis.id),
             "learner_id": str(diagnosis.learner_id),
             "goal_id": str(diagnosis.goal_id),
+            "at": diagnosis.at,
             "verdicts": [
                 {
                     "point_id": str(verdict.point_id),
@@ -738,6 +739,7 @@ def diagnosis_from_dict(payload: dict[str, Any]) -> Diagnosis:
         id=DiagnosisId(_text(body, "id")),
         learner_id=LearnerId(_text(body, "learner_id")),
         goal_id=GoalId(_text(body, "goal_id")),
+        at=_float(body, "at"),
         verdicts=tuple(
             DiagnosticVerdict(
                 point_id=KnowledgePointId(_text(item, "point_id")),

@@ -89,6 +89,7 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | 学习计划 | 领域服务 | `core.learning.planning.generate_plan`（估时协议 `EffortEstimator`） |
 | 计划版本 | 实体 + 领域服务 | `core.learning.versions`（`PlanVersion` / `PlanBasis` / `PlanDelta`） |
 | 持久化 | 存储层（形状 / 协议 / 实现） | `core.storage`（`codecs` / `protocols` / `memory`）；DDL 在 `migrations/` |
+| 用例编排 | 应用层 | `core.application.workflow`（`LearningWorkflow` / `sync_diagnosis`） |
 | 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
@@ -171,6 +172,25 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 学习领域层不应依赖特定的 LLM 提供商或 Agent 框架。
 
 尚未建模：学习领域注册表、诊断结果、掌握度、学习进度、跨课程知识地图、持久化。
+
+### 3.3.1 应用层（Application Layer）
+
+**领域层回答「什么是真的」，应用层回答「现在做什么」。**
+
+Phase 1 的领域层全是纯函数，不读、不写、不串联——**顺序、冲突、落库时机**都留给
+应用层（ADR-0027）。当前只有一个用例族：**学习闭环**——诊断 → 进度 → 计划 →
+落库，外加 Phase 2 的 Tutor 要用的两个接口（当前该学哪个单元、记录学完一个知识点）。
+
+三条规则：
+
+1. **先写进度，后写计划**——计划是从进度算出来的，反过来写会写出一份「依据是假的」
+   计划；这个顺序还让重试是幂等的。
+2. **矛盾按领域模型允许的迁移处置**——诊断说不会、进度说已学会 → 保留进度并报告
+   （领域模型没有「已学会 → 未开始」这条边，ADR-0018）。
+3. **写边界是「两次独立的聚合写」**，不是跨聚合事务；中间失败会留下半更新状态，
+   重跑是安全的。
+
+多份诊断取最新的一份（按诊断的 `at`）；给了 `diagnosis_id` 就用它。
 
 ### 3.4 Agent 运行时层（Agent Runtime）
 

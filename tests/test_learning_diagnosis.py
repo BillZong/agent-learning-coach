@@ -117,6 +117,7 @@ def _diagnosis(*verdicts: DiagnosticVerdict) -> Diagnosis:
         id=DiagnosisId("diagnosis-1"),
         learner_id=LearnerId("learner-1"),
         goal_id=GoalId("goal-closures"),
+        at=1000.0,
         verdicts=verdicts,
     )
 
@@ -199,6 +200,7 @@ def test_diagnosis_is_an_activity_with_its_own_id() -> None:
         id=DiagnosisId("diagnosis-2"),
         learner_id=LearnerId("learner-1"),
         goal_id=GoalId("goal-closures"),
+        at=1000.0,
         verdicts=(_verdict("k1"),),
     )
 
@@ -281,6 +283,7 @@ def test_diagnosis_plan_rejects_other_learner() -> None:
         id=DiagnosisId("diagnosis-other"),
         learner_id=LearnerId("learner-2"),
         goal_id=GoalId("goal-closures"),
+        at=1000.0,
     )
 
     with pytest.raises(DomainError, match="无法比较"):
@@ -294,6 +297,7 @@ def test_diagnosis_plan_rejects_other_goal() -> None:
         id=DiagnosisId("diagnosis-other"),
         learner_id=LearnerId("learner-1"),
         goal_id=GoalId("goal-other"),
+        at=1000.0,
     )
 
     with pytest.raises(DomainError, match="无法与目标"):

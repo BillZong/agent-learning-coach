@@ -229,7 +229,7 @@ Phase 1 的新功能——Phase 1 的领域层已验收（[`phase-1-acceptance.m
 #### 阶段交付物
 
 - [x] 学习领域仓储层（协议 + schema + 校验复用；ADR-0026；SQL 适配器待驱动选型）。
-- [ ] 应用层用例服务（诊断 → 进度 → 计划）。
+- [x] 应用层用例服务（诊断 → 进度 → 计划；ADR-0027）。
 - [ ] 主题笔记：[`25-persistence-baseline.md`](../learning/topics/25-persistence-baseline.md)、
   [`26-application-services.md`](../learning/topics/26-application-services.md)。
 

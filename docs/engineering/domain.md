@@ -12,7 +12,8 @@
 > [ADR-0023](../architecture/decisions/0023-diagnostic-assessment.md)、
 > [ADR-0024](../architecture/decisions/0024-learning-planning.md)、
 > [ADR-0025](../architecture/decisions/0025-plan-versioning.md)、
-> [ADR-0026](../architecture/decisions/0026-persistence-baseline.md)
+> [ADR-0026](../architecture/decisions/0026-persistence-baseline.md)、
+> [ADR-0027](../architecture/decisions/0027-application-services.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -377,6 +378,7 @@ current_plan_version([version, next_version], goal_id=goal.id)  # 当前版本
   查询与当前版本
 - `uv run python examples/learning_persistence.py`——形状、往返、乐观锁、不变量，
   以及进度「整体重建 vs 增量更新」的成本实测
+- `uv run python examples/application_workflow.py`——编排、矛盾、取舍与幂等
 - `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
@@ -492,6 +494,11 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 写入时校验就够 | 只在写时校验，数据库仍能绕过——**读时再校验一次**，非法数据出不来领域层 |
 | 进度逐知识点存行 | 领域层是整块替换；存储粒度更细就要引入 diff 机制，那是第二份真相 |
 | 每张表各写一套乐观锁 | 两个实现对同一次并发必须给出同样答案——规则只写一处 |
+| 诊断与进度不一致时「信诊断」 | 领域模型没有「已学会 → 未开始」这条边——**信诊断不是可选项** |
+| 矛盾时停下来报错 | 进度是事实、诊断是一次测量；带着矛盾继续规划并报告，比停下来合理 |
+| 领域层自动同步诊断到进度 | 跨聚合写（ADR-0015）；ADR-0020 已把衔接定为应用层的动作 |
+| 多份诊断按标识排序 | 标识的字典序不是时间——诊断是活动，活动要有时间（`at`） |
+| 计划冲突也重试 | 冲突意味着「同一版本号已存在」，该换标识而不是重试 |
 | 用 `PlanId` 区分修订与全新计划 | 少了它，「重新规划」既像新版本又像新计划——无法判定的区分等于没有区分 |
 | 目标不充当计划线 | 同一目标可以先后有两条计划线（换了一条学习路径） |
 | 排序按版本号，不按时间 | 时间由调用方传入，可能补录、乱序；让它决定顺序，「谁是当前版本」就变成了猜 |
@@ -556,6 +563,35 @@ saved = await repository.save(Stored(value=goal, revision=0))   # revision 0 = �
 PostgreSQL 的 schema 在 `migrations/0001_learning_domain.sql`（一行一聚合：身份与
 外键用列，内层形状用 JSONB，CHECK 约束把两者绑死）。**SQL 适配器尚未实现**——驱动
 选型未定。详见 [ADR-0026](../architecture/decisions/0026-persistence-baseline.md)。
+
+## 4.2 应用层（用例编排）
+
+**领域层回答「什么是真的」，应用层回答「现在做什么」。** Phase 1 的领域层全是纯函
+数，不读、不写、不串联——顺序、冲突、落库时机都留给应用层（ADR-0027）。
+
+```python
+from agent_learning_coach.core.application import LearningWorkflow
+
+workflow = LearningWorkflow(
+    goals=goals, progresses=progresses, diagnoses=diagnoses, plans=plans, courses=courses,
+)
+result = await workflow.diagnose_and_plan(goal_id, at=now, reason="初次诊断后规划")
+result.sync.applied      # 同步进进度的点
+result.sync.conflicts    # 诊断与进度的矛盾
+result.plan_version      # 落库后的计划版本
+```
+
+三条规则：
+
+1. **先写进度，后写计划**——计划是从进度算出来的，反过来写会写出一份「依据是假的」
+   计划；这个顺序还让重试是幂等的。
+2. **矛盾按领域模型允许的迁移处置**：诊断说不会、进度说已学会 → **保留进度并报告**
+   ——领域模型没有「已学会 → 未开始」这条边（ADR-0018），所以「信诊断」根本不是
+   一个可选项。
+3. **写边界是「两次独立的聚合写」**，不是跨聚合事务；中间失败会留下半更新状态，
+   重跑是安全的。
+
+多份诊断取**最新**的一份（按诊断的 `at`）；给了 `diagnosis_id` 就用它。
 
 ## 5. 设计取舍
 
@@ -622,6 +658,10 @@ PostgreSQL 的 schema 在 `migrations/0001_learning_domain.sql`（一行一聚�
   应用层或模型补上（Phase 2 的 AI Tutor）。领域层给结构，内容由生成层给。
 - **估时的实证依据**：默认 30 分钟/知识点没有数据支撑，会让排期看起来精确而
   实际不准。真实估时应来自学习数据（Topic 46；台账 `open-issues.md` §2.2）。
+- **证据没有时间戳**：「学习者什么时候答的」答不上来；「哪份诊断更新」只能靠诊断
+  自己的 `at`。
+- **多诊断并发时的合并**：冲突重试是「以最新进度为基准重新同步」，不是「合并两个
+  进度」；两次同步基于不同诊断时，先到的那次会被覆盖。
 - **SQL 适配器与迁移工具**：持久化基线（ADR-0026）已给出形状、协议、内存实现与
   PostgreSQL schema，但**适配器没写**（驱动选型未定）；`migrations/` 谁按顺序执行、
   旧负载怎么迁移，都还没有工具。
@@ -638,7 +678,7 @@ uv run --group dev pytest -q tests/test_learning_domain.py tests/test_knowledge_
   tests/test_learning_goal.py tests/test_learning_progress.py tests/test_learning_diagnosis.py \
   tests/test_learning_assessment.py tests/test_learning_planning.py \
   tests/test_learning_plan_versioning.py tests/test_learning_persistence.py \
-  tests/test_learning_workflow.py
+  tests/test_application_workflow.py tests/test_learning_workflow.py
 uv run python examples/learning_domain.py    # 聚合边界与拒绝演示
 uv run python examples/knowledge_structure.py # 路径、补课顺序、影响范围
 uv run python examples/learning_goal.py      # 状态机、约束、绑定与交接

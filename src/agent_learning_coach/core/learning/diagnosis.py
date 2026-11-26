@@ -287,6 +287,11 @@ class Diagnosis:
 
     诊断的**输入**是「要诊断哪些知识点」，由应用层用目标的知识点集合确定；本
     实体只持有「判定了什么」。
+
+    **它知道自己发生在什么时候**（``at``）：诊断是**一次活动**，而活动有时间。
+    没有时间，「同一目标的多份诊断取哪一份」就无从回答——只能靠标识的字典序，那不
+    是时间。时间由调用方传入，领域层不读时钟（与 ``GoalTransition.at``、
+    ``PlanVersion.at`` 同一个约定）。
     """
 
     id: DiagnosisId
@@ -297,6 +302,9 @@ class Diagnosis:
 
     goal_id: GoalId
     """诊断针对的目标。"""
+
+    at: float
+    """诊断发生的时刻（epoch 秒），由调用方提供。"""
 
     verdicts: tuple[DiagnosticVerdict, ...] = ()
     """各知识点的判定，按声明顺序。"""

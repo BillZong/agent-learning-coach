@@ -126,6 +126,7 @@ def show_admission() -> None:
         id=DiagnosisId("diagnosis-partial"),
         learner_id=LearnerId("learner-1"),
         goal_id=GoalId("goal-closures"),
+        at=1000.0,
         verdicts=(
             DiagnosticVerdict(
                 point_id=KnowledgePointId("k1"),
@@ -150,6 +151,7 @@ def show_separation() -> None:
         id=DiagnosisId("diagnosis-full"),
         learner_id=LearnerId("learner-1"),
         goal_id=GoalId("goal-closures"),
+        at=1000.0,
         verdicts=(
             DiagnosticVerdict(
                 point_id=KnowledgePointId("k1"),
