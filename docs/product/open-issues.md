@@ -58,7 +58,10 @@
 - **已落地**：**Day 25「Persistence Baseline」**（Phase 1.5 · Foundation
   Remediation），紧接 Phase 1 之后、Phase 2 之前。理由：Plan.md 里 Day 27/35/38/39
   都要「持久化」，**先定基线，后面才有一致的做法**；否则每个主题各写一套 JSON
-  文件或 ORM 模型。主题笔记见
+  文件或 ORM 模型。交付见 ADR-0026：形状（`core/storage/codecs.py`）、协议
+  （`protocols.py`，含乐观锁）、进程内实现（`memory.py`）、PostgreSQL schema
+  （`migrations/0001_learning_domain.sql`，已在真实 PostgreSQL 18 上验证）。
+  **未交付**：SQL 适配器（驱动选型未定）与负载迁移工具。主题笔记见
   [`25-persistence-baseline.md`](../learning/topics/25-persistence-baseline.md)。
 - **代价**：一天只够定「形态 + schema + 校验复用」的骨架，具体仓储实现可以摊到
   后面各主题的「持久化」条目里。

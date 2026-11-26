@@ -88,6 +88,7 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | 诊断评估 | 领域服务 | `core.learning.assessment.assess_diagnosis`（判官协议 `Grader`） |
 | 学习计划 | 领域服务 | `core.learning.planning.generate_plan`（估时协议 `EffortEstimator`） |
 | 计划版本 | 实体 + 领域服务 | `core.learning.versions`（`PlanVersion` / `PlanBasis` / `PlanDelta`） |
+| 持久化 | 存储层（形状 / 协议 / 实现） | `core.storage`（`codecs` / `protocols` / `memory`）；DDL 在 `migrations/` |
 | 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
@@ -117,8 +118,14 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 **Phase 1 建模阶段已评审收口**（ADR-0019）：四个聚合的边界与 PRD Stage 1～2 的
 建模部分匹配，不变量均有 ADR 出处；评审补上「进度与目标必须同一学习者」的
 跨聚合校验，并新增四个聚合协同的集成测试。阶段验收 5/7 条达标，其余落在策略层
-（诊断、缺口判定）与持久化。持久化目标定为 PostgreSQL，但仓储层留待后续——
-不可变实体与迁移历史的存储形态尚未决策。
+（诊断、缺口判定）与持久化。
+
+持久化（ADR-0026）：**学习领域层不碰存储**——领域模型保持纯函数与不可变对象。
+存储相关的三样东西在 `core.storage`：**形状**（领域对象 ↔ JSON 兼容的负载，带
+`schema_version`）、**协议**（仓储端口 + `Stored` + 乐观锁规则）、**实现**（进程内
+参考实现，测试用它，因此离线）。PostgreSQL 的 schema 在 `migrations/`，一行一
+聚合：身份与外键用列、内层形状用 JSONB，CHECK 约束把两者绑死；**只存历史，不存
+派生状态**。SQL 适配器尚未实现（驱动选型未定）。
 
 诊断建模（ADR-0020）：`Diagnosis` 是一次**活动**（有独立 `DiagnosisId`，可多次
 诊断），产出**三态判定**（`known` / `gap` / `unknown`）——「测了不会」与「根本没

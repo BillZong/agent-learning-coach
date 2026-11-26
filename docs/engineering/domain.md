@@ -11,7 +11,8 @@
 > [ADR-0021](../architecture/decisions/0021-structured-generation.md)、
 > [ADR-0023](../architecture/decisions/0023-diagnostic-assessment.md)、
 > [ADR-0024](../architecture/decisions/0024-learning-planning.md)、
-> [ADR-0025](../architecture/decisions/0025-plan-versioning.md)
+> [ADR-0025](../architecture/decisions/0025-plan-versioning.md)、
+> [ADR-0026](../architecture/decisions/0026-persistence-baseline.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -374,6 +375,8 @@ current_plan_version([version, next_version], goal_id=goal.id)  # 当前版本
 - `uv run python examples/learning_planning.py`——范围、依赖顺序、时间约束、超载
 - `uv run python examples/learning_plan_versioning.py`——修订 vs 全新计划、依据、
   查询与当前版本
+- `uv run python examples/learning_persistence.py`——形状、往返、乐观锁、不变量，
+  以及进度「整体重建 vs 增量更新」的成本实测
 - `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
@@ -483,6 +486,12 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 排不下要报告 | 悄悄丢掉内容会让「要补的地方」凭空消失——同 ADR-0023 的宽松汇总 |
 | 没有每日投入就不排期 | 硬排「第 0 天装下全部内容」是假精度 |
 | 估时可替换 | 领域层定义「需要估什么」，不规定「怎么估」（同 `Grader`） |
+| 领域模型带 `to_dict` / `from_dict` | 映射放在外面，领域模型才干净——同 `bridge.py` |
+| 负载不带版本号 | 领域形状已经变过两次；不认识的版本必须**明确拒绝**，不能猜 |
+| 存派生状态（目标状态、知识点状态） | 它们由迁移历史派生；存两份就要同步两处，而两处会漂移 |
+| 写入时校验就够 | 只在写时校验，数据库仍能绕过——**读时再校验一次**，非法数据出不来领域层 |
+| 进度逐知识点存行 | 领域层是整块替换；存储粒度更细就要引入 diff 机制，那是第二份真相 |
+| 每张表各写一套乐观锁 | 两个实现对同一次并发必须给出同样答案——规则只写一处 |
 | 用 `PlanId` 区分修订与全新计划 | 少了它，「重新规划」既像新版本又像新计划——无法判定的区分等于没有区分 |
 | 目标不充当计划线 | 同一目标可以先后有两条计划线（换了一条学习路径） |
 | 排序按版本号，不按时间 | 时间由调用方传入，可能补录、乱序；让它决定顺序，「谁是当前版本」就变成了猜 |
@@ -515,6 +524,38 @@ for issue in issues:
     print(issue.code, issue.message)
 # unknown_requirement_point 目标 g1 的能力要求引用了课程 c1 中不存在的知识点：k9
 ```
+
+## 4.1 持久化
+
+学习领域层**不碰存储**：领域模型保持纯函数与不可变对象，不认识数据库、文件或网络
+（ADR-0015）。存储相关的三样东西在 `core/storage/`：
+
+| 层 | 位置 | 内容 |
+| -- | ---- | ---- |
+| 形状 | `core/storage/codecs.py` | 领域对象 ↔ JSON 兼容的负载字典 |
+| 协议 | `core/storage/protocols.py` | 仓储端口 + `Stored` 记录 + 乐观锁规则 |
+| 实现 | `core/storage/memory.py` | 进程内实现（测试也用它） |
+
+```python
+from agent_learning_coach.core.storage import Stored, goal_to_dict, goal_from_dict
+
+payload = goal_to_dict(goal)          # 带 schema_version 的 JSON 兼容负载
+same = goal_from_dict(payload)         # 解码会重跑领域层的不变量
+saved = await repository.save(Stored(value=goal, revision=0))   # revision 0 = 新建
+```
+
+三条规则：
+
+1. **负载带 `schema_version`**——领域形状已经变过两次；不认识的版本**明确拒绝**，
+   不半懂半猜。
+2. **只存历史，不存派生状态**——目标状态与知识点学习状态都由迁移历史派生。
+3. **乐观锁**——每条记录带 `revision`；写入时携带的版本必须等于库里的当前版本，
+   否则抛 `ConflictError`。规则只写在 `ensure_writable` 一处，内存实现与未来的
+   SQL 适配器共用。**冲突是事实**：重新读、重新合并、再写，是应用层的事。
+
+PostgreSQL 的 schema 在 `migrations/0001_learning_domain.sql`（一行一聚合：身份与
+外键用列，内层形状用 JSONB，CHECK 约束把两者绑死）。**SQL 适配器尚未实现**——驱动
+选型未定。详见 [ADR-0026](../architecture/decisions/0026-persistence-baseline.md)。
 
 ## 5. 设计取舍
 
@@ -551,15 +592,17 @@ for issue in issues:
 
 ## 6. 未覆盖
 
-- **持久化**：没有 `to_dict` / `from_dict`，也没有版本号；迁移历史接数据库后
-  需要考虑独立成表。进度按知识点逐条更新，知识点多时重建成本会上升。
+- **负载的版本迁移**：负载带 `schema_version`，解码拒绝不认识的版本——这是刻意
+  的（明确失败优于半懂半猜），但**迁移工具还没做**。领域形状改过两次，两次都靠
+  「还没有真实数据」侥幸过去；有了真实数据这条路要补（ADR-0026）。
 - **掌握程度的量化**：进度只有三档状态（未开始 / 学习中 / 已学会），没有「部分
   掌握」。区分它们属于掌握度模型（Topic 43）。「前置是否已掌握」「目标是否
   真的达成」这两条判断因此仍留在应用层。
 - **复习调度**：进度记了 `learned_at`，但「什么时候该复习」需要间隔重复规则，
   留给 Topic 52。
-- **题目持久化**：生成器产出题目，但**没有仓储层**——ADR-0019 已决定仓储层留待
-  后续（不可变实体与迁移历史的存储形态尚未决策）。
+- **题目与仓储的连接**：题目有 codec、有表、有仓储端口，但**没有 SQL 适配器**
+  （驱动选型未定）；且题目上的 `point_id` 建不了外键——知识点身份是课程内的
+  （ADR-0016），而题目不记属于哪门课（ADR-0026）。
 - **题目质量的强判断**：生成层只做**弱检查**（题面是否出现知识点实词），挡得住
   完全跑题，挡不住「相关但角度偏了」。后者需要模型打分或人工审阅（Topic 46）。
 - **能力估计（连续掌握度）**：诊断给的是离散判定；掌握度量化留给 Topic 43。
@@ -579,9 +622,10 @@ for issue in issues:
   应用层或模型补上（Phase 2 的 AI Tutor）。领域层给结构，内容由生成层给。
 - **估时的实证依据**：默认 30 分钟/知识点没有数据支撑，会让排期看起来精确而
   实际不准。真实估时应来自学习数据（Topic 46；台账 `open-issues.md` §2.2）。
-- **计划的持久化与 HTTP 接口**：版本模型（ADR-0025）已有，仓储层按 ADR-0019
-  仍待后续；API 框架尚未选型，因此本阶段只给领域侧的纯函数（台账
-  `open-issues.md` §2.1 P1-A / P1-B）。
+- **SQL 适配器与迁移工具**：持久化基线（ADR-0026）已给出形状、协议、内存实现与
+  PostgreSQL schema，但**适配器没写**（驱动选型未定）；`migrations/` 谁按顺序执行、
+  旧负载怎么迁移，都还没有工具。
+- **HTTP API**：API 框架尚未选型，因此本阶段只给领域侧的纯函数。
 - **复习安排**：计划只排「还没学会的知识点」，到期该复习的点不在计划里——复习
   调度留给 Topic 52。
 - **复习调度与计划调整**：`suspended` / `expired` 两个状态目前没有产品侧强需求
@@ -593,7 +637,8 @@ for issue in issues:
 uv run --group dev pytest -q tests/test_learning_domain.py tests/test_knowledge_structure.py \
   tests/test_learning_goal.py tests/test_learning_progress.py tests/test_learning_diagnosis.py \
   tests/test_learning_assessment.py tests/test_learning_planning.py \
-  tests/test_learning_plan_versioning.py tests/test_learning_workflow.py
+  tests/test_learning_plan_versioning.py tests/test_learning_persistence.py \
+  tests/test_learning_workflow.py
 uv run python examples/learning_domain.py    # 聚合边界与拒绝演示
 uv run python examples/knowledge_structure.py # 路径、补课顺序、影响范围
 uv run python examples/learning_goal.py      # 状态机、约束、绑定与交接

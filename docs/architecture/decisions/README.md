@@ -44,3 +44,4 @@
 | [0023](0023-diagnostic-assessment.md) | 诊断评估——映射、汇总与降级 | 已接受 |
 | [0024](0024-learning-planning.md) | 学习计划——粒度、范围与时间约束 | 已接受 |
 | [0025](0025-plan-versioning.md) | 计划版本——修订与全新计划、查询规则与生成依据 | 已接受 |
+| [0026](0026-persistence-baseline.md) | 持久化基线——形状、乐观锁与存储粒度 | 已接受 |
