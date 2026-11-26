@@ -14,7 +14,8 @@
 > [ADR-0025](../architecture/decisions/0025-plan-versioning.md)、
 > [ADR-0026](../architecture/decisions/0026-persistence-baseline.md)、
 > [ADR-0027](../architecture/decisions/0027-application-services.md)、
-> [ADR-0028](../architecture/decisions/0028-document-ingestion.md)
+> [ADR-0028](../architecture/decisions/0028-document-ingestion.md)、
+> [ADR-0029](../architecture/decisions/0029-chunking-strategy.md)
 
 本文是学习领域模型的接入说明：**有哪些对象**、**怎么用**、**边界在哪**。
 
@@ -383,6 +384,8 @@ current_plan_version([version, next_version], goal_id=goal.id)  # 当前版本
   以及进度「整体重建 vs 增量更新」的成本实测
 - `uv run python examples/application_workflow.py`——编排、矛盾、取舍与幂等
 - `uv run python examples/document_ingestion.py`——格式、部分成功、幂等、关联与归属
+- `uv run python examples/chunking_strategy.py`——按类型选策略、元数据随切片走、
+  锁不变量而非数字
 - `uv run python examples/exercise_generation.py`——两层拦截、带反馈重试、不外流
 - `uv run python examples/learning_review.py`——四个聚合协同走一遍
 - `uv run python examples/learning_plan.py`——领域目标 → 计划闭环
@@ -512,6 +515,9 @@ core.agent                 计划、反思、运行时（不认识学习领域�
 | 重新导入时覆盖知识点关联 | 「重导一遍更新教材」会静默清空教师之前标的关联 |
 | 自动关联知识点 | 判断「这份材料讲哪个点」要模型打分（Topic 46）；本主题只提供显式关联 |
 | 正文也套用「不允许首尾空白」 | 那条规则是给标识符与短标签的；文件末尾通常有换行，正文要按原样保存 |
+| 所有材料用同一种切分策略 | 定长切代码会拦腰截断；递归切代码也不对——段落不是代码的语义单元 |
+| 为每种语言写一个代码切分器 | 结构由正则给出，换语言改正则即可；识别不出来退回兜底 |
+| 测试锁住具体参数 | 数字会随模型与语料变化；锁数字只会让改动变成「改测试」 |
 | 用 `PlanId` 区分修订与全新计划 | 少了它，「重新规划」既像新版本又像新计划——无法判定的区分等于没有区分 |
 | 目标不充当计划线 | 同一目标可以先后有两条计划线（换了一条学习路径） |
 | 排序按版本号，不按时间 | 时间由调用方传入，可能补录、乱序；让它决定顺序，「谁是当前版本」就变成了猜 |
@@ -641,6 +647,30 @@ report.issues      # 一致性问题（关联了不存在的知识点）
 支持的格式：纯文本、Markdown、代码、PDF（PyMuPDF）、Jupyter 笔记本。Word 不做
 （依赖在 notebook 组，且还没验证有需求）。详见
 [ADR-0028](../architecture/decisions/0028-document-ingestion.md)。
+
+## 4.4 切分策略
+
+**每类材料有它自己的语义单元**，一刀切的策略总有一半材料是错的。
+
+| 材料类型 | 切分器 | 语义单元 |
+|---|---|---|
+| 讲义 | `RecursiveChunker` | 段落 / 句子 |
+| 习题 | `ExerciseChunker` | 一道题（含答案说明） |
+| 代码 | `CodeChunker` | 一个顶层定义 |
+| 笔记本 | `RecursiveChunker` | 单元 |
+| 参考资料 | `FixedSizeChunker` | 固定长度 |
+
+```python
+from agent_learning_coach.core.rag import default_chunking_policy
+
+chunks = default_chunking_policy().split(to_rag_document(course_document))
+```
+
+**课程元数据跟着切片走**：切片带上 `kind` / `course_id` / `point_ids`，检索时才能
+按课程与知识点过滤。**材料只解析一次**，课程侧与 RAG 侧共用。
+
+**测试锁不变量，不锁数字**（ADR-0029）：代码不切断顶层定义、习题不切断一道题、
+切片不超上限、切片 id 可复现、切分是幂等——数字会变，不变量不会。
 
 ## 5. 设计取舍
 

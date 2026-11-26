@@ -17,7 +17,9 @@ DocumentLoader  →  Chunker  →  EmbeddingClient  →  VectorStore
 - **Document Loader**（``loader``）：把外部材料读成文档。id 由来源推导，
   可复现。
 - **Chunking**（``chunking``）：``FixedSizeChunker``（定长，主教材 5.3.2 的
-  做法）与 ``RecursiveChunker``（按结构递归，不切断语义单元）。
+  做法）与 ``RecursiveChunker``（按结构递归，不切断语义单元）；Day 28 补上
+  ``CodeChunker``（按顶层定义切）、``ExerciseChunker``（按题号切）与
+  ``PolicyChunker``（按材料类型选策略）。
 - **Embedding**（``embedding``）：``HashingEmbedder``（确定性、离线、词汇级）
   与 ``OpenAICompatibleEmbedder``（生产路径）。
 - **Vector Store**（``store``）：``InMemoryVectorStore``（测试与演示）与
@@ -45,9 +47,13 @@ from agent_learning_coach.core.rag.callbacks import (
 from agent_learning_coach.core.rag.chunking import (
     DEFAULT_SEPARATORS,
     Chunker,
+    CodeChunker,
+    ExerciseChunker,
     FixedSizeChunker,
+    PolicyChunker,
     RecursiveChunker,
     chunk_id,
+    default_chunking_policy,
 )
 from agent_learning_coach.core.rag.citation import (
     Citation,
@@ -98,17 +104,23 @@ __all__ = [
     "CitationSet",
     "CitationValidator",
     "Chunker",
+    "CodeChunker",
+    "ExerciseChunker",
     "DirectoryLoader",
     "Document",
     "DocumentLoader",
     "EmbeddingClient",
     "FixedSizeChunker",
+    "PolicyChunker",
     "HashingEmbedder",
     "InMemoryVectorStore",
     "IngestResult",
     "OpenAICompatibleEmbedder",
     "PgVectorStore",
     "RecursiveChunker",
+    "default_chunking_policy",
+    "default_chunking_policy",
+    "default_chunking_policy",
     "RetrieveKnowledgeTool",
     "RetrievalCache",
     "RetrievalCase",

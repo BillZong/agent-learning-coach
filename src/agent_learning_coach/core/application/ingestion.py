@@ -29,6 +29,7 @@ from agent_learning_coach.core.learning.documents import (
 )
 from agent_learning_coach.core.learning.domain import Course, KnowledgePointId
 from agent_learning_coach.core.rag.loader import load_source
+from agent_learning_coach.core.rag.types import Document
 from agent_learning_coach.core.storage import CourseDocumentRepository, Stored
 
 
@@ -256,10 +257,36 @@ def _merge(
     )
 
 
+def to_rag_document(document: CourseDocument) -> Document:
+    """课程文档 → 可检索的文档。
+
+    **课程侧的元数据进 metadata**，因此切片带上它们，检索时就能按课程与知识点
+    过滤（Day 30）。材料本身只解析一次——RAG 侧与课程侧共用同一份内容。
+
+    Args:
+        document: 课程文档。
+
+    Returns:
+        带课程元数据的 RAG 文档。
+    """
+    return Document(
+        id=document.id,
+        text=document.content,
+        source=document.source,
+        metadata={
+            "kind": document.kind,
+            "course_id": str(document.course_id),
+            "title": document.title,
+            "point_ids": [str(point_id) for point_id in document.point_ids],
+        },
+    )
+
+
 __all__ = [
     "DocumentRequest",
     "IngestionFailure",
     "IngestionIssue",
     "IngestionReport",
     "ingest_course_documents",
+    "to_rag_document",
 ]

@@ -91,6 +91,7 @@ Agent Learning Coach 是一个面向成年学习者的 AI 学习教练，旨在�
 | 持久化 | 存储层（形状 / 协议 / 实现） | `core.storage`（`codecs` / `protocols` / `memory`）；DDL 在 `migrations/` |
 | 用例编排 | 应用层 | `core.application.workflow`（`LearningWorkflow` / `sync_diagnosis`） |
 | 课程文档 | 实体 + 应用层 | `core.learning.documents`（`CourseDocument`）+ `core.application.ingestion` |
+| 切分策略 | 检索基础设施 | `core.rag.chunking`（`PolicyChunker` / `CodeChunker` / `ExerciseChunker`） |
 | 题目生成 | 生成适配器 | `core.learning.generation.ExerciseGenerator` |
 | 跨聚合一致性检查 | 领域服务 | `core.learning.consistency.check_goal_against_course` / `check_progress_against_course` |
 | 各类 id | 值对象 | `core.learning.domain` |
@@ -207,6 +208,11 @@ Phase 1 的领域层全是纯函数，不读、不写、不串联——**顺序�
 部分成功比整批失败更糟，所以失败清单在报告里。**摄取幂等**：文档 id 由来源推导，
 重复导入是覆盖，内容没变就不写。**知识点关联有三种语义**（不改 / 清空 / 设置），
 重新导入材料不会顺手抹掉标注。
+
+**切分按材料类型选**（ADR-0029）：讲义按段落、习题按题号、代码按顶层定义、
+参考资料按定长——**每类材料有它自己的语义单元**，一刀切的策略总有一半材料是错的。
+课程侧的元数据（种类、课程 id、知识点关联）随切片走，检索时才能按课程与知识点
+过滤。**测试锁不变量，不锁数字**。
 
 ### 3.4 Agent 运行时层（Agent Runtime）
 

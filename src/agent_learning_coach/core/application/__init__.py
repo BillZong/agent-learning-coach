@@ -20,6 +20,7 @@ from agent_learning_coach.core.application.ingestion import (
     IngestionIssue,
     IngestionReport,
     ingest_course_documents,
+    to_rag_document,
 )
 from agent_learning_coach.core.application.workflow import (
     LearningWorkflow,
@@ -44,4 +45,5 @@ __all__ = [
     "WorkflowResult",
     "ingest_course_documents",
     "sync_diagnosis",
+    "to_rag_document",
 ]
