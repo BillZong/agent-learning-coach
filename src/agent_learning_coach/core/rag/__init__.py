@@ -88,6 +88,7 @@ from agent_learning_coach.core.rag.loader import (
     DocumentLoader,
     TextFileLoader,
     document_id,
+    load_source,
 )
 from agent_learning_coach.core.rag.retrieval import VectorRetriever
 from agent_learning_coach.core.rag.store import (
@@ -151,4 +152,5 @@ __all__ = [
     "evaluate_retrieval",
     "ingest_directory",
     "load_citation_cases",
+    "load_source",
 ]
