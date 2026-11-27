@@ -8,8 +8,9 @@ Phase 1 的领域层全是纯函数——判定、排计划、留版本，谁先
 用例族有三族：**学习闭环**（``workflow.py``）——诊断 → 进度 → 计划 → 落库，
 外加 Phase 2 的 Tutor 要用的两个接口（当前该学哪个单元、记录学完一个知识点）；
 **课程材料摄取**（``ingestion.py``）；**按知识点检索材料**（``retrieval.py``）；
-**引用支撑的处置**（``grounding.py``）——答案能不能给学习者看；以及 **Tutor 的上下文
-装配**（``tutor_context.py``）——这一轮把哪些教学状态送进模型。
+**引用支撑的处置**（``grounding.py``）——答案能不能给学习者看；**Tutor 的上下文装配**
+（``tutor_context.py``）——这一轮把哪些教学状态送进模型；以及 **教学模式**
+（``teaching.py``）——怎么教（Day 33 直接教学，Day 34 苏格拉底式）。
 
 它**不发明业务规则**：判定用领域层的结论，进度迁移用领域层的方法，计划用领域层
 的生成器。应用层只做三件事——**决定顺序**、**决定写几次**、**决定冲突怎么办**。
@@ -37,6 +38,18 @@ from agent_learning_coach.core.application.retrieval import (
     MaterialQuery,
     MaterialSearch,
 )
+from agent_learning_coach.core.application.teaching import (
+    DirectTeacher,
+    TeachingCase,
+    TeachingCaseResult,
+    TeachingMetrics,
+    TeachingOutput,
+    TeachingRequest,
+    TeachingTurn,
+    evaluate_teaching,
+    instructions_for,
+    load_teaching_cases,
+)
 from agent_learning_coach.core.application.tutor_context import (
     TutorContext,
     TutorContextBuilder,
@@ -54,6 +67,7 @@ from agent_learning_coach.core.application.workflow import (
 )
 
 __all__ = [
+    "DirectTeacher",
     "DocumentRequest",
     "GroundingOutcome",
     "GroundingPolicy",
@@ -67,6 +81,12 @@ __all__ = [
     "NotFoundError",
     "ProgressConflict",
     "SyncReport",
+    "TeachingCase",
+    "TeachingCaseResult",
+    "TeachingMetrics",
+    "TeachingOutput",
+    "TeachingRequest",
+    "TeachingTurn",
     "TutorContext",
     "TutorContextBuilder",
     "TutorContextRequest",
@@ -76,7 +96,10 @@ __all__ = [
     "check_grounding",
     "collect_citations",
     "evaluate_answer",
+    "evaluate_teaching",
     "ingest_course_documents",
+    "instructions_for",
+    "load_teaching_cases",
     "sync_diagnosis",
     "to_rag_document",
 ]

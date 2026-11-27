@@ -53,3 +53,4 @@
 | [0032](0032-reranking-and-query-rewriting.md) | 重排、查询改写与多路召回——研究过了，现在不做 | 已接受 |
 | [0033](0033-citation-grounding-gate.md) | 引用支撑的处置——门禁放在应用层，评估用词面口径 | 已接受 |
 | [0034](0034-tutor-context-priority.md) | Tutor 上下文——分段、优先级与「先丢整段」的取舍 | 已接受 |
+| [0035](0035-direct-teaching.md) | 直接教学模式——结构化输出、worked example 与渐进式支持 | 已接受 |

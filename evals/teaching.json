@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "description": "教学评估集：**人工合成**的场景用例。它量的是**机制**（讲解有没有、示例有没有带引导问题、引用声明与实际材料对不对得上、能不能过引用门禁），**不能**量「这段教学讲得好不好」——那要人评（Phase 3 的评估设计另议）。每条用例给的是「场景 + 该出现什么」，不是标准答案。",
+  "cases": [
+    {
+      "question": "闭包是什么？",
+      "context": {
+        "materials": ["closures.md#0"],
+        "level": "入门"
+      },
+      "expect_citations": ["1"],
+      "category": "concept",
+      "note": "概念讲解：要有讲解、有分步示例、有引导问题、引用材料。"
+    },
+    {
+      "question": "闭包和作用域是什么关系？",
+      "context": {
+        "materials": ["closures.md#0", "scopes.md#0"]
+      },
+      "expect_citations": ["1", "2"],
+      "category": "relation",
+      "note": "两个来源的关系：引用可以有多条（文献里多数做法每个论断给多个引用）。"
+    },
+    {
+      "question": "装饰器是怎么实现的？",
+      "context": {
+        "materials": ["decorators.md#0"],
+        "level": "入门"
+      },
+      "expect_citations": ["1"],
+      "category": "mechanism",
+      "note": "机制讲解：示例要分步（worked example 的核心是步骤，不是成品）。"
+    },
+    {
+      "question": "浅拷贝和深拷贝有什么区别？",
+      "context": {
+        "materials": ["reference.md#0"]
+      },
+      "expect_citations": ["1"],
+      "category": "contrast",
+      "note": "对比讲解：示例要能覆盖两种情况。"
+    },
+    {
+      "question": "第三题在问什么？",
+      "context": {
+        "materials": ["exercises.md#0"],
+        "level": "入门"
+      },
+      "expect_citations": ["1"],
+      "category": "lookup",
+      "note": "定位型问题：材料相关，引用必须有。"
+    },
+    {
+      "question": "我完全不懂 Python，怎么学？",
+      "context": {
+        "level": "零基础"
+      },
+      "expect_citations": [],
+      "category": "advice",
+      "note": "不依赖材料的建议：**没有引用是允许的**（通用建议不算「有依据的说法」）。"
+    },
+    {
+      "question": "闭包里到底存了什么？",
+      "context": {
+        "materials": ["closures.md#0"],
+        "level": "进阶"
+      },
+      "expect_citations": ["1"],
+      "expect_follow_up": false,
+      "category": "advanced",
+      "note": "进阶问题：可以不给下一步引导问题（学习者已经会自己往下走了）。"
+    },
+    {
+      "question": "代码里那个 counter 是怎么计数的？",
+      "context": {
+        "materials": ["demo.py#0"],
+        "level": "入门"
+      },
+      "expect_citations": ["1"],
+      "category": "code",
+      "note": "代码讲解：示例要能落到代码上。"
+    }
+  ]
+}

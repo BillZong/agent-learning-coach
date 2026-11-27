@@ -762,6 +762,37 @@ Day 31 校验器查的标记因此对得上。
 
 详见 [ADR-0034](../architecture/decisions/0034-tutor-context-priority.md)。
 
+## 4.7 直接教学（Day 33）
+
+**教学的结构**：讲解 + 分步示例 + 引用声明 + 下一步引导问题。
+
+```python
+from agent_learning_coach.core.application import DirectTeacher, TeachingRequest
+
+turn = await DirectTeacher(client=client).teach(
+    TeachingRequest(question="闭包是什么？", context=context_request),
+)
+```
+
+**指令的每一段都对应一条研究结论**（worked example effect，Sweller & Cooper 1985；
+Renkl；MIT Teaching + Learning Lab）：
+
+| 指令要求 | 研究结论 |
+| -------- | -------- |
+| 示例**分步** | 分步示范比让学习者自己试错学得更多（认知负荷） |
+| 每个示例配**引导问题** | 被动阅读会抵消效果（self-explanation） |
+| 示例**表面不同、核心相同** | 只记表面会失效 |
+| 按水平**调整支持强度** | expertise reversal：熟练者该做练习而不是看示范 |
+| 指出一个**常见错误** | 错例 + 对比正例比只给正例更有效 |
+
+**门禁查两处引用**：正文里的行内标记 `[1]`，以及 `citations` 字段里的**声明**——
+声明也是承诺 ✓✓。
+
+**教学评估量的是机制**：讲解 / 示例 / 下一步齐不齐、示例带不带引导问题、引用
+声明与实际材料对不对得上、能不能过门禁。**不量「讲得好不好」**——那要人评。
+
+详见 [ADR-0035](../architecture/decisions/0035-direct-teaching.md)。
+
 ## 5. 设计取舍
 
 | 替代方案 | 为什么不选 |

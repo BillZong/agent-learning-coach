@@ -295,7 +295,9 @@ Phase 1 的新功能——Phase 1 的领域层已验收（[`phase-1-acceptance.m
   **支撑门禁**（能不能交付）与**引用准确性评估**，ADR-0033。）
 - [x] Learning Context 管理。（Day 32 已交付 Tutor 上下文构建：五段 + 固定优先级 +
   先丢整段 + 如实报告丢掉什么，ADR-0034；**接进运行时**待 Day 33。）
-- [ ] AI Tutor。
+- [ ] AI Tutor。（Day 32 已交付上下文装配，ADR-0034；Day 33 已交付**直接教学模式**
+  （结构化输出 + worked example 指令 + 引用门禁 + 教学评估），ADR-0035；**苏格拉底式
+  与教学 Session 待 Day 34–35**。）
 - [ ] 教学 Session 管理。
 - [ ] 基础教学质量评估用例。
 - [ ] RAG 与 Context Engineering 设计文档。
