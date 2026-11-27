@@ -32,6 +32,8 @@ DocumentLoader  →  Chunker  →  EmbeddingClient  →  VectorStore
 - **Citation**（``citation``）：引用对象与校验器——引用必须指向真实存在的
   切片，编造的引用比没有引用更危险。
 - **Retrieval Evaluation**（``evaluation``）：命中率@k 与 MRR。
+- **Citation Evaluation**（``citation_evaluation``）：引用准确率——校验器准不准、
+  答案的引用质量如何。
 - **Tool Callbacks**（``callbacks``）：检索缓存（执行前）与结果压缩（执行后）。
 
 依赖方向：本模块只依赖 ``core/llm`` 的错误类型与 ``core/text`` 的分词，不认识
@@ -62,6 +64,13 @@ from agent_learning_coach.core.rag.citation import (
     CitationReport,
     CitationSet,
     CitationValidator,
+)
+from agent_learning_coach.core.rag.citation_evaluation import (
+    CitationCase,
+    CitationCaseResult,
+    CitationMetrics,
+    evaluate_citations,
+    load_citation_cases,
 )
 from agent_learning_coach.core.rag.embedding import (
     EmbeddingClient,
@@ -103,7 +112,10 @@ __all__ = [
     "Chunk",
     "Chunker",
     "Citation",
+    "CitationCase",
+    "CitationCaseResult",
     "CitationIssue",
+    "CitationMetrics",
     "CitationRegistry",
     "CitationReport",
     "CitationSet",
@@ -135,6 +147,8 @@ __all__ = [
     "chunk_id",
     "default_chunking_policy",
     "document_id",
+    "evaluate_citations",
     "evaluate_retrieval",
     "ingest_directory",
+    "load_citation_cases",
 ]

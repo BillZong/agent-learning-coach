@@ -1,18 +1,21 @@
-# RAG 工程回顾（Day 27–30）
+# RAG 工程回顾（Day 27–31）· Week 5 Review
 
-> 日期：2026-11-27 ｜ 范围：Week 5 · RAG Engineering（Day 27–30）
-> 依据：Plan.md（Week 5）、OKR.md（KR2.4 / KR3.x）、ADR-0028～0032、仓库现状
+> 日期：2026-11-27 ｜ 范围：Week 5 · RAG Engineering（Day 27–31）
+> 依据：Plan.md（Week 5）、OKR.md（KR2.4 / KR3.x）、ADR-0028～0033、仓库现状
 
 **这次回顾回答三个问题**：既定的计划兑现了多少？遗留有多少？现在能关掉哪些？
+
+> **Week 5 Review（Day 31 收尾）**：回顾最初覆盖 Day 27–30；Day 31（引用与支撑）
+> 完成后补上 §7 与 Day 31 的对照，Week 5 至此完整。
 
 **结论速览**
 
 | 维度 | 结论 |
 | ---- | ---- |
-| Plan.md Day 27–30 | **36 项全部兑现**（复盘前 35 项；唯一缺口「研究 Reranking」在本次补上，ADR-0032） |
-| OKR | KR2.4 的「课程资料导入 + RAG」达成；「回答能提供 Citation」**属于 Day 31**，未达成 |
-| ADR | ADR-0028～0031 已接受；本次新增 ADR-0032 |
-| 遗留 | 共 27 条：**已关闭 10**（含本次关掉的 9 条 + 复盘新发现的 1 个 bug）；**有前置条件 11**；**需要决策 6** |
+| Plan.md Day 27–31 | **46 项全部兑现**（复盘时 36/36；Day 31 的 10 项全部兑现；复盘前唯一缺口「研究 Reranking」已由 ADR-0032 补上） |
+| OKR | KR2.4 的「课程资料导入 + RAG」达成；**「回答能提供 Citation」达成**（Day 31：引用模型 + 校验 + 支撑门禁 + 准确性评估） |
+| ADR | ADR-0028～0033 已接受（复盘新增 ADR-0032、0033） |
+| 遗留 | Day 27–30 共 27 条：**已关闭 10**；**有前置条件 11**；**需要决策 6**；Day 31 新增 6 条（有前置条件 5、需要决策 1） |
 | 复盘新发现 | **1 个真 bug**：检索缓存的键漏了 `top_k`（同查询不同 top_k 会串味） |
 
 **一句话总结**：**计划兑现得干净，遗留多但「性质」清楚——二十七条里，七成挂着的是
@@ -22,7 +25,7 @@
 
 ---
 
-## 1. Plan.md 对照（Day 27–30）
+## 1. Plan.md 对照（Day 27–31）
 
 ### Day 27 · Document Ingestion（8 项，全部兑现）
 
@@ -108,6 +111,7 @@
 | 0030 | 检索过滤、top-k、阈值归属、索引方案 | 已接受 | 阈值与 HNSW 参数待真实语料；**取反与 all-of 已由本次复盘补上** |
 | 0031 | 检索评估：评估集、召回、据此调整 | 已接受 | 真实语料与真嵌入待有；nDCG 明确不做 |
 | 0032 | 重排、查询改写、多路召回：研究过了，现在不做 | 已接受（新增） | **上下文增强还没做**（候选） |
+| 0033 | 引用支撑的处置：门禁在应用层，评估用词面口径 | 已接受（新增） | **词面门槛定不出**（要更大的评估集）；**attribution 那一层不做**；真实模型的引用质量待有 |
 
 ## 4. 遗留问题台账（Phase 2 · RAG）
 
@@ -187,14 +191,39 @@
    行会被丢掉；而内存语义是「键不存在 → 不匹配 → 取反 → 保留」。修法：标量取反用
    `NOT COALESCE(..., FALSE)`，并**两侧同款用例各跑一遍**。
 
-## 6. 仍然待 Day 31 及之后
+## 6. 仍然待 Day 32 及之后
 
-- **Day 31**：引用与溯源（Citation & Grounding）+ Week 5 Review——`core/rag/citation.py`
-  已有底子（引用模型、引用校验、引用注册表），Day 31 要做的是把它接进教学链路，
-  并补「引用准确性测试」。
-- **Day 32–33**：上下文工程与直接教学（Phase 2 的主线）。
+- **Day 32–33**：上下文工程与直接教学（Phase 2 的主线）。Day 31 已经把「答案能不能
+  交付」的旋钮备好（`GroundingPolicy`），Day 33 的 Tutor 只需要按业务选一套策略。
 - **Day 33 之后**：Phase 2 的阶段验收报告（`docs/product/phase-2-acceptance.md`）与
   Phase 2 交付物勾选。
+
+## 7. Day 31 · Citation & Grounding（10 项，全部兑现）
+
+| 计划项 | 状态 | 证据 |
+| ------ | ---- | ---- |
+| 研究 RAG Grounding | ✅ | [ADR-0033](../architecture/decisions/0033-citation-grounding-gate.md) §研究 |
+| 研究 Citation Validation | ✅ | 同上（ALCE 的 citation NLI 与检索式指标；综述的六个评估维度） |
+| 研究 Hallucination 风险 | ✅ | 同上（编造 vs 无引用；attribution 与 citation 的边界） |
+| 定义 Citation Model | ✅ | `core/rag/citation.py`（ADR-0012 已有）**复核并确认边界**：只做 citation 侧的存在性 |
+| 实现 Citation Metadata | ✅ | `Citation.metadata`（携带切片元数据）+ `to_dict` / `from_dict` |
+| 实现回答与来源关联 | ✅ | `CitationRegistry`（标记稳定）+ 工具结果里的 `data["citations"]` + `StateCollector` 进草稿本 |
+| 实现 Citation Validation | ✅ | `CitationValidator`（编造 / 不支撑 / 无引用三类检查） |
+| **交付 Citation Support** | ✅ | **`core/application/grounding.py`**（本次新增）：支撑门禁——三档判定 + 可配策略 + 重试指令 + 兜底话术 |
+| **编写引用准确性测试** | ✅ | **`core/rag/citation_evaluation.py` + `evals/citations.json`**：校验器准确率 / 精确率 / 召回率 + 引用精确率 / 覆盖率 / 编造率；30 个用例 |
+| **完成 Week 5 Review** | ✅ | 本文档 |
+
+**Day 31 的三个结论**：
+
+1. **attribution 与 citation 是两个维度，本项目只做了一半**——「答案里的说法本身是不是
+   材料支持的」没人查（那是 NLI 蕴含的事）；
+2. **「拦截 = 不给答案 + 一句提示」是错的**——那等于把编造的引用递过去；
+3. **词面口径有假阴性**（实测漏报 1/12），而门槛要等更大的评估集才能定。
+
+**Day 31 新增的遗留（6 条）**：词面门槛该怎么定（要更大的评估集 + 真嵌入）；真实模型的
+引用质量（要真模型 + 真实答案）；attribution 那一层要不要做（NLI 蕴含的依赖与延迟）；
+拦截重试的延迟代价（没量过）；引用精确率怎么对外表述（上界估计 vs 真值）；引用集合里的
+「多引用」习惯（文献里多数做法每个论断给多个引用，本项目还没有引导与评估）。
 
 ## 相关文档
 
@@ -204,9 +233,11 @@
   [0029](../architecture/decisions/0029-chunking-strategy.md)、
   [0030](../architecture/decisions/0030-retrieval-filtering-and-index.md)、
   [0031](../architecture/decisions/0031-retrieval-evaluation.md)、
-  [0032](../architecture/decisions/0032-reranking-and-query-rewriting.md)
+  [0032](../architecture/decisions/0032-reranking-and-query-rewriting.md)、
+  [0033](../architecture/decisions/0033-citation-grounding-gate.md)
 - 笔记：[Topic 27](../learning/topics/27-document-ingestion.md)、
   [Topic 28](../learning/topics/28-chunking-strategy.md)、
   [Topic 29](../learning/topics/29-embedding-and-retrieval.md)、
-  [Topic 30](../learning/topics/30-retrieval-evaluation.md)
+  [Topic 30](../learning/topics/30-retrieval-evaluation.md)、
+  [Topic 31](../learning/topics/31-citation-and-grounding.md)
 - 工程文档：[rag.md](../engineering/rag.md)

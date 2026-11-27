@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "description": "引用评估集：**人工合成**的用例集，标注的是「校验器应该报什么」。它验证的是**机制**（校验器准不准、答案的引用质量如何），**不能**验证「真实模型会不会编引用」——那需要真模型（ADR-0031 §边界）。「支撑」的判定是**词面**口径（core.text.tokenize 的中文二元组），不是蕴含：共享词不等于支撑，因此这里的引用精确率是**上界估计**。",
+  "cases": [
+    {
+      "answer": "闭包是函数加上它定义时所处的环境[1]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "closures-0",
+          "document_id": "closures",
+          "source": "closures.md",
+          "index": 0,
+          "text": "闭包是函数加上它定义时所处的环境。即使函数已经返回，变量绑定仍然保留。"
+        }
+      ],
+      "category": "supported",
+      "note": "引用撑得住：句子与切片共享实词。"
+    },
+    {
+      "answer": "装饰器的常见用途是日志、计时与缓存[1]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "decorators-0",
+          "document_id": "decorators",
+          "source": "decorators.md",
+          "index": 0,
+          "text": "装饰器是一个接收函数并返回新函数的函数。常见用途是日志、计时与缓存。"
+        }
+      ],
+      "category": "supported",
+      "note": "引用撑得住。"
+    },
+    {
+      "answer": "functools.wraps 把被包装函数的 __name__、__doc__ 等属性复制到包装函数[1]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "reference-0",
+          "document_id": "reference",
+          "source": "reference.md",
+          "index": 0,
+          "text": "functools.wraps 把被包装函数的 __name__、__doc__ 等属性复制到包装函数。"
+        }
+      ],
+      "category": "supported",
+      "note": "引用撑得住（英文词也参与分词）。"
+    },
+    {
+      "answer": "闭包是函数加上它定义时所处的环境[1]。变量绑定发生在赋值时[2]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "closures-0",
+          "document_id": "closures",
+          "source": "closures.md",
+          "index": 0,
+          "text": "闭包是函数加上它定义时所处的环境。即使函数已经返回，变量绑定仍然保留。"
+        },
+        {
+          "marker": "2",
+          "chunk_id": "scopes-0",
+          "document_id": "scopes",
+          "source": "scopes.md",
+          "index": 0,
+          "text": "作用域决定一个名字在代码里指向哪个绑定。Python 的作用域有函数级与模块级之分。变量绑定发生在赋值时。"
+        }
+      ],
+      "category": "supported",
+      "note": "两个引用都撑得住——多引用是常态（文献里多数方法每个论断给多个引用）。"
+    },
+    {
+      "answer": "闭包是函数加上它定义时所处的环境[1]。它还能记住全局变量的变化[7]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "closures-0",
+          "document_id": "closures",
+          "source": "closures.md",
+          "index": 0,
+          "text": "闭包是函数加上它定义时所处的环境。即使函数已经返回，变量绑定仍然保留。"
+        }
+      ],
+      "expected_fabricated": [
+        "7"
+      ],
+      "category": "fabricated",
+      "note": "编造引用：[7] 在检索结果里不存在——**假装有依据比没有依据更糟**。"
+    },
+    {
+      "answer": "作用域决定一个名字在代码里指向哪个绑定[9]。",
+      "citations": [],
+      "expected_fabricated": [
+        "9"
+      ],
+      "category": "fabricated",
+      "note": "整段引用都是编的：引用集合为空，答案却给了标记。"
+    },
+    {
+      "answer": "装饰器可以把返回值乘以二[1]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "closures-0",
+          "document_id": "closures",
+          "source": "closures.md",
+          "index": 0,
+          "text": "闭包是函数加上它定义时所处的环境。即使函数已经返回，变量绑定仍然保留。"
+        }
+      ],
+      "expected_unsupported": [
+        "1"
+      ],
+      "category": "unsupported",
+      "note": "引用存在，但撑不住：说的是装饰器，指向的是闭包那段的文字——**没有词面交集**。"
+    },
+    {
+      "answer": "这一章讲的是并发原语与消息队列[1]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "closures-0",
+          "document_id": "closures",
+          "source": "closures.md",
+          "index": 0,
+          "text": "闭包是函数加上它定义时所处的环境。即使函数已经返回，变量绑定仍然保留。"
+        }
+      ],
+      "expected_unsupported": [
+        "1"
+      ],
+      "category": "unsupported",
+      "note": "引用指错了地方——这类问题**校验器能查出来**，但词面口径查不出「撑得住却答错了」。"
+    },
+    {
+      "answer": "闭包是函数加上它定义时所处的环境。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "closures-0",
+          "document_id": "closures",
+          "source": "closures.md",
+          "index": 0,
+          "text": "闭包是函数加上它定义时所处的环境。即使函数已经返回，变量绑定仍然保留。"
+        }
+      ],
+      "expected_missing": true,
+      "category": "missing",
+      "note": "没有引用：通用知识可以没有依据，但材料相关的问题不行——**这是警告，不是错误**。"
+    },
+    {
+      "answer": "闭包是函数加上它定义时所处的环境。",
+      "citations": [],
+      "expected_missing": true,
+      "category": "missing",
+      "note": "既没有引用标记，也没有可用的引用集合。"
+    },
+    {
+      "answer": "闭包是函数加上它定义时所处的环境[1]。这一章讲的是并发原语[2]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "closures-0",
+          "document_id": "closures",
+          "source": "closures.md",
+          "index": 0,
+          "text": "闭包是函数加上它定义时所处的环境。即使函数已经返回，变量绑定仍然保留。"
+        },
+        {
+          "marker": "2",
+          "chunk_id": "scopes-0",
+          "document_id": "scopes",
+          "source": "scopes.md",
+          "index": 0,
+          "text": "作用域决定一个名字在代码里指向哪个绑定。Python 的作用域有函数级与模块级之分。"
+        }
+      ],
+      "expected_unsupported": [
+        "2"
+      ],
+      "category": "mixed",
+      "note": "一半对一半错：引用精确率会掉到 0.5——**这正是要量的东西**。"
+    },
+    {
+      "answer": "变量绑定发生在赋值时[2]。",
+      "citations": [
+        {
+          "marker": "1",
+          "chunk_id": "closures-0",
+          "document_id": "closures",
+          "source": "closures.md",
+          "index": 0,
+          "text": "闭包是函数加上它定义时所处的环境。即使函数已经返回，变量绑定仍然保留。"
+        }
+      ],
+      "expected_fabricated": [
+        "2"
+      ],
+      "category": "mixed",
+      "note": "引用了 [2]，但可用的是 [1]——标记错位是常见的编造形态。"
+    }
+  ]
+}
