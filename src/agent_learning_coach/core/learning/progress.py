@@ -548,6 +548,21 @@ def goal_completion(progress: LearningProgress, goal: LearningGoal) -> GoalCompl
     )
 
 
+def state_label(state: LearningState) -> str:
+    """学习状态的中文标签。
+
+    **词汇归领域层所有**：渲染层（上下文构建、评估报告）不该自己再造一套状态
+    说法——两处说法漂移比多写一个函数糟得多。
+
+    Args:
+        state: 学习状态。
+
+    Returns:
+        中文标签。
+    """
+    return _STATE_LABELS[state]
+
+
 def blocked_points(
     progress: LearningProgress,
     structure: KnowledgeStructure,
@@ -622,4 +637,5 @@ __all__ = [
     "blocked_points",
     "goal_completion",
     "ready_points",
+    "state_label",
 ]

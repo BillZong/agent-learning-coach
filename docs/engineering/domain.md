@@ -720,6 +720,48 @@ hits = await search.search(
 `ivfflat`（写入极少、内存紧张）。详见
 [ADR-0030](../architecture/decisions/0030-retrieval-filtering-and-index.md)。
 
+## 4.6 Tutor 上下文（Day 32）
+
+**这一轮把哪些东西送进模型**——上下文工程关心的是「送哪些 token」，不是「怎么说」。
+
+```python
+from agent_learning_coach.core.application import TutorContextBuilder, TutorContextRequest
+
+context = TutorContextBuilder(max_tokens=2000).build(
+    TutorContextRequest(
+        question="闭包为什么能记住外部变量？",
+        profile=profile,
+        goal=goal,
+        progress=progress,
+        citations=citations,
+    ),
+)
+```
+
+五段，**固定优先级**（数字越小越重要）：
+
+| 优先级 | 段 | 说明 |
+| ------ | -- | ---- |
+| 0 | question | 丢了就没有回答对象——**永远不丢** |
+| 1 | materials | 教学依据（Day 31 的引用指向它们） |
+| 2 | goal | 教学要朝它走 |
+| 3 | progress | 学习者现在在哪 |
+| 4 | profile | 水平与偏好——最锦上添花 |
+
+**取舍是先丢整段，再谈截断**：预算不够时按优先级丢**整段**，而不是把每段截成半截
+——**半截的目标陈述比没有目标更糟**（模型会照着半个目标教学）。
+
+**丢了什么看得见**：`context.dropped_names` 记着被丢的段——「为什么这次请求变短了」
+有答案。
+
+**对话历史不在这里**：那是运行时的转录；本模块只管**教学状态与依据**（与
+「存储与呈现分离」同一个原则）。
+
+**登记簿可共享**：上下文里的 `[1]` 与检索工具给的是同一段文字——模型引用的标记与
+Day 31 校验器查的标记因此对得上。
+
+详见 [ADR-0034](../architecture/decisions/0034-tutor-context-priority.md)。
+
 ## 5. 设计取舍
 
 | 替代方案 | 为什么不选 |

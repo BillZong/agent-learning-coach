@@ -8,7 +8,8 @@ Phase 1 的领域层全是纯函数——判定、排计划、留版本，谁先
 用例族有三族：**学习闭环**（``workflow.py``）——诊断 → 进度 → 计划 → 落库，
 外加 Phase 2 的 Tutor 要用的两个接口（当前该学哪个单元、记录学完一个知识点）；
 **课程材料摄取**（``ingestion.py``）；**按知识点检索材料**（``retrieval.py``）；
-以及**引用支撑的处置**（``grounding.py``）——答案能不能给学习者看。
+**引用支撑的处置**（``grounding.py``）——答案能不能给学习者看；以及 **Tutor 的上下文
+装配**（``tutor_context.py``）——这一轮把哪些教学状态送进模型。
 
 它**不发明业务规则**：判定用领域层的结论，进度迁移用领域层的方法，计划用领域层
 的生成器。应用层只做三件事——**决定顺序**、**决定写几次**、**决定冲突怎么办**。
@@ -36,6 +37,12 @@ from agent_learning_coach.core.application.retrieval import (
     MaterialQuery,
     MaterialSearch,
 )
+from agent_learning_coach.core.application.tutor_context import (
+    TutorContext,
+    TutorContextBuilder,
+    TutorContextRequest,
+    TutorSection,
+)
 from agent_learning_coach.core.application.workflow import (
     LearningWorkflow,
     NotFoundError,
@@ -60,6 +67,10 @@ __all__ = [
     "NotFoundError",
     "ProgressConflict",
     "SyncReport",
+    "TutorContext",
+    "TutorContextBuilder",
+    "TutorContextRequest",
+    "TutorSection",
     "WorkflowError",
     "WorkflowResult",
     "check_grounding",

@@ -39,9 +39,17 @@ class _CitationTool:
     - 把结构化的引用放进 ``ToolOutcome.data``，供程序消费与事后校验。
     """
 
-    def __init__(self) -> None:
-        """初始化工具。"""
-        self._registry = CitationRegistry()
+    def __init__(self, registry: CitationRegistry | None = None) -> None:
+        """初始化工具。
+
+        Args:
+            registry: 引用标记登记簿。为 None 时自建一份。
+
+            **登记簿可以共享**：上下文构建（``core.application.tutor_context``）与
+            检索工具若共用一份登记簿，同一段材料在两处的标记就一致——模型引用的
+            ``[1]`` 与校验器查的 ``[1]`` 永远是同一段文字（ADR-0012 的「标记稳定」）。
+        """
+        self._registry = registry or CitationRegistry()
 
     def _build_outcome(
         self,
@@ -120,6 +128,7 @@ class SearchCourseMaterialTool(_CitationTool):
         top_k: int = 5,
         name: str = "search_course_material",
         min_score: float | None = None,
+        registry: CitationRegistry | None = None,
     ) -> None:
         """初始化工具。
 
@@ -132,7 +141,7 @@ class SearchCourseMaterialTool(_CitationTool):
             **没有通用默认值**：相似度的分布随嵌入模型而变，写死一个阈值要么
             过滤掉全部，要么形同虚设。由调用方按自己的嵌入模型设定。
         """
-        super().__init__()
+        super().__init__(registry)
         self.retriever = retriever
         self.top_k = top_k
         self._name = name
@@ -214,6 +223,7 @@ class RetrieveKnowledgeTool(_CitationTool):
         *,
         name: str = "retrieve_knowledge",
         limit: int = 50,
+        registry: CitationRegistry | None = None,
     ) -> None:
         """初始化工具。
 
@@ -221,8 +231,9 @@ class RetrieveKnowledgeTool(_CitationTool):
             store: 向量存储（也承载了按来源取回的能力）。
             name: 工具名。
             limit: 单次最多取回几条。
+            registry: 引用标记登记簿。为 None 时自建一份。
         """
-        super().__init__()
+        super().__init__(registry)
         self.store = store
         self._name = name
         self.limit = limit
