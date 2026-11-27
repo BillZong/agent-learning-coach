@@ -74,7 +74,7 @@ def _registry() -> ToolRegistry:
 def _runtime(store: JsonFileSessionStore) -> AgentRuntime:
     """构造运行时：先请求删除，批准后给出结论。"""
 
-    def handler(request):  # noqa: ANN001, ANN202
+    def handler(request):
         """按脚本回应。"""
         contents = request.contents
         # 已经拿到工具结果了就直接给结论，否则请求执行高风险工具。

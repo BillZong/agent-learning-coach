@@ -24,13 +24,13 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agent_learning_coach.core.tools import (  # noqa: E402
+from agent_learning_coach.core.tools import (
     FunctionTool,
     ToolContext,
     ToolDefinition,
     ToolRegistry,
 )
-from agent_learning_coach.core.tools.mcp import build_mcp_server, run_stdio_server  # noqa: E402
+from agent_learning_coach.core.tools.mcp import build_mcp_server, run_stdio_server
 
 
 async def _search_learning_materials(context: ToolContext, arguments: dict[str, Any]) -> str:

@@ -206,7 +206,7 @@ def test_point_cannot_backtrack_to_not_started() -> None:
     started = PointProgress(point_id=KnowledgePointId("k1")).start(at=AT, reason="开始")
 
     with pytest.raises(DomainError, match="不能从学习中变更为未开始"):
-        started._transition(  # noqa: SLF001
+        started._transition(
             "not_started",
             expected_source="in_progress",
             source_kind="learned",

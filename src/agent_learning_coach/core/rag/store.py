@@ -390,7 +390,7 @@ def _check_operator_form(value: Mapping[str, Any]) -> None:
         raise ValueError("过滤条件的映射不能为空")
     unknown = set(value) - FILTER_OPERATORS
     if unknown:
-        raise ValueError(f"未知的过滤操作符：{sorted(unknown)[0]}")
+        raise ValueError(f"未知的过滤操作符：{min(unknown)}")
 
 
 def _apply_operator(actual: Any, operator: str, operand: Any) -> bool:
@@ -698,10 +698,9 @@ class PgVectorStore:
         # 向量 → LIMIT。
         params: list[Any] = [vector, *filter_params, vector, top_k]
         try:
-            async with self._connect() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        f"""
+            async with self._connect() as conn, conn.cursor() as cur:
+                await cur.execute(
+                    f"""
                         SELECT id, document_id, chunk_index, text, source, metadata,
                                1 - (embedding <=> %s) AS similarity
                         FROM {self.table}
@@ -709,9 +708,9 @@ class PgVectorStore:
                         ORDER BY embedding <=> %s
                         LIMIT %s
                         """,
-                        params,
-                    )
-                    rows = await cur.fetchall()
+                    params,
+                )
+                rows = await cur.fetchall()
         except Exception as exc:
             raise LLMError(f"向量检索失败：{exc}") from exc
 
@@ -771,19 +770,18 @@ class PgVectorStore:
         from agent_learning_coach.core.llm.errors import LLMError
 
         try:
-            async with self._connect() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        f"""
+            async with self._connect() as conn, conn.cursor() as cur:
+                await cur.execute(
+                    f"""
                         SELECT id, document_id, chunk_index, text, source, metadata
                         FROM {self.table}
                         WHERE source ILIKE %s
                         ORDER BY document_id, chunk_index
                         LIMIT %s
                         """,
-                        (f"%{_escape_like(source)}%", limit),
-                    )
-                    rows = await cur.fetchall()
+                    (f"%{_escape_like(source)}%", limit),
+                )
+                rows = await cur.fetchall()
         except Exception as exc:
             raise LLMError(f"按来源取回切片失败：{exc}") from exc
 
@@ -811,10 +809,9 @@ class PgVectorStore:
         from agent_learning_coach.core.llm.errors import LLMError
 
         try:
-            async with self._connect() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(f"SELECT DISTINCT source FROM {self.table} ORDER BY source")
-                    rows = await cur.fetchall()
+            async with self._connect() as conn, conn.cursor() as cur:
+                await cur.execute(f"SELECT DISTINCT source FROM {self.table} ORDER BY source")
+                rows = await cur.fetchall()
         except Exception as exc:
             raise LLMError(f"列出来源失败：{exc}") from exc
         return [row[0] for row in rows]
@@ -831,10 +828,9 @@ class PgVectorStore:
         from agent_learning_coach.core.llm.errors import LLMError
 
         try:
-            async with self._connect() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(f"SELECT count(*) FROM {self.table}")
-                    row = await cur.fetchone()
+            async with self._connect() as conn, conn.cursor() as cur:
+                await cur.execute(f"SELECT count(*) FROM {self.table}")
+                row = await cur.fetchone()
         except Exception as exc:
             raise LLMError(f"统计切片数失败：{exc}") from exc
         return int(row[0]) if row else 0

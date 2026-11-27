@@ -108,7 +108,7 @@ def test_before_hook_returning_none_lets_the_tool_run() -> None:
 
     def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
         """放行。"""
-        return None
+        return
 
     dispatcher = ToolDispatcher(_registry(executed), before_hooks=[before])
 
@@ -160,12 +160,10 @@ def test_hooks_run_in_order_around_the_tool() -> None:
     def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
         """记录顺序。"""
         order.append("before")
-        return None
 
     def after(context: ToolContext, outcome: ToolOutcome, arguments: dict) -> None:
         """记录顺序。"""
         order.append("after")
-        return None
 
     dispatcher = ToolDispatcher(registry, before_hooks=[before], after_hooks=[after])
 
@@ -282,12 +280,10 @@ def test_denied_call_never_reaches_the_hooks() -> None:
     def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
         """记录调用。"""
         hook_calls.append(tool_name)
-        return None
 
     def after(context: ToolContext, outcome: ToolOutcome, arguments: dict) -> None:
         """记录调用。"""
         hook_calls.append(f"after:{outcome.tool_name}")
-        return None
 
     runtime = _runtime(
         _registry(executed),
@@ -312,12 +308,10 @@ def test_approved_call_runs_the_hooks() -> None:
     def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
         """记录调用。"""
         hook_calls.append(f"before:{tool_name}")
-        return None
 
     def after(context: ToolContext, outcome: ToolOutcome, arguments: dict) -> None:
         """记录调用。"""
         hook_calls.append(f"after:{outcome.tool_name}")
-        return None
 
     runtime = _runtime(
         _registry(executed),

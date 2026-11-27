@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import ClassVar
 
 import pytest
 from pydantic import BaseModel
@@ -53,9 +54,9 @@ class _FakeUsage:
 class _FakeRaw:
     """最小化的 LiteLLM 原始响应替身。"""
 
-    choices = [_FakeChoice()]
-    usage = _FakeUsage()
-    model = "fake-model"
+    choices: ClassVar[list[_FakeChoice]] = [_FakeChoice()]
+    usage: ClassVar[_FakeUsage] = _FakeUsage()
+    model: ClassVar[str] = "fake-model"
 
 
 def test_mock_client_satisfies_protocol() -> None:
@@ -203,17 +204,17 @@ def test_parse_response_keeps_non_json_tool_arguments() -> None:
         function = _BadArguments()
 
     class _Message:
-        content = None
-        tool_calls = [_BadToolCall()]
+        content: ClassVar[str | None] = None
+        tool_calls: ClassVar[list[_BadToolCall]] = [_BadToolCall()]
 
     class _Choice:
-        message = _Message()
-        finish_reason = "stop"
+        message: ClassVar[_Message] = _Message()
+        finish_reason: ClassVar[str] = "stop"
 
     class _Raw:
-        choices = [_Choice()]
-        usage = None
-        model = "fake-model"
+        choices: ClassVar[list[_Choice]] = [_Choice()]
+        usage: ClassVar[None] = None
+        model: ClassVar[str] = "fake-model"
 
     response = parse_response(_Raw())
 

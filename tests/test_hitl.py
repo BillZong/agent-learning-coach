@@ -590,6 +590,7 @@ def test_hitl_example_runs() -> None:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
         cwd=root,
     )
 

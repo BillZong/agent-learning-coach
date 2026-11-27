@@ -230,7 +230,7 @@ def test_tools_work_through_the_dispatcher() -> None:
 
 def test_dispatcher_rejects_bad_arguments() -> None:
     """缺参数时返回错误结果而不是抛异常。"""
-    store, retriever = _store_with_materials()
+    _store, retriever = _store_with_materials()
     registry = ToolRegistry()
     registry.register(SearchCourseMaterialTool(retriever))
     dispatcher = ToolDispatcher(registry)
@@ -247,7 +247,7 @@ def test_dispatcher_rejects_bad_arguments() -> None:
 
 def test_retrieval_cache_short_circuits_repeated_queries() -> None:
     """同一个查询第二次直接命中缓存。"""
-    store, retriever = _store_with_materials()
+    _store, retriever = _store_with_materials()
     registry = ToolRegistry()
     registry.register(SearchCourseMaterialTool(retriever))
     cache = RetrievalCache()
@@ -267,7 +267,7 @@ def test_retrieval_cache_short_circuits_repeated_queries() -> None:
 
 def test_retrieval_cache_distinguishes_filters() -> None:
     """过滤条件不同就是不同的查询——串味会给出错答案。"""
-    store, retriever = _store_with_materials()
+    _store, retriever = _store_with_materials()
     registry = ToolRegistry()
     registry.register(SearchCourseMaterialTool(retriever))
     cache = RetrievalCache()
@@ -293,7 +293,7 @@ def test_retrieval_cache_distinguishes_filters() -> None:
 
 def test_retrieval_cache_distinguishes_top_k() -> None:
     """top_k 不同就是不同的查询——缓存少了一个维度就会给错结果。"""
-    store, retriever = _store_with_materials()
+    _store, retriever = _store_with_materials()
     registry = ToolRegistry()
     registry.register(SearchCourseMaterialTool(retriever))
     cache = RetrievalCache()
@@ -313,7 +313,7 @@ def test_retrieval_cache_distinguishes_top_k() -> None:
 
 def test_compressor_shortens_long_results() -> None:
     """结果超预算时按相关度截断。"""
-    store, retriever = _store_with_materials()
+    _store, retriever = _store_with_materials()
     registry = ToolRegistry()
     registry.register(SearchCourseMaterialTool(retriever))
     dispatcher = ToolDispatcher(
@@ -339,7 +339,7 @@ def test_compressor_shortens_long_results() -> None:
 
 def test_compressor_leaves_short_results_alone() -> None:
     """短结果不压缩——压缩没有收益，还有截断风险。"""
-    store, retriever = _store_with_materials()
+    _store, retriever = _store_with_materials()
     registry = ToolRegistry()
     registry.register(SearchCourseMaterialTool(retriever))
     dispatcher = ToolDispatcher(

@@ -172,14 +172,14 @@ def show_rejections() -> None:
     for label, attempt in attempts:
         try:
             attempt()
-        except Exception as exc:  # noqa: BLE001 - 演示用：任何拒绝都要展示出来
+        except Exception as exc:
             print(f"[{label}] -> {exc}\n")
 
     # 未处理的重规划请求：先记一条反思，再试着改计划。
     manager.reflect("replan", "顺序要调")
     try:
         manager.apply([TaskChange(content="补一个练习")], "加个练习")
-    except Exception as exc:  # noqa: BLE001 - 同上
+    except Exception as exc:
         print(f"[未引用待处理的重规划请求] -> {exc}\n")
 
     # 引用之后就被接受——这就是「反思与重规划是两步」的样子。

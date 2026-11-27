@@ -499,8 +499,8 @@ def test_openai_compatible_maps_timeout(monkeypatch: pytest.MonkeyPatch) -> None
     from openai import APITimeoutError
 
     class _Failing:
-        class chat:  # noqa: N801
-            class completions:  # noqa: N801
+        class chat:
+            class completions:
                 @staticmethod
                 async def create(**kwargs: Any) -> Any:
                     raise APITimeoutError(request=None)  # type: ignore[arg-type]
@@ -518,8 +518,8 @@ def test_openai_compatible_maps_timeout(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_openai_compatible_maps_generic_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Failing:
-        class chat:  # noqa: N801
-            class completions:  # noqa: N801
+        class chat:
+            class completions:
                 @staticmethod
                 async def create(**kwargs: Any) -> Any:
                     raise RuntimeError("boom")
@@ -537,8 +537,8 @@ def test_openai_compatible_maps_generic_error(monkeypatch: pytest.MonkeyPatch) -
 
 def test_openai_compatible_maps_builtin_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Failing:
-        class chat:  # noqa: N801
-            class completions:  # noqa: N801
+        class chat:
+            class completions:
                 @staticmethod
                 async def create(**kwargs: Any) -> Any:
                     raise TimeoutError("asyncio timeout")

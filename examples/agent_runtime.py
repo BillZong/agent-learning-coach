@@ -82,7 +82,7 @@ async def _search(context: ToolContext, arguments: dict[str, Any]) -> str:
     query = arguments.get("query", "")
     execution = context.metadata.get("execution_context")
     if execution is not None:
-        execution.state["searched"] = execution.state.get("searched", []) + [query]
+        execution.state["searched"] = [*execution.state.get("searched", []), query]
     return f"关于「{query}」的资料：闭包 = 函数 + 它引用的外部变量"
 
 

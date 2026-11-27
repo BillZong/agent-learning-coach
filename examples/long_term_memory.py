@@ -169,7 +169,7 @@ async def main() -> None:
 
     seen: list = []
 
-    def handler(request):  # noqa: ANN001, ANN202
+    def handler(request):
         """记录模型实际收到的请求。"""
         seen.append(request)
         return LLMResponse(

@@ -318,6 +318,7 @@ def test_agent_runtime_example_runs() -> None:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
         env=env,
         cwd=str(root),
     )

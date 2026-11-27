@@ -96,28 +96,27 @@ def check_goal_against_course(goal: LearningGoal, course: Course) -> tuple[GoalI
         return tuple(issues)
 
     known = {point.id for point in course.structure.points}
-    for requirement in goal.requirements:
-        if requirement.point_id not in known:
-            issues.append(
-                GoalIssue(
-                    code="unknown_requirement_point",
-                    message=(
-                        f"目标 {goal.id} 的能力要求引用了课程 {course.id} 中不存在的知识点："
-                        f"{requirement.point_id}"
-                    ),
-                ),
-            )
-    for point_id in goal.prerequisites:
-        if point_id not in known:
-            issues.append(
-                GoalIssue(
-                    code="unknown_prerequisite_point",
-                    message=(
-                        f"目标 {goal.id} 的前置条件引用了课程 {course.id} "
-                        f"中不存在的知识点：{point_id}"
-                    ),
-                ),
-            )
+    issues.extend(
+        GoalIssue(
+            code="unknown_requirement_point",
+            message=(
+                f"目标 {goal.id} 的能力要求引用了课程 {course.id} 中不存在的知识点："
+                f"{requirement.point_id}"
+            ),
+        )
+        for requirement in goal.requirements
+        if requirement.point_id not in known
+    )
+    issues.extend(
+        GoalIssue(
+            code="unknown_prerequisite_point",
+            message=(
+                f"目标 {goal.id} 的前置条件引用了课程 {course.id} 中不存在的知识点：{point_id}"
+            ),
+        )
+        for point_id in goal.prerequisites
+        if point_id not in known
+    )
     return tuple(issues)
 
 
@@ -182,17 +181,16 @@ def check_progress_against_course(
             continue
         if point.state != "learned":
             continue
-        for prerequisite in course.structure.prerequisites_of(point.point_id):
-            if progress.state_of(prerequisite.id) != "learned":
-                issues.append(
-                    ProgressIssue(
-                        code="prerequisite_not_learned",
-                        message=(
-                            f"知识点 {point.point_id} 判为已学会，"
-                            f"但它的前置 {prerequisite.id} 尚未学会"
-                        ),
-                    ),
-                )
+        issues.extend(
+            ProgressIssue(
+                code="prerequisite_not_learned",
+                message=(
+                    f"知识点 {point.point_id} 判为已学会，但它的前置 {prerequisite.id} 尚未学会"
+                ),
+            )
+            for prerequisite in course.structure.prerequisites_of(point.point_id)
+            if progress.state_of(prerequisite.id) != "learned"
+        )
     return tuple(issues)
 
 

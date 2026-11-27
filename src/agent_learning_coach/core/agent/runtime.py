@@ -374,12 +374,10 @@ class AgentRuntime:
         Returns:
             与 ``tool_calls`` 一一对应的执行结果。
         """
-        outcomes: list[ToolOutcome] = []
-        for call in tool_calls:
-            outcomes.append(
-                await self.dispatcher.dispatch_safe(call.name, call.arguments, tool_context)
-            )
-        return outcomes
+        return [
+            await self.dispatcher.dispatch_safe(call.name, call.arguments, tool_context)
+            for call in tool_calls
+        ]
 
     @staticmethod
     def _observe(
@@ -429,9 +427,13 @@ class AgentRuntime:
         for call, outcome in zip(tool_calls, outcomes, strict=True):
             if call.name != FINAL_ANSWER_TOOL_NAME or not outcome.succeeded:
                 continue
-            # final_answer 总是返回已校验的模型实例，其 dump 必为 dict
-            assert outcome.data is not None
-            return output_model.model_validate(outcome.data)
+            # final_answer 总是返回已校验的模型实例，其 dump 必为 dict。
+            # 用显式检查而不是 assert——assert 在 `python -O` 下会被去掉，
+            # 那时这里就变成了一个说不清的崩溃。
+            data = outcome.data
+            if data is None:
+                raise AgentError(f"工具 {call.name} 成功了却没有返回数据")
+            return output_model.model_validate(data)
         return None
 
     def _check_budgets(
@@ -485,9 +487,12 @@ class AgentRuntime:
         ):
             return "consecutive_errors"
 
-        if config.max_repeated_calls is not None:
-            if call_counts and max(call_counts.values()) >= config.max_repeated_calls:
-                return "repeated_call"
+        if (
+            config.max_repeated_calls is not None
+            and call_counts
+            and max(call_counts.values()) >= config.max_repeated_calls
+        ):
+            return "repeated_call"
 
         return None
 

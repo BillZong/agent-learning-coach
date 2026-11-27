@@ -247,6 +247,7 @@ def test_example_script_runs_end_to_end() -> None:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
         env=env,
         cwd=str(ROOT),
     )

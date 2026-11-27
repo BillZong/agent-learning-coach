@@ -50,8 +50,7 @@ class SimpleAnswer(BaseModel):
 
 def build_registry() -> ToolRegistry:
     """构造一个普通工具注册表。"""
-    registry = ToolRegistry()
-    return registry
+    return ToolRegistry()
 
 
 def final_answer_call(payload: dict[str, Any], call_id: str = "c1") -> Any:

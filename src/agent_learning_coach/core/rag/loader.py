@@ -153,7 +153,7 @@ class PdfFileLoader:
         try:
             with pymupdf.open(self.path) as pdf:
                 pages = [page.get_text() for page in pdf]
-        except Exception as exc:  # noqa: BLE001 - PDF 解析的异常类型很杂
+        except Exception as exc:
             self.skipped.append(f"{self.path}: {exc}")
             return []
 

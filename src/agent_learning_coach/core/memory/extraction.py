@@ -146,23 +146,21 @@ class LLMMemoryExtractor:
         )
         batch = await self.client.generate_structured(request, MemoryBatch)
         timestamp = now()
-        memories: list[Memory] = []
-        for candidate in batch.memories:
-            memories.append(
-                Memory(
-                    id=str(uuid.uuid4()),
-                    memory_type=_resolve_type(candidate.memory_type, self.default_type),
-                    kind=candidate.kind.strip(),
-                    subject=subject,
-                    scope=candidate.scope.strip(),
-                    content=candidate.content.strip(),
-                    metadata=dict(candidate.metadata),
-                    confidence=_clamp(candidate.confidence),
-                    created_at=timestamp,
-                    updated_at=timestamp,
-                )
+        return [
+            Memory(
+                id=str(uuid.uuid4()),
+                memory_type=_resolve_type(candidate.memory_type, self.default_type),
+                kind=candidate.kind.strip(),
+                subject=subject,
+                scope=candidate.scope.strip(),
+                content=candidate.content.strip(),
+                metadata=dict(candidate.metadata),
+                confidence=_clamp(candidate.confidence),
+                created_at=timestamp,
+                updated_at=timestamp,
             )
-        return memories
+            for candidate in batch.memories
+        ]
 
 
 def format_transcript(transcript: list[ContentItem]) -> str:

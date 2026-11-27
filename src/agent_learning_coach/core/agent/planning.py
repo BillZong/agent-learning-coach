@@ -1326,11 +1326,11 @@ def _find_cycle(tasks: Sequence[PlanTask]) -> list[str] | None:
     color: dict[str, int] = dict.fromkeys(graph, 0)
     parent: dict[str, str] = {}
 
-    for start in graph:
+    for start, start_children in graph.items():
         if color[start] != 0:
             continue
         color[start] = 1
-        stack: list[tuple[str, Any]] = [(start, iter(graph[start]))]
+        stack: list[tuple[str, Any]] = [(start, iter(start_children))]
         while stack:
             node, children = stack[-1]
             advanced = False

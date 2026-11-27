@@ -286,15 +286,15 @@ class CitationValidator:
         issues: list[CitationIssue] = []
         used = tuple(dict.fromkeys(MARKER_PATTERN.findall(answer)))
 
-        for marker in used:
-            if marker not in citations:
-                issues.append(
-                    CitationIssue(
-                        kind="unknown_marker",
-                        marker=marker,
-                        detail=f"答案引用了 [{marker}]，但检索结果里没有这个引用",
-                    )
-                )
+        issues.extend(
+            CitationIssue(
+                kind="unknown_marker",
+                marker=marker,
+                detail=f"答案引用了 [{marker}]，但检索结果里没有这个引用",
+            )
+            for marker in used
+            if marker not in citations
+        )
 
         if not used:
             issues.append(
@@ -434,8 +434,8 @@ class CitationRegistry:
 __all__ = [
     "MARKER_PATTERN",
     "Citation",
-    "CitationRegistry",
     "CitationIssue",
+    "CitationRegistry",
     "CitationReport",
     "CitationSet",
     "CitationValidator",

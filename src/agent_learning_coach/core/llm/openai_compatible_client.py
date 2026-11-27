@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Callable
 from typing import Any
 
@@ -210,10 +211,9 @@ class OpenAICompatibleClient:
         self._sdk_client_loop = None
         if client is None:
             return
-        try:
+        # 关闭失败不应掩盖主流程——但也不该把它当成错误抛出去。
+        with contextlib.suppress(Exception):
             await client.close()
-        except Exception:  # pragma: no cover - 关闭失败不应掩盖主流程
-            pass
 
 
 def _translate_error(exc: Exception) -> LLMError:

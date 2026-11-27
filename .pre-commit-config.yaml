@@ -1,0 +1,15 @@
+# 提交前的门禁。
+#
+# **为什么要有它**：CI 是在推送之后才跑的——本地没发现的问题，要等到 CI 红灯才知道。
+# 这份配置把「格式 / 静态检查」挪到提交之前。
+#
+# 启用：uv tool install pre-commit && pre-commit install
+# 跳过：git commit --no-verify
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.5
+    hooks:
+      - id: ruff-format
+        args: [--check]
+      - id: ruff
+        args: [--fix]

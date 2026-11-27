@@ -137,7 +137,12 @@ class ContextBuilder:
         final = counter.count(current, tools=tools)
         truncated = False
         if final > self.max_tokens:
-            current, final, truncated = self._trim_to_budget(current, tools, counter)
+            current, final, truncated = self._trim_to_budget(
+                current,
+                tools,
+                counter,
+                self.max_tokens,
+            )
 
         return ContextView(
             contents=tuple(current),
@@ -169,6 +174,7 @@ class ContextBuilder:
         contents: list[ContentItem],
         tools: list[ToolSpec] | None,
         counter: TokenCounter,
+        max_tokens: int,
     ) -> tuple[list[ContentItem], int, bool]:
         """保留能装下的最新内容，必要时裁剪它们的文本。
 
@@ -183,13 +189,13 @@ class ContextBuilder:
             contents: 当前内容。
             tools: 工具定义。
             counter: token 计数器。
+            max_tokens: 预算上限（字符或 token，由计数器决定）。
 
         Returns:
             裁剪后的内容、token 数、是否发生了截断。
         """
-        assert self.max_tokens is not None
         tool_tokens = counter.count_tools(tools) if tools else 0
-        budget = self.max_tokens - tool_tokens
+        budget = max_tokens - tool_tokens
 
         kept: list[ContentItem] = []
         used = 0

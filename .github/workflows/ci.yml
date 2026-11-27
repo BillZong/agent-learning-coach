@@ -81,7 +81,11 @@ jobs:
         run: uv sync --frozen --group dev
 
       - name: Run tests
-        run: uv run --frozen --group dev pytest --cov=agent_learning_coach --cov-report=term-missing
+        run: >-
+          uv run --frozen --group dev pytest
+          --cov=agent_learning_coach
+          --cov-report=term-missing
+          --cov-fail-under=90
 
       - name: Run evaluation suite
         run: uv run --frozen --group dev python examples/reliability_report.py

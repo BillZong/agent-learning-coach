@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -234,8 +234,8 @@ def test_time_window_has_passed_is_a_pure_query() -> None:
     """过期判定由调用方传入「现在」，领域层不读时钟。"""
     window = TimeWindow(start=date(2026, 1, 1), end=date(2026, 2, 1))
 
-    assert window.has_passed(datetime(2026, 2, 2, 9, 0)) is True
-    assert window.has_passed(datetime(2026, 2, 1, 23, 0)) is False
+    assert window.has_passed(datetime(2026, 2, 2, 9, 0, tzinfo=UTC)) is True
+    assert window.has_passed(datetime(2026, 2, 1, 23, 0, tzinfo=UTC)) is False
 
 
 def test_daily_effort_requires_positive_minutes() -> None:

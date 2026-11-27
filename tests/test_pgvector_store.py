@@ -72,13 +72,12 @@ def store() -> PgVectorStore:
 
     asyncio.run(_ensure_extension())
     table = f"rag_test_{uuid.uuid4().hex[:8]}"
-    storage = PgVectorStore(
+    return PgVectorStore(
         str(DSN),
         dimension=3,
         table=table,
         index="hnsw",
     )
-    return storage
 
 
 def test_schema_and_index_are_created() -> None:

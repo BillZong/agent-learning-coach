@@ -84,7 +84,13 @@ Behavior 层的指标只有三个，都是**覆盖**而不是**质量**：
 | ---- | ---- | ---- |
 | 单元测试 | `uv run pytest tests/test_observability.py tests/test_evaluation.py` | 机制本身的正确性 |
 | 评估套件 | `make eval`（`uv run python examples/reliability_report.py`） | 数据集全量回归；不通过时非零退出，CI 已接入 |
-| 全量检查 | `make check`（ruff + mypy + pytest + eval） | 提交前门禁 |
+| 全量检查 | `make check`（ruff format + ruff check + mypy + pytest + eval） | 提交前门禁 |
+| **与 CI 完全一致** | **`make ci`**（= CI 工作流那套命令：再加覆盖率门槛与构建） | **推送前跑这个** |
+| 覆盖率门槛 | `pytest --cov-fail-under=90`（当前 96%） | CI 必过 |
+
+**本地跑的命令必须和 CI 跑的一致**——这条是被现实教会的：CI 的 `ruff format --check .`
+覆盖整个仓库（含 Markdown 里的 Python 代码块），而本地只跑了 `src/ tests/ examples/`，
+于是 CI 连着四次红灯没人发现。**`make ci` 就是为了消灭这个缝隙**。
 
 加一条用例：往 `evals/phase0.json` 的 `cases` 里加一项，跑一次评估套件。不需要
 改代码——这是「用例是数据」的意义。

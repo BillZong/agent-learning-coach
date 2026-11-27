@@ -70,10 +70,7 @@ def _client_returning(*payloads: object) -> MockLLMClient:
 
     def handler(request):  # type: ignore[no-untyped-def]
         payload = responses.pop(0)
-        if isinstance(payload, str):
-            text = payload
-        else:
-            text = json.dumps(payload, ensure_ascii=False)
+        text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
         return LLMResponse(
             model="mock-model",
             contents=[Message(role="assistant", content=text)],

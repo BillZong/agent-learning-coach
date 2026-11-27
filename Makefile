@@ -2,8 +2,8 @@ UV ?= uv
 UVX ?= uvx
 
 .DEFAULT_GOAL := help
-.PHONY: help install install-dev install-notebook update lock test test-verbose lint fmt fmt-check typecheck check eval \
-        notebook shell build env clean
+.PHONY: help install install-dev install-notebook update lock test test-verbose test-cov lint fmt fmt-check \
+        typecheck check ci eval notebook shell build env clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -30,6 +30,9 @@ test: ## Run the test suite
 test-verbose: ## Run the test suite with verbose output
 	$(UV) run --group dev pytest -v
 
+test-cov: ## Run the test suite with coverage and the coverage gate
+	$(UV) run --group dev pytest --cov=agent_learning_coach --cov-report=term-missing --cov-fail-under=90
+
 lint: ## Lint the code (ruff from the dev dependency group)
 	$(UV) run --group dev ruff check .
 
@@ -45,7 +48,10 @@ typecheck: ## Type-check the code (mypy from the dev dependency group)
 eval: ## Run the evaluation suite (behavior acceptance; non-zero on failure)
 	$(UV) run --group dev python examples/reliability_report.py
 
-check: fmt-check lint test eval ## Run formatting check, lint, tests and the evaluation suite
+check: fmt-check lint typecheck test eval ## Run formatting check, lint, type check, tests and the evaluation suite
+
+ci: fmt-check lint typecheck test-cov eval build ## Run exactly what CI runs (before pushing)
+
 
 notebook: ## Start JupyterLab
 	$(UV) run --group notebook jupyter lab

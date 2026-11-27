@@ -361,11 +361,24 @@ plan.days  # 每天的负载
 plan.overload  # 时间超载报告（装得下时为空）
 
 # 版本：全新计划 → 修订 → 查询
-version = start_plan(goal, structure, progress, plan_id=PlanId("plan-1"),
-                     version_id=PlanVersionId("plan-1-v1"), reason="初次规划", at=now)
-next_version = revise_plan([version], goal, structure, progress,
-                           version_id=PlanVersionId("plan-1-v2"),
-                           reason="学习者掌握了 k1", at=now + 1)
+version = start_plan(
+    goal,
+    structure,
+    progress,
+    plan_id=PlanId("plan-1"),
+    version_id=PlanVersionId("plan-1-v1"),
+    reason="初次规划",
+    at=now,
+)
+next_version = revise_plan(
+    [version],
+    goal,
+    structure,
+    progress,
+    version_id=PlanVersionId("plan-1-v2"),
+    reason="学习者掌握了 k1",
+    at=now + 1,
+)
 plan_versions([version, next_version], goal_id=goal.id)  # 按计划线分组、组内按版本号
 current_plan_version([version, next_version], goal_id=goal.id)  # 当前版本
 ```
@@ -573,9 +586,9 @@ for issue in issues:
 ```python
 from agent_learning_coach.core.storage import Stored, goal_to_dict, goal_from_dict
 
-payload = goal_to_dict(goal)          # 带 schema_version 的 JSON 兼容负载
-same = goal_from_dict(payload)         # 解码会重跑领域层的不变量
-saved = await repository.save(Stored(value=goal, revision=0))   # revision 0 = 新建
+payload = goal_to_dict(goal)  # 带 schema_version 的 JSON 兼容负载
+same = goal_from_dict(payload)  # 解码会重跑领域层的不变量
+saved = await repository.save(Stored(value=goal, revision=0))  # revision 0 = 新建
 ```
 
 三条规则：
@@ -600,13 +613,17 @@ PostgreSQL 的 schema 在 `migrations/0001_learning_domain.sql`（一行一聚�
 from agent_learning_coach.core.application import LearningWorkflow
 
 workflow = LearningWorkflow(
-    goals=goals, progresses=progresses, diagnoses=diagnoses, plans=plans, courses=courses,
+    goals=goals,
+    progresses=progresses,
+    diagnoses=diagnoses,
+    plans=plans,
+    courses=courses,
 )
 result = await workflow.diagnose_and_plan(goal_id, at=now, reason="初次诊断后规划")
-result.sync.applied      # 同步进进度的点
-result.sync.conflicts    # 诊断与进度的矛盾
-result.plan_version      # 落库后的计划版本
-result.plan_written      # 内容没变时为 False——不产生空版本
+result.sync.applied  # 同步进进度的点
+result.sync.conflicts  # 诊断与进度的矛盾
+result.plan_version  # 落库后的计划版本
+result.plan_written  # 内容没变时为 False——不产生空版本
 ```
 
 三条规则：
@@ -636,11 +653,11 @@ report = await ingest_course_documents(
     course,
     repository=documents,
 )
-report.imported    # 新导入的
-report.updated     # 内容变了被覆盖的
-report.unchanged   # 内容没变没重写的
-report.failed      # 没进来的与原因
-report.issues      # 一致性问题（关联了不存在的知识点）
+report.imported  # 新导入的
+report.updated  # 内容变了被覆盖的
+report.unchanged  # 内容没变没重写的
+report.failed  # 没进来的与原因
+report.issues  # 一致性问题（关联了不存在的知识点）
 ```
 
 四条规则：

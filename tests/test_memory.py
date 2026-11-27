@@ -214,7 +214,7 @@ def test_oversized_content_is_rejected() -> None:
 
 def test_policy_can_allow_any_kind() -> None:
     """词表可以放开——策略由调用方掌握。"""
-    manager, store = _manager(
+    manager, _store = _manager(
         _batch({"kind": "astrology", "content": "他是双子座"}),
         policy=MemoryPolicy(allowed_kinds=frozenset()),
     )
@@ -451,7 +451,7 @@ def test_empty_profile_renders_to_empty_text() -> None:
 
 def test_capture_then_recall_round_trip() -> None:
     """抽取 → 写入 → 召回，一条完整链路。"""
-    manager, store = _manager(
+    manager, _store = _manager(
         _batch(
             {
                 "memory_type": "semantic",
@@ -597,6 +597,7 @@ def test_long_term_memory_example_runs() -> None:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
         cwd=root,
     )
 

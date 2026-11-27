@@ -164,15 +164,12 @@ class MemoryPolicy:
         Returns:
             准入返回 True。
         """
-        if not memory.content.strip():
-            return False
-        if memory.confidence < self.min_confidence:
-            return False
-        if self.max_content_chars and len(memory.content) > self.max_content_chars:
-            return False
-        if self.allowed_kinds and memory.kind not in self.allowed_kinds:
-            return False
-        return True
+        return (
+            bool(memory.content.strip())
+            and memory.confidence >= self.min_confidence
+            and (not self.max_content_chars or len(memory.content) <= self.max_content_chars)
+            and (not self.allowed_kinds or memory.kind in self.allowed_kinds)
+        )
 
 
 @dataclass(frozen=True)

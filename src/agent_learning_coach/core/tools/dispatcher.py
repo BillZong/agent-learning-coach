@@ -99,11 +99,11 @@ class ToolDispatcher:
         Returns:
             允许调用的工具契约，按工具名排序。
         """
-        specs: list[ToolSpec] = []
-        for definition in self.registry.definitions():
-            if self.policy.check(definition, caller=caller).allowed:
-                specs.append(definition.to_spec())
-        return specs
+        return [
+            definition.to_spec()
+            for definition in self.registry.definitions()
+            if self.policy.check(definition, caller=caller).allowed
+        ]
 
     def resolve_timeout(self, tool_name: str) -> float | None:
         """确定一次调用实际生效的超时。

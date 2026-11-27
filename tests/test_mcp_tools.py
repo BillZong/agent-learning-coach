@@ -16,8 +16,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-import mcp.types as types
 import pytest
+from mcp import types
 from mcp.client.session import ClientSession
 from mcp.server.lowlevel import Server
 from mcp.shared.exceptions import MCPError

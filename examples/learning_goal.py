@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from agent_learning_coach.core.agent import OutcomePlanner
 from agent_learning_coach.core.learning import (
@@ -91,7 +91,8 @@ def show_constraints() -> None:
     effort = DailyEffort(minutes_per_day=90)
     print(f"时间范围：{window.render()}")
     print(f"每日投入：{effort.render()}")
-    print(f"是否已过期（{datetime(2026, 3, 2).date()}）：{window.has_passed(datetime(2026, 3, 2))}")
+    now = datetime(2026, 3, 2, tzinfo=UTC)
+    print(f"是否已过期（{now.date()}）：{window.has_passed(now)}")
     try:
         TimeWindow(start=date(2026, 3, 1), end=date(2026, 1, 1))
     except DomainError as exc:

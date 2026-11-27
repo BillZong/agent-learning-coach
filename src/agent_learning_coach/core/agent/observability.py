@@ -437,10 +437,9 @@ def _evidence(trace: RunTrace) -> list[str]:
     Returns:
         证据条目，最多 ``_MAX_EVIDENCE`` 条。
     """
-    items: list[str] = []
-    failures = [span for span in trace.tool_spans if span.failed]
-    for span in failures[-_MAX_EVIDENCE:]:
-        items.append(f"{span.name} 失败：{span.error or span.status}")
+    items: list[str] = [
+        f"{span.name} 失败：{span.error or span.status}" for span in trace.tool_spans if span.failed
+    ][-_MAX_EVIDENCE:]
     counts: dict[str, int] = {}
     for span in trace.tool_spans:
         counts[span.name] = counts.get(span.name, 0) + 1

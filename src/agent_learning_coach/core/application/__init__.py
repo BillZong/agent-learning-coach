@@ -38,12 +38,12 @@ from agent_learning_coach.core.application.workflow import (
 
 __all__ = [
     "DocumentRequest",
-    "MaterialQuery",
-    "MaterialSearch",
     "IngestionFailure",
     "IngestionIssue",
     "IngestionReport",
     "LearningWorkflow",
+    "MaterialQuery",
+    "MaterialSearch",
     "NotFoundError",
     "ProgressConflict",
     "SyncReport",

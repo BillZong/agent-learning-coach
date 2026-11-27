@@ -372,8 +372,8 @@ _INSTRUCTION = """\
 
 __all__ = [
     "ExerciseDifficulty",
-    "ExerciseGenerator",
     "ExerciseGenerationError",
+    "ExerciseGenerator",
     "ExerciseRequest",
     "ExerciseSchema",
 ]

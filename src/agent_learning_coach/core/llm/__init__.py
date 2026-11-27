@@ -50,8 +50,8 @@ from agent_learning_coach.core.llm.types import (
 __all__ = [
     "ContentItem",
     "FailingLLMClient",
-    "LLMClient",
     "FieldError",
+    "LLMClient",
     "LLMError",
     "LLMParseError",
     "LLMRequest",

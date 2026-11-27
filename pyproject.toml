@@ -62,14 +62,70 @@ packages = ["src/agent_learning_coach"]
 line-length = 100
 target-version = "py313"
 src = ["src", "tests"]
+# 评估语料是**数据**，不是项目代码：让 ruff 重排它会悄悄改掉已发布的评估数字
+# （切分边界变了 → 嵌入变了 → 指标变了），而没人会注意到「语料被格式化过」。
+extend-exclude = ["evals/corpus"]
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "F",  # Pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "UP", # pyupgrade
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "RET", # flake8-return
+    "PIE", # flake8-pie
+    "PERF", # perflint
+    "FURB", # refurb
+    "LOG", # flake8-logging
+    "G",   # flake8-logging-format
+    "RUF", # ruff 自有规则
+    "PL",  # pylint 子集
+    "S",   # flake8-bandit
+    "TID", # flake8-tidy-imports
+    "DTZ", # flake8-datetimez
+]
+
+ignore = [
+    # 中文标点（：，。）被当成「易混淆字符」——本项目的中文文档字符串会命中几千条。
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    # import 不在顶层是**刻意的**：可选依赖（chromadb / mcp / psycopg…）按需惰性导入，
+    # 顶层导入会让没装这些依赖的环境直接起不来。
+    "PLC0415",
+    # magic value：领域常量本来就该出现在比较里（节数、阈值、点数……）。
+    "PLR2004",
+    # 复杂度规则：函数长、参数多是**待观察的信号**，不是错误——硬门禁只会逼人拆碎。
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    # 测试与示例专用豁免见下方 per-file-ignores。
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert 是测试的写法
+    "S108",    # 测试用固定 /tmp 路径
+    "S603",    # 测试要跑子进程（跑示例脚本）
+    "ARG001",
+    "ARG002",
+    "PLR2004",
+]
+"examples/**" = [
+    "T201",    # 示例就是要打印给人看
+    "S101",    # 示例里的断言是演示的一部分
+    "S603",    # 示例调用外部命令
+    "S607",
+    "S108",    # 示例用固定 /tmp 路径写文件
+    "DTZ011",  # 「今天是几号」在示例里无所谓时区
+    "PLR2004",
+]
+# SQL 模板是常量，值全部走绑定参数——拼接的只有表名与索引名（内部生成）。
+"src/agent_learning_coach/core/rag/store.py" = [
+    "S608",
 ]
 
 [tool.ruff.format]
