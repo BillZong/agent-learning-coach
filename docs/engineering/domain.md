@@ -793,6 +793,35 @@ Renkl；MIT Teaching + Learning Lab）：
 
 详见 [ADR-0035](../architecture/decisions/0035-direct-teaching.md)。
 
+## 4.8 苏格拉底式教学（Day 34）
+
+**引导被拆成三段**（GuideEval，Liu et al.，Findings of EMNLP 2026）：
+
+| 阶段 | 问什么 | 实现 |
+| ---- | ------ | ---- |
+| Assessment | 学习者现在是什么状态？ | `SocraticAssessment.understanding`（困惑 / 部分对 / 答对） |
+| Orchestration | 下一步该换哪种策略？ | `next_step`（追问 / 提示 / 揭示 / 下一个） |
+| Elicitation | 怎么问才能引出真正的反思？ | `SocraticQuestion`（问题 + 提示） |
+
+**「用苏格拉底式的语气问问题」不等于「在引导」**——GuideEval 的实测结论是：现有 LLM
+在学习者困惑时**常常给不出有效的适应性支架** ✓。引导的核心是**听完之后的判断与
+调整** ✓。
+
+**模式切换是业务判断**：
+
+```python
+from agent_learning_coach.core.application import choose_next_mode
+
+decision = choose_next_mode(assessment)
+# decision.mode == "direct"  ← 学习者问不动了，切回直接教学
+```
+
+**苏格拉底式是手段不是目的**——学习者明确说「直接告诉我」就切回直接教学 ✓。
+
+**提问必须带提示方向**——不给答案，但必须给出路 ✓（没有提示，学习者卡住只能干等）。
+
+详见 [ADR-0036](../architecture/decisions/0036-socratic-guidance.md)。
+
 ## 5. 设计取舍
 
 | 替代方案 | 为什么不选 |

@@ -149,10 +149,12 @@ def test_unknown_mode_is_rejected() -> None:
         instructions_for("lecture")
 
 
-def test_socratic_mode_is_not_silently_direct() -> None:
-    """苏格拉底式还没交付——要明确报错，而不是假装。"""
-    with pytest.raises(ValueError, match="Day 34"):
-        instructions_for(SOCRATIC)
+def test_socratic_mode_has_its_own_instructions() -> None:
+    """苏格拉底式有自己的指令（Day 34 交付）——不是直接教学的副本。"""
+    instructions = instructions_for(SOCRATIC)
+
+    assert instructions != instructions_for(DIRECT)
+    assert "不要直接给答案" in instructions
 
 
 def test_direct_mode_returns_its_instructions() -> None:

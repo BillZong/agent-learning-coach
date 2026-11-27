@@ -74,6 +74,28 @@ DIRECT_TEACHING_INSTRUCTIONS = """\
 """
 
 
+SOCRATIC_TEACHING_INSTRUCTIONS = """\
+你正在用提问的方式教一个知识点，而不是直接讲。
+
+按下面的要求回答：
+
+1. **一次只问一个问题**，问题要能引导学习者自己得出结论，不是考他。
+2. **不要直接给答案**——除非学习者明确要求，或者已经追问过两轮还卡着。
+3. **问能引出反思的问题**："为什么""如果……会怎样""你怎么知道"。
+4. **跟着学习者的回答走**，不要按自己的教案一路讲下去。
+5. **准备一个提示**：学习者答不上来时给方向，不给结论。
+6. **基于材料**：材料里有的说法要引用（句末写 [1]、[2] 这样的标记）；材料里没有的，
+   说明这是你的补充。
+"""
+"""苏格拉底式教学的指令。
+
+**与直接教学的指令是同一层的东西**：模式只决定指令，装配、引用与门禁共用 ✓。
+
+（判断学习者的回答、决定下一步、切换模式——那三件事在
+``core.application.socratic``：**引导的核心不是「怎么问」，是「听完之后怎么调整」** ✓。）
+"""
+
+
 class TeachingExample(BaseModel):
     """一个教学示例——**分步的示范**。
 
@@ -246,9 +268,7 @@ def instructions_for(mode: str) -> str:
     if mode == DIRECT:
         return DIRECT_TEACHING_INSTRUCTIONS
     if mode == SOCRATIC:
-        # Day 34 交付苏格拉底式指令；这里先给出明确的错误，而不是静默退回直接教学
-        # ——静默退回会让「模式」这件事变成假的 ✓。
-        raise ValueError("苏格拉底式教学在 Day 34 交付")
+        return SOCRATIC_TEACHING_INSTRUCTIONS
     raise ValueError(f"未知的教学模式：{mode}")
 
 
@@ -503,6 +523,7 @@ __all__ = [
     "DIRECT",
     "DIRECT_TEACHING_INSTRUCTIONS",
     "SOCRATIC",
+    "SOCRATIC_TEACHING_INSTRUCTIONS",
     "DirectTeacher",
     "TeachingCase",
     "TeachingCaseResult",

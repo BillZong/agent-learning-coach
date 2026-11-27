@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "description": "苏格拉底式教学评估集：**人工合成**的「学习者回答 → 该怎么引导」用例。标注的是**机制该做什么**（判断成什么状态、下一步做什么、要不要切模式），不是「这个教练问得好不好」——那要人评。它量的是 GuideEval 三阶段里的 **Assessment**（读懂学习者）与 **Orchestration**（调整策略）能不能做对。",
+  "cases": [
+    {
+      "learner_message": "闭包就是函数记住了外面的变量",
+      "expect_understanding": "partial",
+      "expect_step": "probe",
+      "expect_mode": "socratic",
+      "category": "partial",
+      "note": "答对了一半（记住了环境，但没说清捕获什么）：继续追问一步，别急着讲。"
+    },
+    {
+      "learner_message": "闭包是函数加上它定义时所处的环境",
+      "expect_understanding": "correct",
+      "expect_step": "advance",
+      "expect_mode": "socratic",
+      "category": "correct",
+      "note": "答对了：这个知识点够了，进入下一个。"
+    },
+    {
+      "learner_message": "闭包就是那个 nonlocal 的东西吧",
+      "expect_understanding": "confused",
+      "expect_step": "hint",
+      "expect_mode": "socratic",
+      "category": "confused",
+      "note": "张冠李戴（把闭包与非局部变量当成一回事）：给提示方向，不要给答案。"
+    },
+    {
+      "learner_message": "别问了，直接告诉我闭包到底是什么",
+      "expect_understanding": "confused",
+      "expect_step": "reveal",
+      "expect_mode": "direct",
+      "category": "request",
+      "note": "学习者明确要求直接讲——**苏格拉底式是手段不是目的**，要切回直接教学。"
+    },
+    {
+      "learner_message": "我看了三遍还是不懂为什么函数返回了变量还在",
+      "expect_understanding": "confused",
+      "expect_step": "reveal",
+      "expect_mode": "direct",
+      "category": "stuck",
+      "note": "追问两轮还卡着：继续问是在消耗耐心，该揭示答案。"
+    },
+    {
+      "learner_message": "闭包是函数加上它定义时的环境，函数返回后那个环境还被引用着所以变量还在",
+      "expect_understanding": "correct",
+      "expect_step": "probe",
+      "expect_mode": "socratic",
+      "category": "deepen",
+      "note": "答对了，但可以再推一步（问边界：闭包之间互不影响吗）。"
+    },
+    {
+      "learner_message": "函数可以嵌套函数",
+      "expect_understanding": "confused",
+      "expect_step": "probe",
+      "expect_mode": "socratic",
+      "category": "offtopic",
+      "note": "答非所问（说的是嵌套，不是闭包）：把问题拉回来。"
+    },
+    {
+      "learner_message": "闭包就是函数带着它定义时的环境一起走",
+      "expect_understanding": "correct",
+      "expect_step": "advance",
+      "expect_mode": "socratic",
+      "category": "correct",
+      "note": "用自己的话答对了——**用自己的话比背定义更好**（可以进入下一个）。"
+    }
+  ]
+}

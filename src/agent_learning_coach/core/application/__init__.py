@@ -10,7 +10,8 @@ Phase 1 的领域层全是纯函数——判定、排计划、留版本，谁先
 **课程材料摄取**（``ingestion.py``）；**按知识点检索材料**（``retrieval.py``）；
 **引用支撑的处置**（``grounding.py``）——答案能不能给学习者看；**Tutor 的上下文装配**
 （``tutor_context.py``）——这一轮把哪些教学状态送进模型；以及 **教学模式**
-（``teaching.py``）——怎么教（Day 33 直接教学，Day 34 苏格拉底式）。
+（``teaching.py``）——怎么教（Day 33 直接教学，Day 34 苏格拉底式）；以及**苏格拉底式
+的引导**（``socratic.py``）——问、听、判断、下一步。
 
 它**不发明业务规则**：判定用领域层的结论，进度迁移用领域层的方法，计划用领域层
 的生成器。应用层只做三件事——**决定顺序**、**决定写几次**、**决定冲突怎么办**。
@@ -37,6 +38,18 @@ from agent_learning_coach.core.application.ingestion import (
 from agent_learning_coach.core.application.retrieval import (
     MaterialQuery,
     MaterialSearch,
+)
+from agent_learning_coach.core.application.socratic import (
+    SocraticAssessment,
+    SocraticCase,
+    SocraticCaseResult,
+    SocraticDecision,
+    SocraticMetrics,
+    SocraticQuestion,
+    SocraticTeacher,
+    SocraticTurn,
+    choose_next_mode,
+    evaluate_socratic,
 )
 from agent_learning_coach.core.application.teaching import (
     DirectTeacher,
@@ -80,6 +93,14 @@ __all__ = [
     "MaterialSearch",
     "NotFoundError",
     "ProgressConflict",
+    "SocraticAssessment",
+    "SocraticCase",
+    "SocraticCaseResult",
+    "SocraticDecision",
+    "SocraticMetrics",
+    "SocraticQuestion",
+    "SocraticTeacher",
+    "SocraticTurn",
     "SyncReport",
     "TeachingCase",
     "TeachingCaseResult",
@@ -94,8 +115,10 @@ __all__ = [
     "WorkflowError",
     "WorkflowResult",
     "check_grounding",
+    "choose_next_mode",
     "collect_citations",
     "evaluate_answer",
+    "evaluate_socratic",
     "evaluate_teaching",
     "ingest_course_documents",
     "instructions_for",
