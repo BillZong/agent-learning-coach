@@ -18,7 +18,7 @@ presentation）。历史永远完整保留在执行上下文里，裁剪只发�
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -37,10 +37,15 @@ class ContextStrategy(Protocol):
     的行为将无法复现。
     """
 
-    name: str
-    """策略名。用于观测：记录一次构建应用了哪些策略。"""
+    @property
+    def name(self) -> str:
+        """策略名。用于观测：记录一次构建应用了哪些策略。
 
-    def apply(self, contents: list[ContentItem]) -> list[ContentItem]:
+        **只读**：实现多半是 frozen dataclass，协议不该要求一个可写属性。
+        """
+        ...
+
+    def apply(self, contents: Sequence[ContentItem]) -> list[ContentItem]:
         """对对话内容做裁剪。
 
         Args:
@@ -52,7 +57,7 @@ class ContextStrategy(Protocol):
         ...
 
 
-def drop_unpaired(contents: list[ContentItem]) -> list[ContentItem]:
+def drop_unpaired(contents: Sequence[ContentItem]) -> list[ContentItem]:
     """移除没有配对的 tool_call 与 tool_result。
 
     配对断裂有两种，处置不同：
@@ -103,7 +108,7 @@ class SlidingWindow:
     name: str = "sliding_window"
     """策略名。"""
 
-    def apply(self, contents: list[ContentItem]) -> list[ContentItem]:
+    def apply(self, contents: Sequence[ContentItem]) -> list[ContentItem]:
         """按窗口裁剪。
 
         Args:
@@ -176,7 +181,7 @@ class Compaction:
     name: str = "compaction"
     """策略名。"""
 
-    def apply(self, contents: list[ContentItem]) -> list[ContentItem]:
+    def apply(self, contents: Sequence[ContentItem]) -> list[ContentItem]:
         """压缩调用参数与工具结果。
 
         Args:

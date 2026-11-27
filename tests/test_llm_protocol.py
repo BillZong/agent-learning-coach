@@ -9,6 +9,7 @@ import pytest
 from pydantic import BaseModel
 
 from agent_learning_coach.core.llm import (
+    ContentItem,
     FailingLLMClient,
     LLMClient,
     LLMError,
@@ -251,7 +252,7 @@ def test_append_instructions_adds_system_prompt() -> None:
 
 
 def test_extract_text_returns_empty_without_message() -> None:
-    contents = [ToolCall(tool_call_id="call-1", name="search", arguments={})]
+    contents: list[ContentItem] = [ToolCall(tool_call_id="call-1", name="search", arguments={})]
 
     assert extract_text(contents) == ""
 

@@ -21,7 +21,7 @@ from agent_learning_coach.core.agent import (
     AgentRuntime,
 )
 from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
-from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
+from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall, ToolResult
 from agent_learning_coach.core.tools import (
     FunctionTool,
     ToolContext,
@@ -386,7 +386,7 @@ def test_transcript_invariant_holds_when_budget_stops_the_loop() -> None:
 def test_prompt_accepts_content_items() -> None:
     """输入可以是内容项列表，不只是文本。"""
     client = ScriptedClient([text_response()])
-    contents = [Message(role="user", content="闭包是什么")]
+    contents: list[ContentItem] = [Message(role="user", content="闭包是什么")]
 
     run = asyncio.run(make_loop(client).run(contents))
 

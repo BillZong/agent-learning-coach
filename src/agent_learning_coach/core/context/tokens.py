@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from agent_learning_coach.core.llm.models import ToolSpec
@@ -178,7 +179,12 @@ class TokenCounter:
             return estimate_tokens(text)
         return len(self._encoding.encode(text))
 
-    def count(self, contents: list[ContentItem], *, tools: list[ToolSpec] | None = None) -> int:
+    def count(
+        self,
+        contents: Sequence[ContentItem],
+        *,
+        tools: Sequence[ToolSpec] | None = None,
+    ) -> int:
         """统计一次请求的 token 总数。
 
         Args:
@@ -195,7 +201,7 @@ class TokenCounter:
             total += self.count_tools(tools)
         return total
 
-    def count_tools(self, tools: list[ToolSpec]) -> int:
+    def count_tools(self, tools: Sequence[ToolSpec]) -> int:
         """统计工具定义占用的 token。
 
         Args:

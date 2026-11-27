@@ -42,6 +42,7 @@ from agent_learning_coach.core.learning import (
     LearningGoal,
     LearningProgress,
     PlanId,
+    PlanVersion,
     PlanVersionId,
     TimeWindow,
     revise_plan,
@@ -129,7 +130,7 @@ def _progress() -> LearningProgress:
     return progress.complete(KnowledgePointId("k1"), at=2000.0, reason="学会了")
 
 
-def _plan_version():
+def _plan_version() -> PlanVersion:
     """构造一个计划版本。"""
     return start_plan(
         _goal(),

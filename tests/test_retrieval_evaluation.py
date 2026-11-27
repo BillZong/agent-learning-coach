@@ -21,10 +21,13 @@ import pytest
 
 from agent_learning_coach.core.rag import (
     Chunk,
+    Chunker,
     Document,
+    EmbeddingClient,
     FixedSizeChunker,
     HashingEmbedder,
     RecursiveChunker,
+    VectorRetriever,
 )
 from agent_learning_coach.core.rag.chunking import default_chunking_policy
 from agent_learning_coach.core.rag.evaluation import (
@@ -70,7 +73,11 @@ def _corpus() -> list[Document]:
     return documents
 
 
-def _index(documents: list[Document], chunker, embedder) -> object:
+def _index(
+    documents: list[Document],
+    chunker: Chunker,
+    embedder: EmbeddingClient,
+) -> VectorRetriever:
     """按切分器建一个可检索的存储。
 
     Args:

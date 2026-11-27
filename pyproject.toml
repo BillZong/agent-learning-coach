@@ -138,6 +138,9 @@ indent-style = "space"
 
 [tool.mypy]
 python_version = "3.13"
+# pydantic 插件：让 mypy 认识 BaseModel 的别名与校验器——否则
+# `Tool(inputSchema=...)` 这类按别名构造的调用会被误报成「未知关键字参数」。
+plugins = ["pydantic.mypy"]
 mypy_path = "src"
 files = ["src"]
 warn_unused_configs = true

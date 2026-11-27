@@ -52,6 +52,7 @@ from agent_learning_coach.core.learning import (
     LearnerId,
     LearningGoal,
     LearningProgress,
+    PlanVersion,
     TimeWindow,
 )
 from agent_learning_coach.core.storage import (
@@ -238,7 +239,7 @@ class _RecordingPlanRepository(InMemoryPlanVersionRepository):
         super().__init__()
         self._events = events
 
-    async def save(self, record: Stored[object]) -> Stored[object]:
+    async def save(self, record: Stored[PlanVersion]) -> Stored[PlanVersion]:
         """记录并写入。"""
         self._events.append("plan")
         return await super().save(record)
@@ -252,7 +253,7 @@ class _ConflictingPlanRepository(InMemoryPlanVersionRepository):
         super().__init__()
         self._pending = True
 
-    async def save(self, record: Stored[object]) -> Stored[object]:
+    async def save(self, record: Stored[PlanVersion]) -> Stored[PlanVersion]:
         """第一次保存时抛出冲突。
 
         Args:

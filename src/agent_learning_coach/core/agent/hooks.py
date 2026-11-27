@@ -52,7 +52,7 @@ class StateCollector:
         self,
         context: ToolContext,
         outcome: ToolOutcome,
-        arguments: dict[str, Any],
+        arguments: Mapping[str, Any],
     ) -> ToolOutcome | None:
         """收集结构化数据。
 

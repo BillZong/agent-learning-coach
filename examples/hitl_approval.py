@@ -31,7 +31,7 @@ from agent_learning_coach.core.agent import (  # noqa: E402
     JsonFileSessionStore,
     SessionContext,
 )
-from agent_learning_coach.core.llm.models import LLMResponse, LLMUsage  # noqa: E402
+from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse, LLMUsage  # noqa: E402
 from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult  # noqa: E402
 from agent_learning_coach.core.tools import (  # noqa: E402
     FunctionTool,
@@ -74,7 +74,7 @@ def _registry() -> ToolRegistry:
 def _runtime(store: JsonFileSessionStore) -> AgentRuntime:
     """构造运行时：先请求删除，批准后给出结论。"""
 
-    def handler(request):
+    def handler(request: LLMRequest) -> LLMResponse:
         """按脚本回应。"""
         contents = request.contents
         # 已经拿到工具结果了就直接给结论，否则请求执行高风险工具。

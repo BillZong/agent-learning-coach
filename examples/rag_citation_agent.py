@@ -23,10 +23,11 @@ import asyncio
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from agent_learning_coach.core.agent import AgentConfig, AgentRuntime, StateCollector
-from agent_learning_coach.core.llm.models import LLMResponse, LLMUsage
-from agent_learning_coach.core.llm.types import Message, ToolCall
+from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse, LLMUsage
+from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
 from agent_learning_coach.core.rag import (
     CitationSet,
     CitationValidator,
@@ -37,7 +38,10 @@ from agent_learning_coach.core.rag import (
     VectorRetriever,
     ingest_directory,
 )
-from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
+from agent_learning_coach.core.tools import (
+    ToolDispatcher,
+    ToolRegistry,
+)
 
 MATERIALS = {
     "closures.md": (
@@ -64,13 +68,39 @@ class ScriptedClient:
         """
         self.responses = list(responses)
 
-    async def generate(self, request: object) -> LLMResponse:
-        """返回脚本中的下一个响应。"""
+    async def generate(self, request: LLMRequest) -> LLMResponse:
+        """返回脚本中的下一个响应。
+
+        Args:
+            request: 模型请求。本示例不读它——脚本已经决定好每一步的输出。
+
+        Returns:
+            脚本中的下一个响应。
+        """
         return self.responses.pop(0)
 
-    async def generate_structured(self, request: object, output_model: type) -> object:
-        """本示例不使用结构化输出。"""
+    async def generate_structured(
+        self,
+        request: LLMRequest,
+        output_model: type[Any],
+    ) -> Any:
+        """本示例不使用结构化输出。
+
+        Args:
+            request: 模型请求。
+            output_model: 期望的结果模型。
+
+        Returns:
+            永远不会被返回——直接抛异常。
+        """
         raise NotImplementedError
+
+
+_CITATION_COLLECTOR = StateCollector("citations", data_key="citations")
+"""把检索到的引用收进执行上下文的草稿本。
+
+收集器的签名与钩子协议一致（``Mapping``），所以它能直接挂在 ``after_hooks`` 上。
+"""
 
 
 def _tool_call(name: str, arguments: dict[str, object], call_id: str) -> LLMResponse:
@@ -128,7 +158,7 @@ async def main() -> None:
         # 把检索到的引用收进执行上下文的草稿本——它是运行时状态，模型看不到。
         dispatcher = ToolDispatcher(
             registry,
-            after_hooks=[StateCollector("citations", data_key="citations")],
+            after_hooks=[_CITATION_COLLECTOR],
         )
         runtime = AgentRuntime(
             ScriptedClient(
@@ -149,7 +179,7 @@ async def main() -> None:
         print("\n2. 检索（模型调用 search_course_material）：")
         for event in result.context.events:
             for item in event.contents:
-                if item.__class__.__name__ == "ToolResult":
+                if isinstance(item, ToolResult):
                     print(f"   {item.content.splitlines()[0]}")
 
         # 回调失败只落在 outcome.metadata 里——转录看不到，得主动查。

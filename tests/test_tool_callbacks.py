@@ -16,6 +16,7 @@ tool_result**。这条不变量一旦破了，厂商 API 会拒绝整个请求�
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -25,6 +26,7 @@ from agent_learning_coach.core.agent import (
     AgentRuntime,
     ApprovalDecision,
 )
+from agent_learning_coach.core.llm.types import ToolCall, ToolResult
 from agent_learning_coach.core.tools import (
     FunctionTool,
     ToolContext,
@@ -87,7 +89,7 @@ def test_before_hook_can_short_circuit() -> None:
     executed: list[dict] = []
     calls: list[str] = []
 
-    def before(context: ToolContext, tool_name: str, arguments: dict) -> ToolOutcome:
+    def before(context: ToolContext, tool_name: str, arguments: Mapping[str, Any]) -> ToolOutcome:
         """短路这次调用。"""
         calls.append(tool_name)
         return ToolOutcome(tool_name=tool_name, status="success", content="来自缓存")
@@ -106,7 +108,7 @@ def test_before_hook_returning_none_lets_the_tool_run() -> None:
     """执行前的钩子返回 None 时放行。"""
     executed: list[dict] = []
 
-    def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
+    def before(context: ToolContext, tool_name: str, arguments: Mapping[str, Any]) -> None:
         """放行。"""
         return
 
@@ -123,7 +125,9 @@ def test_after_hook_can_replace_the_result() -> None:
     """执行后的钩子可以替换结果。"""
     executed: list[dict] = []
 
-    def after(context: ToolContext, outcome: ToolOutcome, arguments: dict) -> ToolOutcome:
+    def after(
+        context: ToolContext, outcome: ToolOutcome, arguments: Mapping[str, Any]
+    ) -> ToolOutcome:
         """把结果改写一下。"""
         return ToolOutcome(
             tool_name=outcome.tool_name,
@@ -157,11 +161,11 @@ def test_hooks_run_in_order_around_the_tool() -> None:
         )
     )
 
-    def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
+    def before(context: ToolContext, tool_name: str, arguments: Mapping[str, Any]) -> None:
         """记录顺序。"""
         order.append("before")
 
-    def after(context: ToolContext, outcome: ToolOutcome, arguments: dict) -> None:
+    def after(context: ToolContext, outcome: ToolOutcome, arguments: Mapping[str, Any]) -> None:
         """记录顺序。"""
         order.append("after")
 
@@ -176,7 +180,7 @@ def test_failing_before_hook_still_produces_exactly_one_result() -> None:
     """执行前的钩子失败时，工具不执行，但仍然只有一条结果。"""
     executed: list[dict] = []
 
-    def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
+    def before(context: ToolContext, tool_name: str, arguments: Mapping[str, Any]) -> None:
         """抛异常。"""
         raise RuntimeError("钩子坏了")
 
@@ -193,7 +197,7 @@ def test_failing_after_hook_keeps_the_tool_result() -> None:
     """执行后的钩子失败不丢弃工具的结果——工具已经跑完了。"""
     executed: list[dict] = []
 
-    def after(context: ToolContext, outcome: ToolOutcome, arguments: dict) -> None:
+    def after(context: ToolContext, outcome: ToolOutcome, arguments: Mapping[str, Any]) -> None:
         """抛异常。"""
         raise RuntimeError("后处理坏了")
 
@@ -213,7 +217,7 @@ def test_permission_check_happens_before_hooks() -> None:
     executed: list[dict] = []
     hook_calls: list[str] = []
 
-    def before(context: ToolContext, tool_name: str, arguments: dict) -> ToolOutcome:
+    def before(context: ToolContext, tool_name: str, arguments: Mapping[str, Any]) -> ToolOutcome:
         """短路。"""
         hook_calls.append(tool_name)
         return ToolOutcome(tool_name=tool_name, status="success", content="绕过")
@@ -277,11 +281,11 @@ def test_denied_call_never_reaches_the_hooks() -> None:
     executed: list[dict] = []
     hook_calls: list[str] = []
 
-    def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
+    def before(context: ToolContext, tool_name: str, arguments: Mapping[str, Any]) -> None:
         """记录调用。"""
         hook_calls.append(tool_name)
 
-    def after(context: ToolContext, outcome: ToolOutcome, arguments: dict) -> None:
+    def after(context: ToolContext, outcome: ToolOutcome, arguments: Mapping[str, Any]) -> None:
         """记录调用。"""
         hook_calls.append(f"after:{outcome.tool_name}")
 
@@ -305,11 +309,11 @@ def test_approved_call_runs_the_hooks() -> None:
     executed: list[dict] = []
     hook_calls: list[str] = []
 
-    def before(context: ToolContext, tool_name: str, arguments: dict) -> None:
+    def before(context: ToolContext, tool_name: str, arguments: Mapping[str, Any]) -> None:
         """记录调用。"""
         hook_calls.append(f"before:{tool_name}")
 
-    def after(context: ToolContext, outcome: ToolOutcome, arguments: dict) -> None:
+    def after(context: ToolContext, outcome: ToolOutcome, arguments: Mapping[str, Any]) -> None:
         """记录调用。"""
         hook_calls.append(f"after:{outcome.tool_name}")
 
@@ -338,8 +342,6 @@ def test_approved_call_runs_the_hooks() -> None:
 
 def test_pause_resume_keeps_every_call_paired_with_a_result() -> None:
     """暂停与恢复之后，转录里每条 tool_call 仍有对应的 tool_result。"""
-    from agent_learning_coach.core.llm.types import ToolCall, ToolResult
-
     executed: list[dict] = []
     runtime = _runtime(
         _registry(executed),
@@ -391,7 +393,7 @@ def test_denied_call_still_gets_a_result() -> None:
         item
         for event in resumed.context.events
         for item in event.contents
-        if item.__class__.__name__ == "ToolResult"
+        if isinstance(item, ToolResult)
     ]
     assert len(tool_results) == 1
     assert "拒绝" in tool_results[0].content
@@ -403,7 +405,7 @@ def test_callback_cannot_bypass_the_approval(approved: bool) -> None:
     executed: list[dict] = []
     hook_calls: list[str] = []
 
-    def before(context: ToolContext, tool_name: str, arguments: dict) -> ToolOutcome:
+    def before(context: ToolContext, tool_name: str, arguments: Mapping[str, Any]) -> ToolOutcome:
         """试图短路成成功。"""
         hook_calls.append(tool_name)
         return ToolOutcome(tool_name=tool_name, status="success", content="绕过审批")

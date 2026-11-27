@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 from agent_learning_coach.core.rag import (
     HashingEmbedder,
@@ -27,11 +28,29 @@ from agent_learning_coach.core.rag import (
     VectorRetriever,
     ingest_directory,
 )
-from agent_learning_coach.core.tools import ToolContext, ToolDispatcher, ToolRegistry
+from agent_learning_coach.core.tools import (
+    ToolContext,
+    ToolDispatcher,
+    ToolOutcome,
+    ToolRegistry,
+)
 
 DATA_DIR = Path(__file__).parent / "data"
 MATERIALS_DIR = DATA_DIR / "materials"
 MATERIAL_COUNT = len(list(MATERIALS_DIR.glob("*.md")))
+
+
+def _data(outcome: ToolOutcome) -> dict[str, Any]:
+    """取出结果数据；没有数据就是失败。
+
+    Args:
+        outcome: 工具执行结果。
+
+    Returns:
+        结构化结果数据。
+    """
+    assert outcome.data is not None
+    return outcome.data
 
 
 def _store_with_materials() -> tuple[InMemoryVectorStore, VectorRetriever]:
@@ -97,7 +116,7 @@ def test_search_tool_returns_results_with_markers() -> None:
     assert "[1]" in outcome.content
     assert "closures.md" in outcome.content
     assert outcome.data is not None
-    assert outcome.data["citations"]
+    assert _data(outcome)["citations"]
 
 
 def test_search_tool_markers_are_stable_across_calls() -> None:
@@ -108,13 +127,13 @@ def test_search_tool_markers_are_stable_across_calls() -> None:
     first = asyncio.run(tool.execute(ToolContext(), {"query": "闭包 外部变量"}))
     second = asyncio.run(tool.execute(ToolContext(), {"query": "外部变量 闭包"}))
 
-    first_ids = {c["chunk_id"] for c in first.data["citations"]}
-    second_ids = {c["chunk_id"] for c in second.data["citations"]}
+    first_ids = {c["chunk_id"] for c in _data(first)["citations"]}
+    second_ids = {c["chunk_id"] for c in _data(second)["citations"]}
     shared = first_ids & second_ids
     assert shared
 
-    first_markers = {c["chunk_id"]: c["marker"] for c in first.data["citations"]}
-    second_markers = {c["chunk_id"]: c["marker"] for c in second.data["citations"]}
+    first_markers = {c["chunk_id"]: c["marker"] for c in _data(first)["citations"]}
+    second_markers = {c["chunk_id"]: c["marker"] for c in _data(second)["citations"]}
     for chunk_id in shared:
         assert first_markers[chunk_id] == second_markers[chunk_id]
 
@@ -128,7 +147,7 @@ def test_search_tool_returns_empty_message_when_nothing_matches() -> None:
 
     assert outcome.succeeded
     assert "没有找到" in outcome.content
-    assert outcome.data["citations"] == []
+    assert _data(outcome)["citations"] == []
 
 
 def test_search_tool_without_threshold_returns_top_k() -> None:
@@ -138,7 +157,7 @@ def test_search_tool_without_threshold_returns_top_k() -> None:
 
     outcome = asyncio.run(tool.execute(ToolContext(), {"query": "量子色动力学"}))
 
-    assert len(outcome.data["citations"]) == 2
+    assert len(_data(outcome)["citations"]) == 2
 
 
 def test_search_tool_passes_filters_through() -> None:
@@ -151,7 +170,7 @@ def test_search_tool_passes_filters_through() -> None:
     )
 
     assert outcome.succeeded
-    assert all("pets.md" in c["source"] for c in outcome.data["citations"])
+    assert all("pets.md" in c["source"] for c in _data(outcome)["citations"])
 
 
 def test_search_tool_definition_is_valid() -> None:
@@ -180,8 +199,8 @@ def test_retrieve_knowledge_fetches_by_source() -> None:
 
     assert outcome.succeeded
     assert "闭包" in outcome.content
-    assert outcome.data["results"]
-    indexes = [r["index"] for r in outcome.data["results"]]
+    assert _data(outcome)["results"]
+    indexes = [r["index"] for r in _data(outcome)["results"]]
     assert indexes == sorted(indexes)
 
 
@@ -194,7 +213,7 @@ def test_retrieve_knowledge_reports_unknown_source() -> None:
 
     assert not outcome.succeeded
     assert "可用来源" in outcome.content
-    assert outcome.data["available_sources"]
+    assert _data(outcome)["available_sources"]
 
 
 def test_retrieve_knowledge_has_no_score() -> None:
@@ -204,7 +223,7 @@ def test_retrieve_knowledge_has_no_score() -> None:
 
     outcome = asyncio.run(tool.execute(ToolContext(), {"source": "pets.md"}))
 
-    assert all(citation["score"] is None for citation in outcome.data["citations"])
+    assert all(citation["score"] is None for citation in _data(outcome)["citations"])
 
 
 # ---------------------------------------------------------------------------
@@ -306,8 +325,8 @@ def test_retrieval_cache_distinguishes_top_k() -> None:
         dispatcher.dispatch("search_course_material", {"query": "闭包", "top_k": 3}, ToolContext())
     )
 
-    assert len(first.data["results"]) == 1
-    assert len(second.data["results"]) == 3
+    assert len(_data(first)["results"]) == 1
+    assert len(_data(second)["results"]) == 3
     assert len(cache) == 2
 
 
@@ -332,9 +351,9 @@ def test_compressor_shortens_long_results() -> None:
     assert outcome.succeeded
     assert outcome.metadata.get("compressed") is True
     # 被截掉的结果比原来少
-    assert len(outcome.data["results"]) < 5
+    assert len(_data(outcome)["results"]) < 5
     # 结构化数据与文本要一致
-    assert len(outcome.data["citations"]) == len(outcome.data["results"])
+    assert len(_data(outcome)["citations"]) == len(_data(outcome)["results"])
 
 
 def test_compressor_leaves_short_results_alone() -> None:

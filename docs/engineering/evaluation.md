@@ -92,6 +92,30 @@ Behavior 层的指标只有三个，都是**覆盖**而不是**质量**：
 覆盖整个仓库（含 Markdown 里的 Python 代码块），而本地只跑了 `src/ tests/ examples/`，
 于是 CI 连着四次红灯没人发现。**`make ci` 就是为了消灭这个缝隙**。
 
+### 4.1 静态检查的门禁范围
+
+| 工具 | 范围 | 为什么是这个范围 |
+| ---- | ---- | ---- |
+| `ruff format --check .` | **整个仓库**（含 Markdown 里的 Python 代码块） | 代码块是文档的一部分，写错了就是文档错了 |
+| `ruff check .` | 整个仓库 | 同上 |
+| `mypy` | `src/` + `tests/` + `examples/` | 测试与示例是**行为与用法的说明书**——类型错了，说明用法错了 |
+| `pytest --cov-fail-under=90` | 覆盖率 | 没有下限，覆盖率就只是个数字 |
+
+**ruff 规则集与豁免**：规则扩到 `E/F/I/B/UP/C4/SIM/RET/PIE/PERF/FURB/LOG/G/RUF/PL/
+S/TID/DTZ`，每条豁免都在 `pyproject.toml` 里写了理由——最重要的两条：
+
+- **`RUF001/002/003`（易混淆字符）豁免**：中文标点（：，。）会命中几千条；
+- **`evals/corpus` 整个目录不进 ruff**：它是**评估数据**。让 ruff 重排它会悄悄改掉
+  已发布的评估数字（切分边界变了 → 嵌入变了 → 指标变了），而没人会注意到语料被
+  格式化过。
+
+**mypy 配了 pydantic 插件**：否则 `Tool(inputSchema=...)` 这类按别名构造的调用会被
+误报成「未知关键字参数」。
+
+**只读参数用 `Sequence` 而不是 `list`**：`list` 不变，`list[Message]` 传给收
+`Sequence[ContentItem]` 的参数会报错——但函数明明只读。放宽签名是**API 质量**，
+不是绕过检查。
+
 加一条用例：往 `evals/phase0.json` 的 `cases` 里加一项，跑一次评估套件。不需要
 改代码——这是「用例是数据」的意义。
 

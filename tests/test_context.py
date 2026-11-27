@@ -29,20 +29,21 @@ from agent_learning_coach.core.context import (
     drop_unpaired,
     estimate_tokens,
 )
-from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
+from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall, ToolResult
+from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
 from support import ScriptedClient, text_response
 
 
-def _conversation(turns: int = 4) -> list:
+def _conversation(turns: int = 4) -> list[ContentItem]:
     """构造一段普通的多轮对话。"""
-    items: list = [Message(role="user", content="帮我学闭包")]
+    items: list[ContentItem] = [Message(role="user", content="帮我学闭包")]
     for index in range(turns):
         items.append(Message(role="assistant", content=f"第 {index} 轮的回答"))
         items.append(Message(role="user", content=f"第 {index} 轮的追问"))
     return items
 
 
-def _with_tool_exchange() -> list:
+def _with_tool_exchange() -> list[ContentItem]:
     """构造一段含工具调用的对话。"""
     return [
         Message(role="user", content="读一下笔记"),
@@ -52,7 +53,7 @@ def _with_tool_exchange() -> list:
     ]
 
 
-def _call_ids(items: list) -> tuple[set[str], set[str]]:
+def _call_ids(items: list[ContentItem]) -> tuple[set[str], set[str]]:
     """取出调用 id 与结果 id。"""
     calls = {item.tool_call_id for item in items if isinstance(item, ToolCall)}
     results = {item.tool_call_id for item in items if isinstance(item, ToolResult)}
@@ -141,7 +142,7 @@ def test_counter_works_without_tiktoken(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_drop_unpaired_removes_orphan_call() -> None:
     """孤立的 tool_call 被丢弃——厂商 API 不接受没有结果的调用。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="read_file", arguments={}),
         Message(role="assistant", content="我读一下"),
     ]
@@ -206,7 +207,7 @@ def test_sliding_window_preserves_tool_pairing() -> None:
     参考实现直接切列表，会留下没有结果的 tool_call——厂商 API 会拒绝整个
     请求。本项目在这里修正。
     """
-    contents = [
+    contents: list[ContentItem] = [
         Message(role="user", content="读一下"),
         ToolCall(tool_call_id="c1", name="read_file", arguments={}),
         ToolResult(tool_call_id="c1", name="read_file", content="内容"),
@@ -245,7 +246,7 @@ def test_sliding_window_does_not_mutate_input() -> None:
 
 def test_compaction_replaces_large_result() -> None:
     """超长的工具结果被截断。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="read_file", arguments={}),
         ToolResult(tool_call_id="c1", name="read_file", content="内容" * 500),
     ]
@@ -259,7 +260,7 @@ def test_compaction_replaces_large_result() -> None:
 
 def test_compaction_uses_template_with_call_arguments() -> None:
     """结果模板可以用这次调用的参数做占位符。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="read_file", arguments={"path": "notes.md"}),
         ToolResult(tool_call_id="c1", name="read_file", content="很长的内容" * 100),
     ]
@@ -273,7 +274,7 @@ def test_compaction_uses_template_with_call_arguments() -> None:
 
 def test_compaction_tolerates_missing_template_argument() -> None:
     """模板里的占位符没有对应参数时不抛异常。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="read_file", arguments={}),
         ToolResult(tool_call_id="c1", name="read_file", content="内容"),
     ]
@@ -287,7 +288,7 @@ def test_compaction_tolerates_missing_template_argument() -> None:
 
 def test_compaction_replaces_large_arguments() -> None:
     """超长的调用参数被截断。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="write", arguments={"content": "x" * 500}),
     ]
 
@@ -299,7 +300,7 @@ def test_compaction_replaces_large_arguments() -> None:
 
 def test_compaction_uses_argument_placeholders() -> None:
     """按参数名替换成占位符。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(
             tool_call_id="c1",
             name="write",
@@ -317,7 +318,7 @@ def test_compaction_uses_argument_placeholders() -> None:
 
 def test_compaction_protects_configured_tools() -> None:
     """受保护的工具不参与压缩。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="final_answer", arguments={"output": "x" * 500}),
         ToolResult(tool_call_id="c1", name="final_answer", content="y" * 500),
     ]
@@ -370,7 +371,7 @@ def test_builder_without_limit_does_not_truncate() -> None:
 
 def test_builder_enforces_budget_with_compaction() -> None:
     """预算被真正执行——压缩后必须装得下。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="read_file", arguments={"path": "a.md"}),
         ToolResult(tool_call_id="c1", name="read_file", content="内容" * 2000),
     ]
@@ -401,7 +402,7 @@ def test_builder_enforces_budget_with_sliding_window() -> None:
 
 def test_builder_keeps_pairing_after_trimming() -> None:
     """兜底裁剪之后配对仍然完整。"""
-    contents = [
+    contents: list[ContentItem] = [
         Message(role="user", content="读一下" * 50),
         ToolCall(tool_call_id="c1", name="read_file", arguments={}),
         ToolResult(tool_call_id="c1", name="read_file", content="内容" * 50),
@@ -495,10 +496,8 @@ def test_runtime_without_builder_keeps_full_history() -> None:
     assert result.context.last_context_view is None
 
 
-def _dispatcher() -> object:
+def _dispatcher() -> ToolDispatcher:
     """构造一个空注册表的调度器。"""
-    from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
-
     return ToolDispatcher(ToolRegistry())
 
 
@@ -514,7 +513,7 @@ def test_sliding_window_with_zero_keeps_nothing() -> None:
 
 def test_sliding_window_without_any_user_message() -> None:
     """没有用户消息时不会误判起点。"""
-    contents = [
+    contents: list[ContentItem] = [
         Message(role="assistant", content="模型自说自话"),
         Message(role="assistant", content="继续"),
         Message(role="assistant", content="再说"),
@@ -523,12 +522,13 @@ def test_sliding_window_without_any_user_message() -> None:
     kept = SlidingWindow(keep_recent=2, keep_leading_user=True).apply(contents)
 
     assert len(kept) == 2
+    assert isinstance(kept[0], Message)
     assert kept[0].content == "继续"
 
 
 def test_compaction_returns_original_when_nothing_to_do() -> None:
     """内容本来就不超限时不产生新对象。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="read_file", arguments={"path": "a.md"}),
         ToolResult(tool_call_id="c1", name="read_file", content="短"),
     ]
@@ -541,7 +541,7 @@ def test_compaction_returns_original_when_nothing_to_do() -> None:
 
 def test_compaction_survives_a_broken_template() -> None:
     """模板本身写坏时不抛异常——压缩失败不能中断整个运行。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="read_file", arguments={"path": "a.md"}),
         ToolResult(tool_call_id="c1", name="read_file", content="内容"),
     ]
@@ -555,7 +555,7 @@ def test_compaction_survives_a_broken_template() -> None:
 
 def test_compaction_without_limit_keeps_values() -> None:
     """阈值为 0 表示不限制。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="write", arguments={"content": "x" * 500}),
     ]
 
@@ -567,7 +567,7 @@ def test_compaction_without_limit_keeps_values() -> None:
 
 def test_compaction_truncates_structured_arguments() -> None:
     """字典与列表参数按 JSON 序列化后截断。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(
             tool_call_id="c1",
             name="write",
@@ -584,7 +584,7 @@ def test_compaction_truncates_structured_arguments() -> None:
 
 def test_builder_truncates_a_remaining_tool_call_result() -> None:
     """剩下的工具结果装不下时裁它的文本——配对仍然完整。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="write", arguments={"content": "x" * 500}),
         ToolResult(tool_call_id="c1", name="write", content="y" * 500),
     ]
@@ -599,7 +599,7 @@ def test_builder_truncates_a_remaining_tool_call_result() -> None:
 
 def test_builder_truncates_a_remaining_tool_result() -> None:
     """超长的工具结果被裁到预算内。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(tool_call_id="c1", name="read_file", arguments={}),
         ToolResult(tool_call_id="c1", name="read_file", content="内容" * 500),
     ]
@@ -644,7 +644,7 @@ def test_encoding_failure_is_remembered(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_compaction_keeps_non_text_arguments_untouched() -> None:
     """数字、布尔这类参数原样保留——它们本来就短。"""
-    contents = [
+    contents: list[ContentItem] = [
         ToolCall(
             tool_call_id="c1",
             name="write",

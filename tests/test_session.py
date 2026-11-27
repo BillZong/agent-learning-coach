@@ -21,11 +21,12 @@ from agent_learning_coach.core.agent import (
     JsonFileSessionStore,
     SessionContext,
 )
+from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
 from agent_learning_coach.core.llm.types import Message
 from support import ScriptedClient, text_response
 
 
-def _runtime(*responses: object) -> AgentRuntime:
+def _runtime(*responses: LLMResponse) -> AgentRuntime:
     """构造一个只会说固定台词的运行时。"""
     from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
 
@@ -63,12 +64,10 @@ def test_session_accumulates_turns() -> None:
 
 def test_second_turn_sees_first_turn() -> None:
     """第二轮的模型能看到第一轮的内容——这是会话存在的理由。"""
-    from agent_learning_coach.core.llm.models import LLMRequest
-
     seen: list[LLMRequest] = []
 
     class RecordingClient(ScriptedClient):
-        async def generate(self, request: LLMRequest):  # type: ignore[no-untyped-def]
+        async def generate(self, request: LLMRequest) -> LLMResponse:
             seen.append(request)
             return await super().generate(request)
 
@@ -141,7 +140,7 @@ def test_failed_turn_still_counts_and_keeps_history() -> None:
     from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
 
     class BrokenClient(ScriptedClient):
-        async def generate(self, request):  # type: ignore[no-untyped-def]
+        async def generate(self, request: LLMRequest) -> LLMResponse:
             raise LLMError("挂了")
 
     runtime = AgentRuntime(

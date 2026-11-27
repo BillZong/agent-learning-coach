@@ -75,18 +75,18 @@ def _evidence(
 def _verdict(
     point_id: str = "k1",
     verdict: Verdict = "known",
-    **kwargs: object,
+    *,
+    reason: str = "测试判定",
+    evidence: tuple[DiagnosticEvidence, ...] | None = None,
 ) -> DiagnosticVerdict:
     """构造一条判定。"""
-    reason = kwargs.pop("reason", "测试判定")
-    evidence = kwargs.pop("evidence", None)
     if evidence is None:
         evidence = (_evidence(point_id),) if verdict in ("known", "gap") else ()
     return DiagnosticVerdict(
         point_id=KnowledgePointId(point_id),
         verdict=verdict,
         reason=reason,
-        evidence=evidence,  # type: ignore[arg-type]
+        evidence=evidence,
     )
 
 

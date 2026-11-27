@@ -32,6 +32,7 @@ from agent_learning_coach.core.learning import (
     LearningGoal,
     LearningProgress,
     PlanId,
+    PlanVersion,
     PlanVersionId,
     TimeWindow,
     UniformEffort,
@@ -95,7 +96,7 @@ def _progress(*learned: str) -> LearningProgress:
     return progress
 
 
-def show_start() -> object:
+def show_start() -> PlanVersion:
     """演示开一份全新计划。
 
     Returns:
@@ -120,7 +121,7 @@ def show_start() -> object:
     return version
 
 
-def show_revision(first: object) -> object:
+def show_revision(first: PlanVersion) -> PlanVersion:
     """演示修订：同一计划线，版本号 +1。
 
     Args:
@@ -150,7 +151,7 @@ def show_revision(first: object) -> object:
     return second
 
 
-def show_new_line(first: object) -> object:
+def show_new_line(first: PlanVersion) -> PlanVersion:
     """演示全新计划：新计划线，版本号重新从 1 开始。
 
     Args:
@@ -179,7 +180,7 @@ def show_new_line(first: object) -> object:
     return other
 
 
-def show_basis(version: object) -> None:
+def show_basis(version: PlanVersion) -> None:
     """演示生成依据。
 
     Args:
@@ -195,7 +196,7 @@ def show_basis(version: object) -> None:
     print("（结构变了，旧版本是否还成立就能看出来——否则只能靠猜）\n")
 
 
-def show_queries(first: object, second: object, other: object) -> None:
+def show_queries(first: PlanVersion, second: PlanVersion, other: PlanVersion) -> None:
     """演示查询：排序、过滤与当前版本。
 
     Args:
@@ -204,7 +205,7 @@ def show_queries(first: object, second: object, other: object) -> None:
         other: 新计划线的第一个版本。
     """
     print("=== 5. 查询：排序、过滤与当前版本 ===\n")
-    versions = [second, other, first]
+    versions: list[PlanVersion] = [second, other, first]
 
     print("全部版本（按计划线分组，组内按版本号）：")
     for version in plan_versions(versions):

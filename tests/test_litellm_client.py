@@ -276,7 +276,9 @@ def test_create_client_forwards_completion_injection() -> None:
 
     response = asyncio.run(client.generate(LLMRequest(instructions=["hi"])))
 
-    assert response.contents[0].content == "hello"
+    first = response.contents[0]
+    assert isinstance(first, Message)
+    assert first.content == "hello"
     assert captured["model"] == "openai/gpt-4o-mini"
 
 

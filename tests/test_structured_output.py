@@ -24,6 +24,7 @@ from agent_learning_coach.core.agent import (
     build_output_schema,
 )
 from agent_learning_coach.core.agent.output import FINAL_ANSWER_TOOL_NAME
+from agent_learning_coach.core.llm.types import ToolResult
 from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
 from support import ScriptedClient, tool_call_response
 
@@ -162,8 +163,7 @@ def test_invalid_final_answer_is_fed_back_and_loop_continues() -> None:
     assert len(client.requests) == 2
     second_request = client.requests[1]
     assert any(
-        "ToolResult" in type(item).__name__ and item.status == "error"
-        for item in second_request.contents
+        isinstance(item, ToolResult) and item.status == "error" for item in second_request.contents
     )
 
 

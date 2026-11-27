@@ -29,6 +29,7 @@ from agent_learning_coach.core.learning import (
     Diagnosis,
     DiagnosisId,
     DomainError,
+    EffortEstimator,
     GoalId,
     KnowledgePoint,
     KnowledgePointId,
@@ -38,6 +39,7 @@ from agent_learning_coach.core.learning import (
     LearningGoal,
     LearningProgress,
     PlanId,
+    PlanVersion,
     PlanVersionId,
     TimeWindow,
     UniformEffort,
@@ -145,7 +147,14 @@ def _diagnosis() -> Diagnosis:
     )
 
 
-def _start(plan_id: str = "plan-1", **kwargs) -> object:
+def _start(
+    plan_id: str = "plan-1",
+    *,
+    reason: str = "初次规划",
+    at: float = 1000.0,
+    diagnosis: Diagnosis | None = None,
+    estimator: EffortEstimator | None = None,
+) -> PlanVersion:
     """开一份计划。"""
     return start_plan(
         _goal(),
@@ -153,9 +162,10 @@ def _start(plan_id: str = "plan-1", **kwargs) -> object:
         _progress(),
         plan_id=PlanId(plan_id),
         version_id=PlanVersionId(f"{plan_id}-v1"),
-        reason=kwargs.pop("reason", "初次规划"),
-        at=kwargs.pop("at", 1000.0),
-        **kwargs,
+        reason=reason,
+        at=at,
+        diagnosis=diagnosis,
+        estimator=estimator,
     )
 
 

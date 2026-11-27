@@ -225,6 +225,7 @@ def test_create_client_honors_ambient_base_url_override(
 
     client = create_client("minimax-cn")
 
+    assert isinstance(client, OpenAICompatibleClient)
     assert client.api_base == "https://gateway.internal/v1"
 
 
@@ -661,7 +662,9 @@ def test_create_client_forwards_sdk_client_injection(monkeypatch: pytest.MonkeyP
 
     response = asyncio.run(client.generate(LLMRequest(instructions=["hi"])))
 
-    assert response.contents[0].content == "hi"
+    first = response.contents[0]
+    assert isinstance(first, Message)
+    assert first.content == "hi"
     assert captured["model"] == "MiniMax-M3.1-Flash"
 
 
@@ -679,5 +682,7 @@ def test_create_client_forwards_sdk_client_factory(monkeypatch: pytest.MonkeyPat
 
     response = asyncio.run(client.generate(LLMRequest(instructions=["hi"])))
 
-    assert response.contents[0].content == "hi"
+    first = response.contents[0]
+    assert isinstance(first, Message)
+    assert first.content == "hi"
     assert created[0]["base_url"] == "https://api.minimax.cn/v1"

@@ -325,7 +325,9 @@ def test_structured_output_is_not_dropped() -> None:
     async def _run() -> str:
         async with _client_session(server) as session:
             tools = await discover_mcp_tools(session)
-            return await tools[0].execute(ToolContext(caller="test"), {})  # type: ignore[arg-type]
+            result = await tools[0].execute(ToolContext(caller="test"), {})
+        assert isinstance(result, str)
+        return result
 
     text = asyncio.run(_run())
 
@@ -353,7 +355,9 @@ def test_non_text_content_block_is_not_dropped() -> None:
     async def _run() -> str:
         async with _client_session(server) as session:
             tools = await discover_mcp_tools(session)
-            return await tools[0].execute(ToolContext(caller="test"), {})  # type: ignore[arg-type]
+            result = await tools[0].execute(ToolContext(caller="test"), {})
+        assert isinstance(result, str)
+        return result
 
     text = asyncio.run(_run())
 
@@ -483,7 +487,7 @@ def test_stdio_session_raises_readable_error_when_server_exits() -> None:
     """远端进程立即退出时，错误必须可读，不能只抛 ExceptionGroup。"""
 
     async def _run() -> None:
-        async with stdio_session("true") as session:  # type: ignore[arg-type]
+        async with stdio_session("true") as session:
             await session.initialize()
 
     with pytest.raises(MCPConnectionError) as exc_info:
@@ -499,7 +503,7 @@ def test_stdio_session_raises_readable_error_when_command_missing() -> None:
     """启动命令不存在时，错误必须指出是哪个命令找不到。"""
 
     async def _run() -> None:
-        async with stdio_session("no-such-mcp-binary-xyz") as session:  # type: ignore[arg-type]
+        async with stdio_session("no-such-mcp-binary-xyz") as session:
             await session.initialize()
 
     with pytest.raises(MCPConnectionError) as exc_info:
@@ -514,7 +518,7 @@ def test_stdio_session_handshake_times_out() -> None:
     """远端无响应时，握手必须超时退出，不能无限期挂起。"""
 
     async def _run() -> None:
-        async with stdio_session("sleep", ["30"], timeout=1.0) as session:  # type: ignore[arg-type]
+        async with stdio_session("sleep", ["30"], timeout=1.0) as session:
             await session.initialize()
 
     started = time.monotonic()

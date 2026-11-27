@@ -136,7 +136,9 @@ def test_event_carries_author_and_timestamp() -> None:
     assert event.execution_id == "exec-1"
     assert event.author == "model"
     assert event.timestamp > 0
-    assert event.contents[0].content == "hi"
+    first = event.contents[0]
+    assert isinstance(first, Message)
+    assert first.content == "hi"
 
 
 def test_passing_existing_context_continues_the_conversation() -> None:
@@ -154,8 +156,12 @@ def test_passing_existing_context_continues_the_conversation() -> None:
     assert run.context.execution_id == "session-42"
     # 历史事件保留，新的一轮（用户提问 + 模型回答）追加在后
     assert len(run.context.events) == 3
-    assert run.context.contents[0].content == "上一轮的问题"
-    assert run.context.contents[-1].content == "这一轮的回答"
+    first = run.context.contents[0]
+    last = run.context.contents[-1]
+    assert isinstance(first, Message)
+    assert isinstance(last, Message)
+    assert first.content == "上一轮的问题"
+    assert last.content == "这一轮的回答"
 
 
 # --------------------------------------------------------------------------

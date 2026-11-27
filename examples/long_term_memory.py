@@ -158,7 +158,7 @@ async def main() -> None:
     print("\n=== 集成：记忆进入模型的上下文 ===")
     from agent_learning_coach.core.agent import AgentConfig, AgentRuntime
     from agent_learning_coach.core.llm.mock import MockLLMClient
-    from agent_learning_coach.core.llm.models import LLMResponse
+    from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
     from agent_learning_coach.core.llm.types import Message
     from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
 
@@ -167,9 +167,9 @@ async def main() -> None:
     for line in context_text.splitlines():
         print(f"    {line}")
 
-    seen: list = []
+    seen: list[LLMRequest] = []
 
-    def handler(request):
+    def handler(request: LLMRequest) -> LLMResponse:
         """记录模型实际收到的请求。"""
         seen.append(request)
         return LLMResponse(
@@ -183,7 +183,7 @@ async def main() -> None:
         ToolDispatcher(ToolRegistry()),
         config=AgentConfig(
             model="mock-model",
-            instructions=["你是学习教练。", context_text],
+            instructions=("你是学习教练。", context_text),
         ),
     )
     await runtime.run("我该从哪开始？")

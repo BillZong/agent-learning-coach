@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 
 from agent_learning_coach.core.llm.mock import MockLLMClient
-from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
+from agent_learning_coach.core.llm.types import ContentItem, Message, ToolCall, ToolResult
 from agent_learning_coach.core.memory import (
     ExtractedMemory,
     InMemoryMemoryStore,
@@ -68,7 +68,9 @@ def _batch(*items: dict) -> str:
     )
 
 
-def _manager(text: str, *, policy: MemoryPolicy | None = None) -> tuple[MemoryManager, object]:
+def _manager(
+    text: str, *, policy: MemoryPolicy | None = None
+) -> tuple[MemoryManager, InMemoryMemoryStore]:
     """构造一个返回固定抽取结果的管理器。"""
     store = InMemoryMemoryStore()
     client = MockLLMClient(text=text)
@@ -146,7 +148,7 @@ def test_confidence_is_clamped() -> None:
 
 def test_transcript_formatting_only_keeps_readable_text() -> None:
     """转录渲染成人与模型能读的文本，工具调用只留名字。"""
-    transcript = [
+    transcript: list[ContentItem] = [
         Message(role="user", content="闭包不会"),
         ToolCall(tool_call_id="c1", name="read_notes", arguments={"path": "a.md"}),
         ToolResult(tool_call_id="c1", name="read_notes", content="很长的笔记内容"),
@@ -575,7 +577,7 @@ def test_profile_renders_every_bucket() -> None:
 
 def test_transcript_ending_with_a_tool_result() -> None:
     """转录以工具结果结尾时也能正常渲染。"""
-    transcript = [
+    transcript: list[ContentItem] = [
         Message(role="user", content="闭包不会"),
         ToolResult(tool_call_id="c1", name="read_notes", content="笔记内容"),
     ]
@@ -744,7 +746,7 @@ def test_memories_actually_reach_the_model() -> None:
     runtime = AgentRuntime(
         MockLLMClient(text="好的"),
         ToolDispatcher(ToolRegistry()),
-        config=AgentConfig(model="mock-model", instructions=["你是学习教练。", context]),
+        config=AgentConfig(model="mock-model", instructions=("你是学习教练。", context)),
     )
 
     asyncio.run(runtime.run("我该从哪开始？"))
@@ -773,9 +775,9 @@ def test_json_file_store_get_scans_all_subjects(tmp_path: Path) -> None:
     asyncio.run(store.add(first))
     asyncio.run(store.add(second))
 
-    assert asyncio.run(store.get(second.id)) is not None
-    assert (await_first := asyncio.run(store.get(second.id))).content == "B 的弱点"
+    await_first = asyncio.run(store.get(second.id))
     assert await_first is not None
+    assert await_first.content == "B 的弱点"
 
 
 def test_json_file_store_filters_by_type_and_kind(tmp_path: Path) -> None:

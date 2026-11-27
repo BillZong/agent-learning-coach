@@ -43,7 +43,7 @@ fmt-check: ## Check formatting without writing changes
 	$(UV) run --group dev ruff format --check .
 
 typecheck: ## Type-check the code (mypy from the dev dependency group)
-	$(UV) run --group dev mypy
+	$(UV) run --group dev mypy src tests examples
 
 eval: ## Run the evaluation suite (behavior acceptance; non-zero on failure)
 	$(UV) run --group dev python examples/reliability_report.py

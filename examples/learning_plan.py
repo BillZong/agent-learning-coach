@@ -28,6 +28,8 @@ from __future__ import annotations
 import asyncio
 from datetime import date
 
+from pydantic import BaseModel
+
 from agent_learning_coach.core.agent import (
     AgentConfig,
     AgentRuntime,
@@ -52,7 +54,7 @@ from agent_learning_coach.core.learning import (
     TimeWindow,
     to_goal_spec,
 )
-from agent_learning_coach.core.llm.models import LLMResponse, LLMUsage
+from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse, LLMUsage
 from agent_learning_coach.core.llm.types import Message, ToolCall, ToolResult
 from agent_learning_coach.core.tools import ToolDispatcher, ToolRegistry
 
@@ -68,11 +70,15 @@ class ScriptedClient:
         """
         self.responses = list(responses)
 
-    async def generate(self, request: object) -> LLMResponse:
+    async def generate(self, request: LLMRequest) -> LLMResponse:
         """返回脚本中的下一个响应。"""
         return self.responses.pop(0)
 
-    async def generate_structured(self, request: object, output_model: type) -> object:
+    async def generate_structured[ResponseT: BaseModel](
+        self,
+        request: LLMRequest,
+        output_model: type[ResponseT],
+    ) -> ResponseT:
         """本示例不使用结构化输出。"""
         raise NotImplementedError
 

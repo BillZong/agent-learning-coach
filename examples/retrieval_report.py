@@ -22,13 +22,18 @@ from pathlib import Path
 
 from agent_learning_coach.core.rag import (
     Chunk,
+    Chunker,
     Document,
+    EmbeddingClient,
     FixedSizeChunker,
     HashingEmbedder,
     RecursiveChunker,
+    VectorRetriever,
+    VectorStore,
 )
 from agent_learning_coach.core.rag.chunking import default_chunking_policy
 from agent_learning_coach.core.rag.evaluation import (
+    RetrievalCase,
     compare_strategies,
     evaluate_retrieval,
     load_retrieval_cases,
@@ -74,7 +79,11 @@ def _corpus() -> list[Document]:
     return documents
 
 
-def _store(documents: list[Document], chunker, embedder) -> tuple[object, object]:
+def _store(
+    documents: list[Document],
+    chunker: Chunker,
+    embedder: EmbeddingClient,
+) -> tuple[VectorStore, VectorRetriever]:
     """按切分器建一个可检索的存储。
 
     Args:
@@ -85,7 +94,7 @@ def _store(documents: list[Document], chunker, embedder) -> tuple[object, object
     Returns:
         (存储, 检索器)。
     """
-    from agent_learning_coach.core.rag import InMemoryVectorStore, VectorRetriever
+    from agent_learning_coach.core.rag import InMemoryVectorStore
 
     chunks: list[Chunk] = []
     for document in documents:
@@ -96,7 +105,7 @@ def _store(documents: list[Document], chunker, embedder) -> tuple[object, object
     return store, VectorRetriever(store, embedder, top_k=5)
 
 
-def show_dataset(cases) -> None:
+def show_dataset(cases: list[RetrievalCase]) -> None:
     """演示评估集的样子与构建原则。
 
     Args:
@@ -113,7 +122,7 @@ def show_dataset(cases) -> None:
     print("  它能验证「机制对不对」，不能验证「真实用户会不会这样问」）\n")
 
 
-def show_hit_vs_recall(cases, documents) -> None:
+def show_hit_vs_recall(cases: list[RetrievalCase], documents: list[Document]) -> None:
     """演示命中率与召回的差别。
 
     Args:
@@ -136,7 +145,7 @@ def show_hit_vs_recall(cases, documents) -> None:
     print("（**两者都低** = 查询与材料的表达对不上 → 嵌入质量或过滤太严）\n")
 
 
-def show_failures(cases, documents) -> None:
+def show_failures(cases: list[RetrievalCase], documents: list[Document]) -> None:
     """演示失败案例可查。
 
     Args:
@@ -167,7 +176,7 @@ def show_failures(cases, documents) -> None:
     print("（**假阳性率量的是合成查询的偏差**：问题照着文档写，与它共享词的材料也会被带回来）\n")
 
 
-def show_strategies(cases, documents) -> None:
+def show_strategies(cases: list[RetrievalCase], documents: list[Document]) -> None:
     """演示不同切分策略的对比。
 
     Args:

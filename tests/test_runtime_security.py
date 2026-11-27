@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from agent_learning_coach.core.agent import AgentConfig, AgentRuntime
 from agent_learning_coach.core.llm.errors import LLMError
 from agent_learning_coach.core.llm.models import LLMRequest, LLMResponse
-from agent_learning_coach.core.llm.types import ToolCall
+from agent_learning_coach.core.llm.types import ToolCall, ToolResult
 from agent_learning_coach.core.tools import (
     DenyAllPolicy,
     FunctionTool,
@@ -645,7 +645,7 @@ def test_every_failure_path_keeps_the_transcript_invariant() -> None:
         for item in event.contents:
             if isinstance(item, ToolCall):
                 call_ids.add(item.tool_call_id)
-            elif getattr(item, "tool_call_id", None):
+            elif isinstance(item, ToolResult):
                 result_ids.add(item.tool_call_id)
     assert call_ids
     assert call_ids == result_ids

@@ -59,7 +59,8 @@ jobs:
         run: uv sync --frozen --group dev
 
       - name: Mypy
-        run: uv run --frozen --group dev mypy
+        # src / tests / examples 全查：测试与示例是行为与用法的说明书。
+        run: uv run --frozen --group dev mypy src tests examples
 
   test:
     name: Test

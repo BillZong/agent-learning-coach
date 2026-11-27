@@ -367,7 +367,7 @@ class AgentConfig:
     一个必然过期的真相来源。
     """
 
-    max_consecutive_errors: int = 3
+    max_consecutive_errors: int | None = 3
     """连续工具失败次数上限。
 
     单次工具失败**不**终止循环——错误要回填给模型，让它换参数、换工具或
@@ -375,7 +375,7 @@ class AgentConfig:
     预算，因此到顶就停。None 表示不限制。
     """
 
-    max_repeated_calls: int = 3
+    max_repeated_calls: int | None = 3
     """同一工具以相同参数被调用多少次后判定为原地打转。None 表示不限制。
 
     与 ``max_consecutive_errors`` 的区别：前者看「是否在重复同一个动作」，

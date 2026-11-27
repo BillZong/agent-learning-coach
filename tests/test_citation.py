@@ -96,8 +96,9 @@ def test_citation_set_replaces_same_marker() -> None:
     result = CitationSet(citations=(citation,)).with_citation(updated)
 
     assert len(result) == 1
-    assert result.get(citation.marker) is not None
-    assert result.get(citation.marker).text == "更新后的原文"
+    found = result.get(citation.marker)
+    assert found is not None
+    assert found.text == "更新后的原文"
 
 
 def test_reference_line_mentions_source() -> None:

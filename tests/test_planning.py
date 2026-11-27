@@ -33,6 +33,7 @@ from agent_learning_coach.core.agent import (
     PlanError,
     PlanManager,
     PlanPolicy,
+    PlanTask,
     TaskChange,
     TaskDraft,
     build_reflect_tool,
@@ -52,6 +53,17 @@ from support import ScriptedClient, text_response, tool_call_response
 # --------------------------------------------------------------------------
 # 夹具
 # --------------------------------------------------------------------------
+
+
+def _task(plan: Plan, task_id: str) -> PlanTask:
+    """取一个必然存在的任务。
+
+    ``Plan.task`` 对不存在的 id 返回 ``None``。测试里那些断言本来就在检查任务
+    的状态，所以在这里显式断言它存在——比让 ``None`` 在后面炸掉更清楚。
+    """
+    task = plan.task(task_id)
+    assert task is not None
+    return task
 
 
 def make_manager(
@@ -152,7 +164,7 @@ def test_status_change_is_recorded() -> None:
         "开始第一步",
     )
 
-    assert plan.task("t1").status == "in_progress"
+    assert _task(plan, "t1").status == "in_progress"
     assert plan.revision == 2
     assert plan.revisions[-1].kind == "progress"
     change = plan.revisions[-1].changes[0]
@@ -198,7 +210,7 @@ def test_completed_task_can_be_reopened() -> None:
     manager.apply([TaskChange(task_id="t1", status="completed")], "做完了")
     plan = manager.apply([TaskChange(task_id="t1", status="in_progress")], "发现漏了一个例子")
 
-    assert plan.task("t1").status == "in_progress"
+    assert _task(plan, "t1").status == "in_progress"
     assert plan.revisions[-1].kind == "replan"
     assert plan.replan_count == 1
 
@@ -236,7 +248,7 @@ def test_task_is_never_deleted() -> None:
     plan = manager.apply([TaskChange(task_id="t3", status="skipped")], "第三个任务没必要")
 
     assert len(plan.tasks) == 3
-    assert plan.task("t3").status == "skipped"
+    assert _task(plan, "t3").status == "skipped"
     assert "t3" in render_plan(plan)
 
 
@@ -271,7 +283,7 @@ def test_apply_is_atomic() -> None:
         )
     plan = manager.require_plan()
     assert plan.revision == before
-    assert plan.task("t1").status == "pending"
+    assert _task(plan, "t1").status == "pending"
 
 
 # --------------------------------------------------------------------------
@@ -394,7 +406,7 @@ def test_new_task_can_be_named() -> None:
     )
 
     assert plan.task("t0") is not None
-    assert plan.task("t2").depends_on == ("t0",)
+    assert _task(plan, "t2").depends_on == ("t0",)
 
 
 def test_named_task_cannot_collide() -> None:
@@ -428,7 +440,7 @@ def test_dependency_may_target_a_task_created_in_the_same_batch() -> None:
         "把依赖指到同一批新建的任务上",
     )
 
-    assert plan.task("t2").depends_on == ("t9",)
+    assert _task(plan, "t2").depends_on == ("t9",)
     assert plan.task("t9") is not None
 
 
@@ -502,7 +514,7 @@ def test_plan_survives_a_new_manager() -> None:
 
     restored = PlanManager(context)
     plan = restored.require_plan()
-    assert plan.task("t1").status == "in_progress"
+    assert _task(plan, "t1").status == "in_progress"
     assert plan.revision == 2
 
 

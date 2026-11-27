@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from agent_learning_coach.core.context.strategies import (
@@ -98,9 +99,9 @@ class ContextBuilder:
 
     def build(
         self,
-        contents: list[ContentItem],
+        contents: Sequence[ContentItem],
         *,
-        tools: list[ToolSpec] | None = None,
+        tools: Sequence[ToolSpec] | None = None,
         model: str | None = None,
     ) -> ContextView:
         """构建一次请求要发送的上下文视图。
@@ -171,8 +172,8 @@ class ContextBuilder:
 
     def _trim_to_budget(
         self,
-        contents: list[ContentItem],
-        tools: list[ToolSpec] | None,
+        contents: Sequence[ContentItem],
+        tools: Sequence[ToolSpec] | None,
         counter: TokenCounter,
         max_tokens: int,
     ) -> tuple[list[ContentItem], int, bool]:
@@ -222,7 +223,7 @@ class ContextBuilder:
     def _fit_single_item(
         self,
         item: ContentItem,
-        tools: list[ToolSpec] | None,
+        tools: Sequence[ToolSpec] | None,
         counter: TokenCounter,
         budget: int,
     ) -> tuple[ContentItem, int, bool]:

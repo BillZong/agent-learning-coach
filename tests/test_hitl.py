@@ -79,7 +79,7 @@ def _registry_with_confirmable_tool(
     return registry
 
 
-def _runtime(registry: ToolRegistry, *responses: object) -> AgentRuntime:
+def _runtime(registry: ToolRegistry, *responses: LLMResponse) -> AgentRuntime:
     """构造一个按脚本说话的运行时。"""
     return AgentRuntime(
         ScriptedClient(list(responses)),
