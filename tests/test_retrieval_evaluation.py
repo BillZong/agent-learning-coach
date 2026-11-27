@@ -258,3 +258,77 @@ def test_fine_grained_chunking_produces_more_chunks() -> None:
 
     rows = {row.name: row for row in comparison.rows}
     assert rows["按类型选"].chunk_count > rows["全部递归"].chunk_count
+
+
+# --- 负例与假阳性 --------------------------------------------------------
+
+
+def test_dataset_has_negative_labels() -> None:
+    """评估集要有负例——只标「该命中什么」量不出假阳性。"""
+    cases = load_retrieval_cases(DATASET)
+
+    assert any(case.forbidden_sources for case in cases)
+
+
+def test_forbidden_and_expected_cannot_overlap(tmp_path: Path) -> None:
+    """同一个来源既是期望又是负例——数据集自相矛盾，要报错。"""
+    path = tmp_path / "broken.json"
+    path.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "query": "闭包",
+                        "expected_sources": ["a.md"],
+                        "forbidden_sources": ["a.md"],
+                    },
+                ],
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="期望来源与负例重叠"):
+        load_retrieval_cases(path)
+
+
+def test_false_positive_rate_counts_returned_negatives() -> None:
+    """被带回来的负例要计入假阳性率。"""
+    cases = load_retrieval_cases(DATASET)
+    embedder = HashingEmbedder(dimension=256)
+    retriever = _index(_corpus(), default_chunking_policy(), embedder)
+
+    metrics = asyncio.run(evaluate_retrieval(retriever, cases))
+
+    violations = sum(len(result.violated_sources) for result in metrics.results)
+    negatives = sum(len(case.forbidden_sources) for case in cases)
+    assert negatives > 0
+    assert metrics.false_positive_rate == violations / negatives
+
+
+def test_violated_negative_is_visible_per_case() -> None:
+    """哪条负例被带回来了要能查。"""
+    cases = load_retrieval_cases(DATASET)
+    embedder = HashingEmbedder(dimension=256)
+    retriever = _index(_corpus(), default_chunking_policy(), embedder)
+
+    metrics = asyncio.run(evaluate_retrieval(retriever, cases))
+
+    for result in metrics.results:
+        assert set(result.violated_sources) <= set(result.case.forbidden_sources)
+
+
+def test_complete_rate_uses_the_strict_criterion() -> None:
+    """找全率是严格口径：期望来源要全部在前 5 条里。"""
+    cases = [
+        RetrievalCase(query="闭包", expected_sources=("closures.md", "scopes.md")),
+    ]
+    embedder = HashingEmbedder(dimension=256)
+    retriever = _index(_corpus(), default_chunking_policy(), embedder)
+
+    metrics = asyncio.run(evaluate_retrieval(retriever, cases))
+
+    assert metrics.complete_rate_at_5 in (0.0, 1.0)
+    if metrics.complete_rate_at_5 == 1.0:
+        assert metrics.results[0].is_complete
+        assert not metrics.results[0].missing_sources

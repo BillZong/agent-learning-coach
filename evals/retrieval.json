@@ -1,72 +1,131 @@
 {
   "version": 1,
-  "description": "检索评估集：**人工合成**的来源粒度用例。它能验证「机制对不对」（切分策略、过滤、排序），**不能**验证「真实学习者会不会这样问」——本项目还没有真实用户提问。相关性的粒度是**来源**（文件名），不是切片：切片 id 会随切分参数变化，改一次策略整个数据集就失效，来源不会。",
+  "description": "检索评估集：**人工合成**的来源粒度用例。它能验证「机制对不对」（切分策略、过滤、排序），**不能**验证「真实学习者会不会这样问」——本项目还没有真实用户提问。相关性的粒度是**来源**（文件名），不是切片：切片 id 会随切分参数变化，改一次策略整个数据集就失效，来源不会。负例（forbidden_sources）用来量**假阳性**：只标「该命中什么」的评估集量不出「多带回来的东西」。",
   "cases": [
     {
       "query": "闭包是什么",
-      "expected_sources": ["closures.md"],
+      "expected_sources": [
+        "closures.md"
+      ],
       "category": "lexical",
-      "note": "词面直问：查询与目标共享实词（闭包）。任何嵌入都该命中——这是基线。"
+      "note": "词面直问：查询与目标共享实词（闭包）。任何嵌入都该命中——这是基线。 负例：reference.md（不该被带回来）。",
+      "forbidden_sources": [
+        "reference.md"
+      ]
     },
     {
       "query": "函数返回之后为什么还能用到里面的变量",
-      "expected_sources": ["closures.md"],
+      "expected_sources": [
+        "closures.md"
+      ],
       "category": "semantic",
-      "note": "换个说法问同一件事：只有真正理解语义的嵌入才命得中。"
+      "note": "换个说法问同一件事：只有真正理解语义的嵌入才命得中。 负例：reference.md（不该被带回来）。",
+      "forbidden_sources": [
+        "reference.md"
+      ]
     },
     {
       "query": "闭包和作用域是什么关系",
-      "expected_sources": ["closures.md", "scopes.md"],
+      "expected_sources": [
+        "closures.md",
+        "scopes.md"
+      ],
       "category": "multi",
-      "note": "跨两个来源：用来测**召回**——只找到一份也算命中，但没找全。"
+      "note": "跨两个来源：用来测**召回**——只找到一份也算命中，但没找全。 负例：reference.md（不该被带回来）。",
+      "forbidden_sources": [
+        "reference.md"
+      ]
     },
     {
       "query": "变量在什么时候被绑定",
-      "expected_sources": ["scopes.md"],
+      "expected_sources": [
+        "scopes.md"
+      ],
       "category": "lexical",
-      "note": "词面直问作用域那份材料。"
+      "note": "词面直问作用域那份材料。 负例：reference.md（不该被带回来）。",
+      "forbidden_sources": [
+        "reference.md"
+      ]
     },
     {
       "query": "怎么给函数加上计时和日志",
-      "expected_sources": ["decorators.md"],
+      "expected_sources": [
+        "decorators.md"
+      ],
       "category": "semantic",
-      "note": "用「用途」而不是「装饰器」这个词提问。"
+      "note": "用「用途」而不是「装饰器」这个词提问。 负例：scopes.md（不该被带回来）。",
+      "forbidden_sources": [
+        "scopes.md"
+      ]
     },
     {
       "query": "装饰器怎么实现",
-      "expected_sources": ["decorators.md"],
+      "expected_sources": [
+        "decorators.md"
+      ],
       "category": "lexical",
-      "note": "词面直问装饰器那份材料。"
+      "note": "词面直问装饰器那份材料。 负例：scopes.md（不该被带回来）。",
+      "forbidden_sources": [
+        "scopes.md"
+      ]
     },
     {
       "query": "第三题问的是什么",
-      "expected_sources": ["exercises.md"],
+      "expected_sources": [
+        "exercises.md"
+      ],
       "category": "lexical",
-      "note": "词面直问习题那份材料。"
+      "note": "词面直问习题那份材料。 负例：demo.py（不该被带回来）。",
+      "forbidden_sources": [
+        "demo.py"
+      ]
     },
     {
       "query": "怎么保留被包装函数的函数名",
-      "expected_sources": ["reference.md"],
+      "expected_sources": [
+        "reference.md"
+      ],
       "category": "semantic",
-      "note": "问的是 `functools.wraps` 这件事，但一个字都没提它——只有理解语义的嵌入才命得中。"
+      "note": "问的是 `functools.wraps` 这件事，但一个字都没提它——只有理解语义的嵌入才命得中。 负例：closures.md（不该被带回来）。",
+      "forbidden_sources": [
+        "closures.md"
+      ]
     },
     {
       "query": "浅拷贝和深拷贝有什么区别",
-      "expected_sources": ["reference.md"],
+      "expected_sources": [
+        "reference.md"
+      ],
       "category": "semantic",
-      "note": "同上：参考资料里没有「浅拷贝」这个词。"
+      "note": "同上：参考资料里没有「浅拷贝」这个词。 负例：demo.py、exercises.md（不该被带回来）。",
+      "forbidden_sources": [
+        "demo.py",
+        "exercises.md"
+      ]
     },
     {
       "query": "代码里的 counter 是怎么计数的",
-      "expected_sources": ["demo.py"],
+      "expected_sources": [
+        "demo.py"
+      ],
       "category": "lexical",
-      "note": "代码材料：词面直问。那份材料是 .py，按顶层定义切。"
+      "note": "代码材料：词面直问。那份材料是 .py，按顶层定义切。 负例：reference.md（不该被带回来）。",
+      "forbidden_sources": [
+        "reference.md"
+      ]
     },
     {
       "query": "闭包 作用域 装饰器",
-      "expected_sources": ["closures.md", "scopes.md", "decorators.md"],
+      "expected_sources": [
+        "closures.md",
+        "scopes.md",
+        "decorators.md"
+      ],
       "category": "multi",
-      "note": "三个词各指向一份材料：这是**召回**最严苛的用例——找全了才算全。"
+      "note": "三个词各指向一份材料：这是**召回**最严苛的用例——找全了才算全。 负例：reference.md（不该被带回来）。",
+      "forbidden_sources": [
+        "reference.md"
+      ]
     }
   ]
 }

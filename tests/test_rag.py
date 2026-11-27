@@ -31,6 +31,7 @@ import pytest
 from agent_learning_coach.core.llm.errors import LLMError
 from agent_learning_coach.core.rag import (
     Chunk,
+    CodeChunker,
     DirectoryLoader,
     Document,
     FixedSizeChunker,
@@ -46,9 +47,19 @@ from agent_learning_coach.core.rag import (
 PG_DSN = "postgresql://localhost:5432/agent_learning_coach_test"
 
 
-def _document(text: str = "闭包是函数连同它引用的外部变量。", *, source: str = "a.md") -> Document:
+def _document(
+    text: str = "闭包是函数连同它引用的外部变量。",
+    *,
+    source: str = "a.md",
+    metadata: dict[str, object] | None = None,
+) -> Document:
     """构造一份文档。"""
-    return Document(id=document_id(source), text=text, source=source)
+    return Document(
+        id=document_id(source),
+        text=text,
+        source=source,
+        metadata=metadata or {},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +198,35 @@ def test_recursive_chunker_handles_a_very_long_line() -> None:
 
     assert len(chunks) == 5
     assert all(len(chunk.text) <= 100 for chunk in chunks)
+
+
+def test_oversized_unit_is_marked_as_degraded() -> None:
+    """超限单元被硬切时，切片要带降级标记——降级不该是静默的。"""
+    document = _document("X" * 500)
+
+    chunks = RecursiveChunker(size=100, overlap=0).split(document)
+
+    assert all(chunk.metadata.get("oversized_unit") is True for chunk in chunks)
+
+
+def test_normal_chunks_are_not_marked_as_degraded() -> None:
+    """正常切分不带降级标记。"""
+    document = _document("第一段。\n\n第二段。")
+
+    chunks = RecursiveChunker(size=250, overlap=0).split(document)
+
+    assert all("oversized_unit" not in chunk.metadata for chunk in chunks)
+
+
+def test_code_chunker_marks_oversized_definitions() -> None:
+    """巨大的函数被兜底切分时，降级标记要传下去。"""
+    body = "    x = 1\n" * 200
+    document = _document(f"def big():\n{body}", metadata={"kind": "code"})
+
+    chunks = CodeChunker(max_size=200).split(document)
+
+    assert len(chunks) > 1
+    assert all(chunk.metadata.get("oversized_unit") is True for chunk in chunks)
 
 
 @pytest.mark.parametrize("chunker", [FixedSizeChunker, RecursiveChunker])
@@ -404,6 +444,123 @@ def test_in_memory_store_applies_filters() -> None:
     )
 
     assert {hit.chunk.id for hit in hits} == {"c1", "c3"}
+
+
+def test_in_memory_store_applies_not_operator() -> None:
+    """取反：排除某一类材料。"""
+    store, _ = _store_with_chunks()
+    embedder = HashingEmbedder(dimension=256)
+
+    hits = asyncio.run(
+        store.search(
+            asyncio.run(embedder.embed(["闭包 外部变量"]))[0],
+            top_k=10,
+            filters={"topic": {"not": "动物"}},
+        )
+    )
+
+    assert {hit.chunk.id for hit in hits} == {"c1", "c3"}
+
+
+def test_in_memory_store_applies_all_operator() -> None:
+    """同时包含：元数据里的标签要同时包含给定的几个。"""
+    store = InMemoryVectorStore()
+    embedder = HashingEmbedder(dimension=256)
+    chunks = [
+        Chunk(
+            id="c1",
+            document_id="d1",
+            text="闭包",
+            index=0,
+            source="a.md",
+            metadata={"tags": ["函数", "闭包"]},
+        ),
+        Chunk(
+            id="c2",
+            document_id="d1",
+            text="猫",
+            index=1,
+            source="b.md",
+            metadata={"tags": ["动物"]},
+        ),
+        Chunk(
+            id="c3",
+            document_id="d1",
+            text="递归",
+            index=2,
+            source="c.md",
+            metadata={"tags": ["函数", "闭包", "递归"]},
+        ),
+    ]
+    asyncio.run(store.add(chunks, asyncio.run(embedder.embed([c.text for c in chunks]))))
+
+    hits = asyncio.run(
+        store.search(
+            asyncio.run(embedder.embed(["闭包"]))[0],
+            top_k=10,
+            filters={"tags": {"all": ["函数", "闭包"]}},
+        )
+    )
+
+    assert {hit.chunk.id for hit in hits} == {"c1", "c3"}
+
+
+def test_not_operator_keeps_chunks_without_the_key() -> None:
+    """键不存在的切片取反后要留下——「没有这个字段」不等于「是这个值」。"""
+    store = InMemoryVectorStore()
+    embedder = HashingEmbedder(dimension=256)
+    chunks = [
+        Chunk(
+            id="c1",
+            document_id="d1",
+            text="闭包",
+            index=0,
+            source="a.md",
+            metadata={"topic": "函数"},
+        ),
+        Chunk(id="c2", document_id="d1", text="猫", index=1, source="b.md", metadata={}),
+    ]
+    asyncio.run(store.add(chunks, asyncio.run(embedder.embed([c.text for c in chunks]))))
+
+    hits = asyncio.run(
+        store.search(
+            asyncio.run(embedder.embed(["闭包"]))[0],
+            top_k=10,
+            filters={"topic": {"not": "动物"}},
+        )
+    )
+
+    assert {hit.chunk.id for hit in hits} == {"c1", "c2"}
+
+
+def test_all_operator_rejects_a_non_sequence_operand() -> None:
+    """all 的操作数不是序列时报错——不能默默当成别的意思。"""
+    store, _ = _store_with_chunks()
+    embedder = HashingEmbedder(dimension=256)
+
+    with pytest.raises(ValueError, match="操作数必须是序列"):
+        asyncio.run(
+            store.search(
+                asyncio.run(embedder.embed(["闭包"]))[0],
+                top_k=10,
+                filters={"tags": {"all": "函数"}},
+            )
+        )
+
+
+def test_unknown_operator_is_rejected() -> None:
+    """未知的操作符报错——不能默默当成字面字典，然后一条也搜不出来。"""
+    store, _ = _store_with_chunks()
+    embedder = HashingEmbedder(dimension=256)
+
+    with pytest.raises(ValueError, match="未知的过滤操作符"):
+        asyncio.run(
+            store.search(
+                asyncio.run(embedder.embed(["闭包"]))[0],
+                top_k=10,
+                filters={"topic": {"neq": "动物"}},
+            )
+        )
 
 
 def test_in_memory_store_deletes_a_document() -> None:

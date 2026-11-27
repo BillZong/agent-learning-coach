@@ -33,7 +33,7 @@ import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 
 from agent_learning_coach.core.rag.types import Chunk, Document
 
@@ -51,6 +51,19 @@ DEFAULT_SEPARATORS: tuple[str, ...] = (
 
 末尾的空串是**兜底**：按字符硬切，保证任何文本都能被切开。
 """
+
+
+class _Atom(NamedTuple):
+    """切分过程中的一个原子片段。
+
+    **``degraded`` 标记「这一段是被硬切出来的」**——原结构已经破了（文本里没有
+    可用的分隔符，只能从字符层面断开）。上限是硬不变量，**破坏结构有时不可避免**；
+    但**降级不该是静默的**：它必须被记下来，否则下游看到的是一块「看起来完整」的
+    碎片。
+    """
+
+    text: str
+    degraded: bool = False
 
 
 def chunk_id(document_id_value: str, index: int) -> str:
@@ -187,20 +200,28 @@ class RecursiveChunker:
             raise ValueError("overlap 必须满足 0 <= overlap < size")
 
         pieces = self._merge(self._atoms(document.text, list(self.separators)))
-        return [
-            Chunk(
-                id=chunk_id(document.id, index),
-                document_id=document.id,
-                text=piece.strip(),
-                index=index,
-                source=document.source,
-                metadata=dict(document.metadata),
+        chunks: list[Chunk] = []
+        for index, piece in enumerate(pieces):
+            text = piece.text.strip()
+            if not text:
+                continue
+            metadata = dict(document.metadata)
+            if piece.degraded:
+                # 降级是可见的：这块文本没有可用的分隔符，只能硬切，结构已破。
+                metadata["oversized_unit"] = True
+            chunks.append(
+                Chunk(
+                    id=chunk_id(document.id, index),
+                    document_id=document.id,
+                    text=text,
+                    index=index,
+                    source=document.source,
+                    metadata=metadata,
+                ),
             )
-            for index, piece in enumerate(pieces)
-            if piece.strip()
-        ]
+        return chunks
 
-    def _atoms(self, text: str, separators: list[str]) -> list[str]:
+    def _atoms(self, text: str, separators: list[str]) -> list[_Atom]:
         """把文本切成不超过 ``size`` 的原子片段。
 
         Args:
@@ -208,54 +229,66 @@ class RecursiveChunker:
             separators: 剩余可用的分隔符（从粗到细）。
 
         Returns:
-            原子片段列表。
+            原子片段列表。硬切出来的片段带 ``degraded`` 标记。
         """
         if not text.strip():
             return []
         if len(text) <= self.size:
-            return [text]
+            return [_Atom(text)]
         for index, separator in enumerate(separators):
             if separator == "":
                 break
             if separator not in text:
                 continue
             parts = text.split(separator)
-            atoms: list[str] = []
+            atoms: list[_Atom] = []
             for part_index, part in enumerate(parts):
                 # 分隔符跟随前一段，保留原文的标点
                 suffix = separator if part_index < len(parts) - 1 else ""
                 candidate = part + suffix
                 if len(candidate) <= self.size:
-                    atoms.append(candidate)
+                    atoms.append(_Atom(candidate))
                 else:
                     atoms.extend(self._atoms(part, separators[index + 1 :]))
             return atoms
-        return [text[i : i + self.size] for i in range(0, len(text), self.size)]
+        # 兜底：字符级硬切。结构已经破了——标记出来。
+        return [
+            _Atom(text[i : i + self.size], degraded=True) for i in range(0, len(text), self.size)
+        ]
 
-    def _merge(self, atoms: list[str]) -> list[str]:
+    def _merge(self, atoms: list[_Atom]) -> list[_Atom]:
         """把原子片段合并成不超过 ``size`` 的块。
 
         Args:
             atoms: 原子片段列表。
 
         Returns:
-            块列表。相邻块之间保留 ``overlap`` 个字符的重叠。
+            块列表。相邻块之间保留 ``overlap`` 个字符的重叠。含硬切片段的块带
+            ``degraded`` 标记。
         """
-        chunks: list[str] = []
+        chunks: list[_Atom] = []
         buffer = ""
+        degraded = False
         for atom in atoms:
             if not buffer:
-                buffer = atom
+                buffer = atom.text
+                degraded = atom.degraded
                 continue
-            if len(buffer) + len(atom) <= self.size:
-                buffer += atom
+            if len(buffer) + len(atom.text) <= self.size:
+                buffer += atom.text
+                degraded = degraded or atom.degraded
                 continue
-            chunks.append(buffer)
+            chunks.append(_Atom(buffer, degraded))
             tail = buffer[-self.overlap :] if self.overlap else ""
             # 重叠部分加上新片段不能超过上限——超了就只用新片段
-            buffer = tail + atom if len(tail) + len(atom) <= self.size else atom
+            if len(tail) + len(atom.text) <= self.size:
+                buffer = tail + atom.text
+                degraded = atom.degraded
+            else:
+                buffer = atom.text
+                degraded = atom.degraded
         if buffer:
-            chunks.append(buffer)
+            chunks.append(_Atom(buffer, degraded))
         return chunks
 
 
@@ -320,7 +353,16 @@ class CodeChunker:
                     metadata=document.metadata,
                 ),
             ):
-                chunks.append(_make_chunk(document, sub.text, len(chunks)))
+                # 这个定义（这道题）超了上限，被迫拆开——**降级要可见**。
+                # 兜底切分器的元数据也带过来（它可能还标了「字符级硬切」）。
+                chunks.append(
+                    _make_chunk(
+                        document,
+                        sub.text,
+                        len(chunks),
+                        metadata={**sub.metadata, "oversized_unit": True},
+                    ),
+                )
         return chunks
 
 
@@ -381,7 +423,16 @@ class ExerciseChunker:
                     metadata=document.metadata,
                 ),
             ):
-                chunks.append(_make_chunk(document, sub.text, len(chunks)))
+                # 这个定义（这道题）超了上限，被迫拆开——**降级要可见**。
+                # 兜底切分器的元数据也带过来（它可能还标了「字符级硬切」）。
+                chunks.append(
+                    _make_chunk(
+                        document,
+                        sub.text,
+                        len(chunks),
+                        metadata={**sub.metadata, "oversized_unit": True},
+                    ),
+                )
         return chunks
 
 
@@ -441,13 +492,20 @@ def default_chunking_policy() -> PolicyChunker:
     )
 
 
-def _make_chunk(document: Document, text: str, index: int) -> Chunk:
+def _make_chunk(
+    document: Document,
+    text: str,
+    index: int,
+    *,
+    metadata: Mapping[str, Any] | None = None,
+) -> Chunk:
     """构造一个切片。
 
     Args:
         document: 所属文档。
         text: 切片正文。
         index: 文档内序号。
+        metadata: 覆盖用的元数据。为 None 时用文档的元数据。
 
     Returns:
         切片。
@@ -458,7 +516,7 @@ def _make_chunk(document: Document, text: str, index: int) -> Chunk:
         text=text,
         index=index,
         source=document.source,
-        metadata=dict(document.metadata),
+        metadata=dict(metadata if metadata is not None else document.metadata),
     )
 
 

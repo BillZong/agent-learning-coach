@@ -291,6 +291,26 @@ def test_retrieval_cache_distinguishes_filters() -> None:
     assert len(cache) == 2
 
 
+def test_retrieval_cache_distinguishes_top_k() -> None:
+    """top_k 不同就是不同的查询——缓存少了一个维度就会给错结果。"""
+    store, retriever = _store_with_materials()
+    registry = ToolRegistry()
+    registry.register(SearchCourseMaterialTool(retriever))
+    cache = RetrievalCache()
+    dispatcher = ToolDispatcher(registry, before_hooks=[cache], after_hooks=[cache.store])
+
+    first = asyncio.run(
+        dispatcher.dispatch("search_course_material", {"query": "闭包", "top_k": 1}, ToolContext())
+    )
+    second = asyncio.run(
+        dispatcher.dispatch("search_course_material", {"query": "闭包", "top_k": 3}, ToolContext())
+    )
+
+    assert len(first.data["results"]) == 1
+    assert len(second.data["results"]) == 3
+    assert len(cache) == 2
+
+
 def test_compressor_shortens_long_results() -> None:
     """结果超预算时按相关度截断。"""
     store, retriever = _store_with_materials()

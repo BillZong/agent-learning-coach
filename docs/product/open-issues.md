@@ -210,6 +210,8 @@ Day 66（原 64）Documentation & Demo
 
 ## 相关文档
 
+- **Phase 2（RAG）的遗留台账**：[RAG 工程回顾（Day 27–30）](./rag-engineering-review.md)
+  ——本台账的规则（§6）在 Phase 2 继续适用，但条目已迁到那份文档里。
 - [Phase 0 验收](phase-0-acceptance.md)、[Phase 1 验收](phase-1-acceptance.md)
 - [路线图](roadmap.md)、[MVP 定义](mvp.md)
 - [系统架构](../architecture/architecture.md)、[架构决策记录](../architecture/decisions/README.md)

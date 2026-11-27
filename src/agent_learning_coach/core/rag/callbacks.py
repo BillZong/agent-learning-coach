@@ -31,6 +31,27 @@ from typing import Any
 from agent_learning_coach.core.tools.types import ToolContext, ToolOutcome
 
 
+def _canonical(value: Any) -> str:
+    """把参数值规范成稳定的字符串。
+
+    **键的稳定性比键的可读性重要**：两个语义相同的参数必须得到同一个键
+    （否则是缓存未命中，不是错答案）；两个语义不同的参数必须得到不同的键
+    （否则是错答案）。
+
+    Args:
+        value: 任意参数值。
+
+    Returns:
+        规范化的字符串。映射按键排序，序列保序。
+    """
+    if isinstance(value, Mapping):
+        items = ",".join(f"{key!r}:{_canonical(item)}" for key, item in sorted(value.items()))
+        return "{" + items + "}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(_canonical(item) for item in value) + "]"
+    return repr(value)
+
+
 @dataclass
 class RetrievalCache:
     """检索结果缓存（执行前钩子）。
@@ -38,8 +59,12 @@ class RetrievalCache:
     **只缓存成功的检索**。失败的检索不缓存——否则一次偶发失败会被后续所有
     同查询复用，把瞬时故障变成持续故障。
 
-    缓存键是「工具名 + 查询 + 过滤条件」。少了过滤条件，同一个查询在不同
-    过滤下会串味——那是**错答案**，比缓存未命中严重得多。
+    缓存键是「工具名 + 全部参数」。**结果由哪些参数决定，键就得包含哪些**——
+    少一个维度就会串味：同一个查询但 top_k 不同、或过滤条件不同，串起来给的是
+    **错答案**，比缓存未命中严重得多。
+
+    （这条不是假设。原来的键只含「查询 + 过滤」，漏了 top_k：先查 top_k=1
+    再查 top_k=3，第二次直接拿回了第一条的结果——返回条数是错的。）
     """
 
     max_entries: int = 32
@@ -57,10 +82,7 @@ class RetrievalCache:
         Returns:
             缓存键。
         """
-        query = str(arguments.get("query", ""))
-        filters = arguments.get("filters")
-        filter_part = repr(sorted(filters.items())) if isinstance(filters, Mapping) else ""
-        return f"{tool_name}|{query}|{filter_part}"
+        return f"{tool_name}|{_canonical(arguments)}"
 
     def __call__(
         self,

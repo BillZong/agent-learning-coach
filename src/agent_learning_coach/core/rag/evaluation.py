@@ -75,6 +75,16 @@ class RetrievalCase:
     note: str = ""
     """这条用例在考什么。"""
 
+    forbidden_sources: tuple[str, ...] = ()
+    """**不该**被带回来的来源文件名（负例）。
+
+    **为什么需要负例**：只标「该命中什么」的评估集量不出**假阳性**——检索把一堆
+    无关材料一起带回来时，命中率照样漂亮。而**合成查询的偏差恰恰在这里**：问题
+    是照着文档写的，于是与它共享词的其他文档也会被带回来。
+
+    负例让这件事可量化：**被带回来的负例占负例总数的比例**（假阳性率）。
+    """
+
     @classmethod
     def from_dict(cls, item: Mapping[str, Any], *, index: int) -> RetrievalCase:
         """从 JSON 条目构造用例。
@@ -95,11 +105,18 @@ class RetrievalCase:
         expected = item.get("expected_sources")
         if not isinstance(expected, list) or not all(isinstance(item, str) for item in expected):
             raise ValueError(f"第 {index} 条检索用例的 expected_sources 必须是字符串列表")
+        forbidden = item.get("forbidden_sources", [])
+        if not isinstance(forbidden, list) or not all(isinstance(item, str) for item in forbidden):
+            raise ValueError(f"第 {index} 条检索用例的 forbidden_sources 必须是字符串列表")
+        overlap = set(forbidden) & set(expected)
+        if overlap:
+            raise ValueError(f"第 {index} 条检索用例的期望来源与负例重叠：{sorted(overlap)}")
         return cls(
             query=query,
             expected_sources=tuple(expected),
             category=str(item.get("category", "")),
             note=str(item.get("note", "")),
+            forbidden_sources=tuple(forbidden),
         )
 
 
@@ -122,10 +139,39 @@ class RetrievalCaseResult:
     missing_sources: tuple[str, ...]
     """应命中却没找到的来源文件名。"""
 
+    violated_sources: tuple[str, ...]
+    """**被带回来的负例**——本不该出现在结果里的来源。"""
+
+    matched_ranks: tuple[tuple[str, int], ...]
+    """命中来源与它的排名（按排名顺序）。"""
+
     @property
     def is_hit(self) -> bool:
-        """有没有命中。"""
+        """有没有命中。
+
+        **口径**：至少一个期望来源进了 top-k 即算命中（宽松口径）。
+        """
+
         return self.rank is not None
+
+    @property
+    def is_complete(self) -> bool:
+        """期望来源**全部**命中（严格口径）。
+
+        **多来源用例该多严**：两个口径都报——宽松的「命中率」与严格的「找全率」。
+        只报一个会骗人：找对一份材料却漏了另一份，在宽松口径下是满分。
+        """
+
+        return not self.missing_sources
+
+    @property
+    def is_complete_at_5(self) -> bool:
+        """期望来源全部在前 5 条里命中。"""
+        ranks = dict(self.matched_ranks)
+        return all(
+            ranks.get(source) is not None and ranks[source] <= 5
+            for source in self.case.expected_sources
+        )
 
     @property
     def recall(self) -> float:
@@ -179,6 +225,23 @@ class RetrievalMetrics:
     （嵌入质量）或过滤太严。
     """
 
+    complete_rate_at_5: float = 0.0
+    """**找全率@5**：期望来源全部落在前 5 条里的用例占比（严格口径）。
+
+    **多来源用例该多严——两个口径都报**：宽松的「命中率」（命中一个就算）与严格
+    的「找全率」（全中才算）。只报前者会骗人：找对一份材料却漏了另一份，在宽松
+    口径下是满分。
+    """
+
+    false_positive_rate: float = 0.0
+    """**假阳性率**：被带回来的负例占负例总数的比例。
+
+    **它量的是合成查询的偏差**：问题是照着文档写的，于是与它共享词的其他文档
+    也会被带回来。没有负例时这个指标恒为 0——**看不出偏差**。
+
+    （没有负例时它不是「没问题」，而是「没量」。）
+    """
+
     misses: tuple[str, ...] = ()
     """完全没命中的查询。"""
 
@@ -200,7 +263,9 @@ class RetrievalMetrics:
             f"hit@3 {self.hit_rate_at_3:.2f}，"
             f"hit@5 {self.hit_rate_at_5:.2f}，"
             f"MRR {self.mrr:.2f}，"
-            f"召回 {self.recall:.2f}"
+            f"召回 {self.recall:.2f}，"
+            f"找全率 {self.complete_rate_at_5:.2f}，"
+            f"假阳性率 {self.false_positive_rate:.2f}"
         )
 
 
@@ -227,7 +292,10 @@ def _case_result(case: RetrievalCase, hits: Sequence[ScoredChunk]) -> RetrievalC
         用例结果。
     """
     wanted = set(case.expected_sources)
+    forbidden = set(case.forbidden_sources)
     matched: list[str] = []
+    matched_ranks: list[tuple[str, int]] = []
+    violated: list[str] = []
     rank: int | None = None
     for index, hit in enumerate(hits, start=1):
         source = _basename(hit.chunk.source)
@@ -236,11 +304,16 @@ def _case_result(case: RetrievalCase, hits: Sequence[ScoredChunk]) -> RetrievalC
                 rank = index
             if source not in matched:
                 matched.append(source)
+                matched_ranks.append((source, index))
+        if source in forbidden and source not in violated:
+            violated.append(source)
     return RetrievalCaseResult(
         case=case,
         rank=rank,
         matched_sources=tuple(matched),
         missing_sources=tuple(sorted(wanted - set(matched))),
+        violated_sources=tuple(violated),
+        matched_ranks=tuple(matched_ranks),
     )
 
 
@@ -272,6 +345,8 @@ def _metrics_from(
         return sum(1 for result in results if result.rank is not None and result.rank <= limit)
 
     reciprocal = sum(1.0 / result.rank for result in results if result.rank is not None)
+    forbidden_total = sum(len(result.case.forbidden_sources) for result in results)
+    forbidden_hit = sum(len(result.violated_sources) for result in results)
     grouped: dict[str, list[RetrievalCaseResult]] = {}
     for result in results:
         grouped.setdefault(result.case.category, []).append(result)
@@ -283,6 +358,8 @@ def _metrics_from(
         hit_rate_at_5=hit_within(5) / total,
         mrr=reciprocal / total,
         recall=sum(result.recall for result in results) / total,
+        complete_rate_at_5=sum(1 for result in results if result.is_complete_at_5) / total,
+        false_positive_rate=(forbidden_hit / forbidden_total) if forbidden_total else 0.0,
         misses=tuple(result.case.query for result in results if result.rank is None),
         results=tuple(results),
         by_category=(
@@ -346,15 +423,16 @@ class StrategyComparison:
             表格文本。
         """
         lines = [
-            "| 策略 | 切片数 | hit@1 | hit@3 | hit@5 | MRR | 召回 |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| 策略 | 切片数 | hit@1 | hit@3 | hit@5 | MRR | 召回 | 找全率 | 假阳性率 |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for row in self.rows:
             metrics = row.metrics
             lines.append(
                 f"| {row.name} | {row.chunk_count} | "
                 f"{metrics.hit_rate_at_1:.2f} | {metrics.hit_rate_at_3:.2f} | "
-                f"{metrics.hit_rate_at_5:.2f} | {metrics.mrr:.2f} | {metrics.recall:.2f} |",
+                f"{metrics.hit_rate_at_5:.2f} | {metrics.mrr:.2f} | {metrics.recall:.2f} | "
+                f"{metrics.complete_rate_at_5:.2f} | {metrics.false_positive_rate:.2f} |",
             )
         return "\n".join(lines)
 

@@ -154,9 +154,17 @@ def show_failures(cases, documents) -> None:
         print(f"  {result.describe()}")
         print(f"    类别：{result.case.category}｜{result.case.note}")
     print()
+
+    violated = [result for result in metrics.results if result.violated_sources]
+    print(f"被带回来的负例 {len(violated)} 条（假阳性率 {metrics.false_positive_rate:.2f}）：")
+    for result in violated:
+        print(f"  {result.case.query}——不该来的是 {list(result.case.forbidden_sources)}")
+        print(f"    实际带回来：{list(result.violated_sources)}")
+    print()
     print("（**只给汇总数字的评估没法指导改进**——得看见哪条没中、为什么）")
     print("（词面用例未命中 = 索引或过滤坏了）")
-    print("（语义用例未命中 = 嵌入不够语义——占位哈希嵌入必然如此）\n")
+    print("（语义用例未命中 = 嵌入不够语义——占位哈希嵌入必然如此）")
+    print("（**假阳性率量的是合成查询的偏差**：问题照着文档写，与它共享词的材料也会被带回来）\n")
 
 
 def show_strategies(cases, documents) -> None:
@@ -183,7 +191,7 @@ def show_strategies(cases, documents) -> None:
     print()
     print("（**占位哈希嵌入有偏差**：块越大越容易与查询共享词 → 这个对比偏向大块）")
     print("（所以**只能看趋势，不能看绝对值**；要可信的结论需要真嵌入模型）")
-    print("（而且语料只有五份、查询十条——这个规模能看出方向，说明不了上限）\n")
+    print("（而且语料只有六份、查询十一条——这个规模能看出方向，说明不了上限）\n")
 
 
 def main() -> None:

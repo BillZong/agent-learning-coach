@@ -50,3 +50,4 @@
 | [0029](0029-chunking-strategy.md) | 切分策略——按材料类型选，以及参数如何被测试锁定 | 已接受 |
 | [0030](0030-retrieval-filtering-and-index.md) | 检索过滤、top-k 与阈值的归属、索引方案的选择 | 已接受 |
 | [0031](0031-retrieval-evaluation.md) | 检索评估——评估集、命中率与召回、据此调整检索 | 已接受 |
+| [0032](0032-reranking-and-query-rewriting.md) | 重排、查询改写与多路召回——研究过了，现在不做 | 已接受 |

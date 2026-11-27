@@ -149,6 +149,59 @@ def test_sequence_filter_matches_any_element(store: PgVectorStore) -> None:
     assert sorted(hit.chunk.id for hit in hits) == ["c1", "c3"]
 
 
+def test_not_operator_excludes_a_value(store: PgVectorStore) -> None:
+    """取反：排除某一类材料。"""
+    asyncio.run(store.ensure_schema())
+    asyncio.run(store.add([_chunk("c1", "讲闭包", {"course_id": "c1"})], [[1.0, 0.0, 0.0]]))
+    asyncio.run(store.add([_chunk("c2", "讲别的", {"course_id": "c2"})], [[1.0, 0.0, 0.0]]))
+
+    hits = asyncio.run(
+        store.search([1.0, 0.0, 0.0], top_k=10, filters={"course_id": {"not": "c2"}}),
+    )
+
+    assert [hit.chunk.id for hit in hits] == ["c1"]
+
+
+def test_not_operator_keeps_rows_without_the_key(store: PgVectorStore) -> None:
+    """键不存在的行取反后要留下——与内存存储的语义一致。"""
+    asyncio.run(store.ensure_schema())
+    asyncio.run(store.add([_chunk("c1", "讲闭包", {"course_id": "c1"})], [[1.0, 0.0, 0.0]]))
+    asyncio.run(store.add([_chunk("c2", "讲别的", {})], [[1.0, 0.0, 0.0]]))
+
+    hits = asyncio.run(
+        store.search([1.0, 0.0, 0.0], top_k=10, filters={"course_id": {"not": "c2"}}),
+    )
+
+    assert sorted(hit.chunk.id for hit in hits) == ["c1", "c2"]
+
+
+def test_all_operator_requires_every_element(store: PgVectorStore) -> None:
+    """同时包含：标签要同时含有给定的几个。"""
+    asyncio.run(store.ensure_schema())
+    asyncio.run(
+        store.add([_chunk("c1", "讲闭包", {"tags": ["函数", "闭包"]})], [[1.0, 0.0, 0.0]]),
+    )
+    asyncio.run(
+        store.add([_chunk("c2", "讲别的", {"tags": ["函数"]})], [[1.0, 0.0, 0.0]]),
+    )
+
+    hits = asyncio.run(
+        store.search([1.0, 0.0, 0.0], top_k=10, filters={"tags": {"all": ["函数", "闭包"]}}),
+    )
+
+    assert [hit.chunk.id for hit in hits] == ["c1"]
+
+
+def test_unknown_operator_is_rejected(store: PgVectorStore) -> None:
+    """写错的操作符要报错，而不是一条也搜不出来。"""
+    asyncio.run(store.ensure_schema())
+
+    with pytest.raises(ValueError, match="未知的过滤操作符"):
+        asyncio.run(
+            store.search([1.0, 0.0, 0.0], top_k=10, filters={"course_id": {"neq": "c1"}}),
+        )
+
+
 def test_min_score_drops_weak_hits(store: PgVectorStore) -> None:
     """阈值：低于它的结果不返回。"""
     asyncio.run(store.ensure_schema())
@@ -222,3 +275,29 @@ def test_missing_extension_gives_an_actionable_error() -> None:
             asyncio.run(storage.ensure_schema())
     finally:
         asyncio.run(_drop(bare.split("dbname=")[-1]))
+
+
+def test_connection_failure_is_reported_clearly() -> None:
+    """连不上数据库要说「连不上」——不是「扩展未安装」。"""
+    from agent_learning_coach.core.llm.errors import LLMError
+
+    storage = PgVectorStore("host=/tmp port=1 user=nobody dbname=nothing", dimension=3, table="t")
+
+    with pytest.raises(LLMError, match="连不上 PostgreSQL"):
+        asyncio.run(storage.ensure_schema())
+
+
+def test_connection_error_does_not_echo_the_password() -> None:
+    """错误信息不回显口令——它会进日志。"""
+    from agent_learning_coach.core.llm.errors import LLMError
+
+    storage = PgVectorStore(
+        "host=/tmp port=1 user=nobody dbname=nothing password=s3cret",
+        dimension=3,
+        table="t",
+    )
+
+    with pytest.raises(LLMError) as caught:
+        asyncio.run(storage.ensure_schema())
+
+    assert "s3cret" not in str(caught.value)

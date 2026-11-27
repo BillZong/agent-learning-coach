@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -66,7 +67,8 @@ class VectorStore(Protocol):
         Args:
             embedding: 查询向量。
             top_k: 最多返回几条。
-            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配。
+            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配，
+                映射可带 ``not``（取反）与 ``all``（同时包含全部）操作符。
             min_score: 相关度下限；低于它的结果不返回。
 
         Returns:
@@ -227,7 +229,8 @@ class InMemoryVectorStore:
         Args:
             embedding: 查询向量。
             top_k: 最多返回几条。
-            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配。
+            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配，
+                映射可带 ``not``（取反）与 ``all``（同时包含全部）操作符。
             min_score: 相关度下限；低于它的结果不返回。
 
         Returns:
@@ -312,10 +315,29 @@ class InMemoryVectorStore:
         return len(self._chunks)
 
 
+FILTER_OPERATORS = frozenset({"not", "all"})
+"""过滤条件里可用的操作符。
+
+**过滤值的形状决定语义**：
+
+| 形状 | 含义 |
+| ---- | ---- |
+| 标量 | 等值 |
+| 序列 | 「包含任一」 |
+| ``{"not": 值}`` | 取反 |
+| ``{"all": [值, ...]}`` | 「同时包含全部」 |
+
+**映射值一律按操作符解释**：写错操作符名会**报错**，而不是被当成一个普通字典值
+去匹配、然后一条也搜不出来（那是最难查的失败）。所以过滤值只有三种合法形状：
+标量、序列、操作符映射。
+"""
+
+
 def _matches(metadata: Mapping[str, Any], filters: Mapping[str, Any] | None) -> bool:
     """判断元数据是否满足全部过滤条件。
 
-    **值的类型决定语义**：标量等值匹配；序列按「包含任一」匹配。
+    **值的形状决定语义**：标量等值匹配；序列按「包含任一」匹配；映射可带
+    ``not``（取反）与 ``all``（同时包含全部）操作符。
 
     Args:
         metadata: 切片的元数据。
@@ -323,6 +345,9 @@ def _matches(metadata: Mapping[str, Any], filters: Mapping[str, Any] | None) -> 
 
     Returns:
         全部条件满足返回 True。
+
+    Raises:
+        ValueError: 过滤值的形状不合法。
     """
     if not filters:
         return True
@@ -334,16 +359,65 @@ def _matches_one(actual: Any, expected: Any) -> bool:
 
     Args:
         actual: 元数据里的实际值（键不存在时为 ``None``）。
-        expected: 期望值。序列表示「包含任一」。
+        expected: 期望值。序列表示「包含任一」；操作符映射表示取反或同时包含全部。
 
     Returns:
         满足返回 True。
+
+    Raises:
+        ValueError: 过滤值的形状不合法。
     """
+    if isinstance(expected, Mapping):
+        _check_operator_form(expected)
+        return all(_apply_operator(actual, op, operand) for op, operand in expected.items())
     if isinstance(expected, (list, tuple, set, frozenset)):
         if not isinstance(actual, (list, tuple, set, frozenset)):
             return False
         return any(item in actual for item in expected)
     return bool(actual == expected)
+
+
+def _check_operator_form(value: Mapping[str, Any]) -> None:
+    """检查操作符映射的形状。
+
+    Args:
+        value: 过滤值。
+
+    Raises:
+        ValueError: 映射为空、不含已知操作符，或含有未知操作符。
+    """
+    if not value:
+        raise ValueError("过滤条件的映射不能为空")
+    unknown = set(value) - FILTER_OPERATORS
+    if unknown:
+        raise ValueError(f"未知的过滤操作符：{sorted(unknown)[0]}")
+
+
+def _apply_operator(actual: Any, operator: str, operand: Any) -> bool:
+    """应用一个过滤操作符。
+
+    Args:
+        actual: 元数据里的实际值（键不存在时为 ``None``）。
+        operator: 操作符名（``not`` 或 ``all``）。
+        operand: 操作数。
+
+    Returns:
+        满足返回 True。
+
+    Raises:
+        ValueError: 操作数形状不合法。
+    """
+    if operator == "not":
+        if isinstance(operand, Mapping):
+            raise ValueError("过滤操作符 not 的操作数不能是映射")
+        return not _matches_one(actual, operand)
+    if operator == "all":
+        if not isinstance(operand, (list, tuple, set, frozenset)):
+            raise ValueError("过滤条件 all 的操作数必须是序列")
+        if not isinstance(actual, (list, tuple, set, frozenset)):
+            return False
+        return all(item in actual for item in operand)
+    raise ValueError(f"未知的过滤操作符：{operator}")
 
 
 PGVECTOR_EXTENSION_SQL = "CREATE EXTENSION IF NOT EXISTS vector;"
@@ -569,7 +643,8 @@ class PgVectorStore:
         Args:
             embedding: 查询向量。
             top_k: 最多返回几条。
-            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配。
+            filters: 元数据过滤。标量等值匹配，序列按包含任一匹配，
+                映射可带 ``not``（取反）与 ``all``（同时包含全部）操作符。
             min_score: 相关度下限；低于它的结果不返回。
 
         Returns:
@@ -583,7 +658,30 @@ class PgVectorStore:
         clauses: list[str] = []
         filter_params: list[Any] = []
         for key, value in (filters or {}).items():
-            if isinstance(value, (list, tuple, set, frozenset)):
+            if isinstance(value, Mapping):
+                _check_operator_form(value)
+                for operator, operand in value.items():
+                    if operator == "not":
+                        # 取反。标量取反必须用 COALESCE：键不存在时 `->>` 是 NULL，
+                        # `NOT (NULL = 'x')` 还是 NULL → 行被丢掉；而内存语义是
+                        # 「键不存在 → 不匹配 → 取反 → 保留」。两者必须一致。
+                        if isinstance(operand, Mapping):
+                            raise ValueError("过滤操作符 not 的操作数不能是映射")
+                        if isinstance(operand, (list, tuple, set, frozenset)):
+                            clauses.append("NOT (metadata -> %s ?| %s)")
+                            filter_params.extend([key, list(operand)])
+                        else:
+                            clauses.append("NOT COALESCE(metadata ->> %s = %s, FALSE)")
+                            filter_params.extend([key, str(operand)])
+                    else:
+                        # 「同时包含全部」：JSONB 的 @> 就是数组包含。
+                        if not isinstance(operand, (list, tuple, set, frozenset)):
+                            raise ValueError("过滤条件 all 的操作数必须是序列")
+                        clauses.append("metadata -> %s @> %s::jsonb")
+                        filter_params.extend(
+                            [key, json.dumps(list(operand), ensure_ascii=False)],
+                        )
+            elif isinstance(value, (list, tuple, set, frozenset)):
                 # 序列 → 「包含任一」：JSONB 的 ?| 算子查数组元素。
                 clauses.append("metadata -> %s ?| %s")
                 filter_params.extend([key, list(value)])
@@ -745,27 +843,85 @@ class PgVectorStore:
     async def _connect(self):  # type: ignore[no-untyped-def]
         """打开一条连接并注册 pgvector 适配。
 
+        **三种失败要分开说**：连不上数据库、扩展没建、扩展在但适配器注册失败——
+        三者的处置完全不同，报成同一句话等于让人猜。
+
         Yields:
             已注册的异步连接。
+
+        Raises:
+            LLMError: 连不上数据库，或 pgvector 不可用。
         """
         from pgvector.psycopg import register_vector_async
         from psycopg import AsyncConnection
 
         from agent_learning_coach.core.llm.errors import LLMError
 
-        conn = await AsyncConnection.connect(self.dsn)
+        try:
+            conn = await AsyncConnection.connect(self.dsn)
+        except Exception as exc:
+            # 不回显 DSN——连接串里可能有口令。
+            raise LLMError(f"连不上 PostgreSQL：{_safe_target(self.dsn)}（{exc}）") from exc
         try:
             try:
                 await register_vector_async(conn)
             except Exception as exc:
-                # 适配器注册要去查 vector 类型——扩展没建时它抛的话完全指不到
-                # 真正的原因。这里把它换成一句能照着做的话。
-                raise LLMError(
-                    f"pgvector 扩展未安装：请先执行 {PGVECTOR_EXTENSION_SQL}（见 migrations/）",
-                ) from exc
+                raise LLMError(await self._explain_registration_failure(conn, exc)) from exc
             yield conn
         finally:
             await conn.close()
+
+    async def _explain_registration_failure(self, conn: Any, exc: Exception) -> str:
+        """说清适配器注册为什么失败。
+
+        **先分辨「扩展没建」与「扩展在但注册失败」**：前者照着部署步骤做就行，后者
+        是版本不匹配之类的问题，两者的处置完全不同。
+
+        Args:
+            conn: 已连接的连接。
+            exc: 注册时的原始异常。
+
+        Returns:
+            能照着做的错误说明。
+        """
+        try:
+            row = await (await conn.cursor()).execute(
+                "SELECT 1 FROM pg_type WHERE typname = 'vector'",
+            )
+            exists = await row.fetchone() is not None
+        except Exception:
+            # 查不了就当「类型不在」——那句话至少能照着做。
+            exists = False
+        if not exists:
+            return (
+                f"pgvector 扩展未安装：请先执行 {PGVECTOR_EXTENSION_SQL}"
+                "（见 migrations/，需要超级用户权限）"
+            )
+        return (
+            f"pgvector 扩展在，但适配器注册失败：{exc}（检查 pgvector 与 psycopg 的版本是否匹配）"
+        )
+
+
+def _safe_target(dsn: str) -> str:
+    """从连接串里取出能安全显示的部分。
+
+    **不回显口令**：连接串可能带密码，错误信息会进日志。
+
+    Args:
+        dsn: 连接串。
+
+    Returns:
+        形如 ``host=localhost port=5432 dbname=rag``；解析不出来时只说类型。
+    """
+    parts: list[str] = []
+    for chunk in dsn.split():
+        key, _, value = chunk.partition("=")
+        if not value:
+            continue
+        if key.lower() in {"password", "passfile", "sslpassword"}:
+            continue
+        parts.append(f"{key}={value}")
+    return " ".join(parts) if parts else "（连接串无法解析）"
 
 
 def _json(metadata: Mapping[str, Any]) -> str:
