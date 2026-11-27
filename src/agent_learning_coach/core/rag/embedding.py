@@ -19,9 +19,10 @@ CI 都跑不了。
 from __future__ import annotations
 
 import hashlib
+import json
 import math
-from collections.abc import Sequence
-from typing import Protocol, runtime_checkable
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
@@ -50,6 +51,28 @@ class EmbeddingClient(Protocol):
             与输入一一对应的向量列表。
         """
         ...
+
+
+def _payload_hint(payload: Any) -> str:
+    """把厂商响应压成一句可读的提示。
+
+    **只取错误字段**（``error`` / ``base_resp`` / ``message``），并截断——
+    完整的响应可能很大，而且可能含回显的请求内容 ✓。
+
+    Args:
+        payload: 响应体。
+
+    Returns:
+        提示文本；没有可用信息时说明「响应里没有错误说明」。
+    """
+    if not isinstance(payload, Mapping):
+        return "响应不是对象"
+    for key in ("error", "base_resp", "message", "detail"):
+        value = payload.get(key)
+        if value:
+            text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            return text[:200]
+    return "响应里没有错误说明"
 
 
 class HashingEmbedder:
@@ -196,7 +219,10 @@ class OpenAICompatibleEmbedder:
 
         data = payload.get("data")
         if not isinstance(data, list) or not data:
-            raise LLMError("嵌入接口响应缺少 data 字段")
+            # **把厂商返回的内容带上**：不同厂商的嵌入接口形状不同（OpenAI 用
+            # input/data，有的用 texts/vectors）。只说「缺少 data 字段」会让人
+            # 以为是服务端坏了，而真正的原因（请求形状不对）就写在响应里。
+            raise LLMError(f"嵌入接口响应缺少 data 字段：{_payload_hint(payload)}")
 
         vectors: list[list[float]] = [[] for _ in texts]
         for item in data:

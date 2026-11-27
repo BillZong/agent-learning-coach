@@ -353,6 +353,23 @@ def test_openai_compatible_embedder_reports_malformed_response() -> None:
         asyncio.run(embedder.embed(["闭包"]))
 
 
+def test_openai_compatible_embedder_quotes_the_provider_error() -> None:
+    """错误信息要带上厂商返回的内容——真正的原因往往就写在那里。
+
+    实测教训：某厂商的嵌入接口要 ``texts`` 而不是 ``input``，适配器报的是
+    「缺少 data 字段」——那句话把人指向了服务端，而真正的原因在响应体里。
+    """
+    embedder = OpenAICompatibleEmbedder(
+        api_key="secret",
+        transport=_embedding_transport(
+            {"vectors": None, "base_resp": {"status_msg": "missing required parameter"}},
+        ),
+    )
+
+    with pytest.raises(LLMError, match="missing required parameter"):
+        asyncio.run(embedder.embed(["闭包"]))
+
+
 def test_openai_compatible_embedder_detects_dimension_change() -> None:
     """同一适配器返回不同维度时报错——混着不同维度的向量，检索毫无意义。"""
     responses = [
