@@ -117,7 +117,7 @@ from agent_learning_coach.core.agent import AgentConfig, TokenPrice
 config = AgentConfig(
     max_total_tokens=50_000,
     max_cost=2.0,
-    prices={"minimax-cn/MiniMax-M2": TokenPrice(input_per_1k=0.01, output_per_1k=0.02)},
+    prices={"minimax-cn/MiniMax-M3.1-Flash": TokenPrice(input_per_1k=0.01, output_per_1k=0.02)},
 )
 ```
 

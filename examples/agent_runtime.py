@@ -20,7 +20,7 @@
 模型时把 ``_build_client()`` 换成::
 
     from agent_learning_coach.core.llm import create_client
-    return create_client("minimax-cn", model="MiniMax-M2")
+    return create_client("minimax-cn")  # 模型用注册表的默认值——写死会随厂商下线而过期
 """
 
 from __future__ import annotations
